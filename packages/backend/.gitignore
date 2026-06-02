@@ -1,2 +1,17 @@
+# Convex
+.convex/
+convex/_generated/
 
+# Build
+dist/
+build/
+
+# Environment
 .env.local
+.env.*.local
+
+# TypeScript
+*.tsbuildinfo
+
+# Testing
+coverage/

@@ -1,49 +1,132 @@
+# ============================================
 # Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+# ============================================
 
-# dependencies
+# ============================================
+# Dependencies
+# ============================================
 node_modules/
 
-# Expo
-.expo/
+# ============================================
+# Build outputs
+# ============================================
 dist/
+build/
+.webpack/
+.next/
+.expo/
 web-build/
-# expo-env.d.ts — kept in version control so TS doesn't error on fresh clones
 
 # Turbo
 .turbo/
 
-# Native
+# ============================================
+# Environment files (keep .env.example)
+# ============================================
+.env
+.env.local
+.env.*.local
+.env.production.local
+
+# ============================================
+# TypeScript
+# ============================================
+*.tsbuildinfo
+*.tsbuildinfo/
+
+# ============================================
+# Lock files (use pnpm/yarn workspaces)
+# ============================================
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+*.lockb
+
+# ============================================
+# Native / Mobile
+# ============================================
 *.orig.*
 *.jks
 *.p8
 *.p12
 *.key
 *.mobileprovision
+*.hprof
+*.trace
+
+# Android
+android/.gradle/
+android/app/build/
+android/build/
+android/captures/
+
+# iOS
+ios/Pods/
+ios/build/
+ios/*.xcworkspace
+ios/*.xcodeproj
+
+# Expo
+.expo/
+.expo-shared/
 
 # Metro
 .metro-health-check*
+.metro-*
 
-# debug
+# ============================================
+# Debug
+# ============================================
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+*.log
+*.log.*
 
+# ============================================
 # macOS
+# ============================================
 .DS_Store
 *.pem
+.AppleDouble
+.LSOverride
 
-# local env files
-.env*.local
-.env
+# ============================================
+# IDE / Editor
+# ============================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
 
-# typescript
-*.tsbuildinfo
-
-# Lock files
-*.lockb
-*.lock
-package-lock.json
-
+# ============================================
 # Filesystem recovery
+# ============================================
 lost+found/
+.fseventsd
+.Trashes
+.Spotlight-V100
+
+# ============================================
+# Blackbox CLI (local tooling)
+# ============================================
 .blackboxcli/
+
+# ============================================
+# Qoder (local tooling)
+# ============================================
+.qoder/settings.local.json
+
+# ============================================
+# Plans / Notes (optional - uncomment if needed)
+# ============================================
+# plans/
+
+# ============================================
+# Convex (generated - uncomment if using)
+# ============================================
+# packages/backend/convex/_generated/
