@@ -1,0 +1,47 @@
+{
+    "expo": {
+        "name": "Bloom app (rename me)",
+        "slug": "bloom-app-rename-me",
+        "version": "1.0.0",
+        "runtimeVersion": {
+            "policy": "sdkVersion"
+        },
+        "orientation": "portrait",
+        "icon": "../../assets/images/icon.png",
+        "scheme": "myapp",
+        "userInterfaceStyle": "automatic",
+        "newArchEnabled": true,
+        "ios": {
+            "supportsTablet": true
+        },
+        "android": {
+            "adaptiveIcon": {
+                "foregroundImage": "../../assets/images/adaptive-icon.png",
+                "backgroundColor": "#ffffff"
+            }
+        },
+        "web": {
+            "bundler": "metro",
+            "output": "single",
+            "favicon": "../../assets/images/icon.png"
+        },
+        "plugins": [
+            "expo-router",
+            [
+                "expo-splash-screen",
+                {
+                    "image": "../../assets/images/splash-icon.png",
+                    "imageWidth": 200,
+                    "resizeMode": "contain",
+                    "backgroundColor": "#FAFAFA"
+                }
+            ],
+            "expo-secure-store",
+            "expo-font",
+            "expo-web-browser"
+        ],
+        "experiments": {
+            "typedRoutes": true
+        }
+    }
+}

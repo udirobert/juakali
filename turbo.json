@@ -1,0 +1,22 @@
+{
+    "$schema": "https://turbo.build/schema.json",
+    "tasks": {
+        "dev": {
+            "cache": false,
+            "persistent": true
+        },
+        "build": {
+            "outputs": ["dist/**", ".expo/**", "!.expo/cache/**"],
+            "dependsOn": ["^build"]
+        },
+        "lint": {
+            "inputs": [
+                "**/*.{ts,tsx,js,mjs,jsx}",
+                "eslint.config.*",
+                "package.json"
+            ]
+        },
+        "typecheck": {},
+        "test": {}
+    }
+}

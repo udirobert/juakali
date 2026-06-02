@@ -1,0 +1,38 @@
+{
+    "name": "@bloom/backend",
+    "version": "1.0.0",
+    "private": true,
+    "scripts": {
+        "dev": "convex dev --env-file ../../.env",
+        "deploy": "convex deploy --env-file ../../.env",
+        "test": "vitest run",
+        "lint": "eslint ."
+    },
+    "dependencies": {
+        "@auth/core": "^0.37.0",
+        "@convex-dev/action-cache": "^0.3.0",
+        "@convex-dev/agent": "^0.3.2",
+        "@convex-dev/aggregate": "^0.2.1",
+        "@convex-dev/auth": "^0.0.90",
+        "@convex-dev/crons": "^0.2.0",
+        "@convex-dev/expo-push-notifications": "^0.3.0",
+        "@convex-dev/migrations": "^0.3.1",
+        "@convex-dev/rag": "^0.7.2",
+        "@convex-dev/rate-limiter": "^0.3.2",
+        "@convex-dev/sharded-counter": "^0.2.0",
+        "@convex-dev/workflow": "^0.3.4",
+        "convex": "1.38.0",
+        "convex-env": "^2.3.0",
+        "convex-helpers": "0.1.113"
+    },
+    "devDependencies": {
+        "@convex-dev/eslint-plugin": "^2.0.0",
+        "@edge-runtime/vm": "^5.0.0",
+        "@types/node": "^22.0.0",
+        "convex-test": "^0.0.41",
+        "eslint": "^9.25.0",
+        "typescript": "~5.9.2",
+        "typescript-eslint": "^8.32.0",
+        "vitest": "^4.0.18"
+    }
+}

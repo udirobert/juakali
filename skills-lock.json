@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "skills": {
+    "building-native-ui": {
+      "source": "expo/skills",
+      "sourceType": "github",
+      "computedHash": "c4a421de2fea011892205042a424f9da83605d25559112774297fd5627473a32"
+    },
+    "convex-create-component": {
+      "source": "get-convex/agent-skills",
+      "sourceType": "github",
+      "computedHash": "c97d71b524ea9f784d344af20a766de5d48f14b7b824bf791fa517d1da753aca"
+    },
+    "convex-helpers-guide": {
+      "source": "get-convex/convex-agent-plugins",
+      "sourceType": "github",
+      "computedHash": "06d44dbcbd1817b9712378ca93bacacf1091f62029aef375b0d9cb1df4254fe8"
+    },
+    "convex-migration-helper": {
+      "source": "get-convex/agent-skills",
+      "sourceType": "github",
+      "computedHash": "bfb51e5b743ac31b313e5e1d206faee7d46bbbc9195360ce9636eead6f13fd3a"
+    },
+    "convex-performance-audit": {
+      "source": "get-convex/agent-skills",
+      "sourceType": "github",
+      "computedHash": "3e411d8250678ca8ec739a40c2874f21e4b5ab17c4dd65e72e3d9d9df6851c31"
+    },
+    "expo-tailwind-setup": {
+      "source": "expo/skills",
+      "sourceType": "github",
+      "computedHash": "6abfc223a376571e0ee84014b3b474a3f2828ac2ebcde59c5c2b6b4bc802e233"
+    },
+    "native-data-fetching": {
+      "source": "expo/skills",
+      "sourceType": "github",
+      "computedHash": "b4e72ed9215cac46f40a461e816acd634797512d97e39477925087eccc6220be"
+    },
+    "schema-builder": {
+      "source": "get-convex/convex-agent-plugins",
+      "sourceType": "github",
+      "computedHash": "2a587f944ae744b17ef724c66a661835e7e04b0f2dc4ca428c87f88854e7500c"
+    },
+    "use-dom": {
+      "source": "expo/skills",
+      "sourceType": "github",
+      "computedHash": "7041bb26db02e24c45eb6c4c4879138a0f52786dd928eefd66c90a35b0e3197d"
+    },
+    "vercel-composition-patterns": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "computedHash": "1cf9b7afd27e2ca290e3d1cdb6a8daa6cfd17dc1f53a5d3963480cd163dead69"
+    }
+  }
+}
