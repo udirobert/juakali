@@ -4,6 +4,8 @@ import type { MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 
 import { normalizeKey, normalizePhone, scoreMaster } from "./juaKaliHelpers";
+import { rateLimiter } from "./rateLimit";
+import { isAuthenticated } from "./auth";
 
 const channelValidator = v.union(v.literal("sms"), v.literal("ussd"), v.literal("voice"));
 const messageProviderValidator = v.union(v.literal("twilio"), v.literal("africas_talking"), v.literal("mock"));
@@ -404,6 +406,32 @@ export const getVoiceIntakeForProcessing = internalQuery({
     },
 });
 
+export const getQueuedVoiceIntakes = internalQuery({
+    args: {},
+    returns: v.array(
+        v.object({
+            _id: v.id("voiceIntakes"),
+            fromPhone: v.union(v.string(), v.null()),
+            recordingUrl: v.union(v.string(), v.null()),
+            transcript: v.union(v.string(), v.null()),
+        })
+    ),
+    handler: async (ctx) => {
+        const queued = await ctx.db
+            .query("voiceIntakes")
+            .withIndex("by_processingStatus", (q) => q.eq("processingStatus", "queued"))
+            .order("asc")
+            .take(10);
+
+        return queued.map((intake) => ({
+            _id: intake._id,
+            fromPhone: intake.fromPhone,
+            recordingUrl: intake.recordingUrl,
+            transcript: intake.transcript,
+        }));
+    },
+});
+
 export const recordVoiceWebhook = internalMutation({
     args: {
         fromPhone: v.string(),
@@ -415,6 +443,7 @@ export const recordVoiceWebhook = internalMutation({
     },
     returns: v.id("voiceIntakes"),
     handler: async (ctx, args) => {
+        await rateLimiter.limit(ctx, "voiceWebhook", { key: args.fromPhone });
         const now = Date.now();
         return await ctx.db.insert("voiceIntakes", {
             fromPhone: nullableText(args.fromPhone) ? normalizePhone(args.fromPhone) : null,
@@ -577,6 +606,7 @@ export const handleSmsWebhook = internalMutation({
         outboundMessageId: v.union(v.id("outboundMessages"), v.null()),
     }),
     handler: async (ctx, args) => {
+        await rateLimiter.limit(ctx, "smsWebhook", { key: args.fromPhone });
         const now = Date.now();
 
         // Idempotency: providers retry on timeout; dedupe by provider message SID.
@@ -708,6 +738,7 @@ export const handleUssdWebhook = internalMutation({
     },
     returns: v.string(),
     handler: async (ctx, args) => {
+        await rateLimiter.limit(ctx, "ussdWebhook", { key: args.phoneNumber });
         const now = Date.now();
         const phoneNumber = normalizePhone(args.phoneNumber);
         const segments = args.text
@@ -788,6 +819,7 @@ export const seedDemoData = mutation({
         message: v.string(),
     }),
     handler: async (ctx) => {
+        await isAuthenticated(ctx);
         const now = Date.now();
         const existingMasters = await ctx.db.query("masters").order("desc").take(100);
         const existingSeedNames = new Set(existingMasters.filter((master) => master.source === "seed").map((master) => master.name));
@@ -903,6 +935,7 @@ export const runApprenticeInterview = mutation({
         ),
     }),
     handler: async (ctx, args) => {
+        await rateLimiter.limit(ctx, "matchApprentice", { key: args.phoneNumber });
         const trimmedPhone = args.phoneNumber.trim();
         const phoneNumber = trimmedPhone.length > 0 ? normalizePhone(trimmedPhone) : `+254700${String(Math.floor(100000 + Math.random() * 899999))}`;
         const locationText = args.locationText.trim();
@@ -1004,6 +1037,8 @@ export const dashboardData = query({
         }),
     }),
     handler: async (ctx) => {
+        await isAuthenticated(ctx);
+        await rateLimiter.limit(ctx, "dashboardQuery", { key: "dashboard" });
         const masters = await ctx.db.query("masters").order("desc").take(100);
         const apprentices = await ctx.db.query("apprentices").order("desc").take(100);
         const voiceRows = await ctx.db.query("voiceIntakes").order("desc").take(12);
@@ -1113,6 +1148,7 @@ export const registerMasterViaMcp = mutation({
     },
     returns: v.object({ masterId: v.id("masters"), message: v.string() }),
     handler: async (ctx, args) => {
+        await rateLimiter.limit(ctx, "registerMaster", { key: args.phoneNumber ?? args.name });
         const now = Date.now();
         const locationText = nonEmptyText(args.locationText, "Unknown location");
         const craftText = nonEmptyText(args.craftText, "General artisan skills");
@@ -1145,6 +1181,7 @@ export const queueSmsViaMcp = mutation({
     },
     returns: v.object({ messageId: v.id("outboundMessages"), status: v.string() }),
     handler: async (ctx, args) => {
+        await rateLimiter.limit(ctx, "queueSms", { key: args.recipientPhone });
         const now = Date.now();
         const messageId = await recordOutboundMessage(ctx, {
             recipientPhone: normalizePhone(args.recipientPhone),

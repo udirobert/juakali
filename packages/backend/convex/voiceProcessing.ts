@@ -175,3 +175,46 @@ export const processVoiceIntake = internalAction({
         return null;
     },
 });
+
+// Batch process all queued voice intakes (called by cron every 5 minutes).
+export const processQueuedVoiceIntakes = internalAction({
+    args: {},
+    returns: v.object({ processed: v.number(), failed: v.number() }),
+    handler: async (ctx) => {
+        const queued = await ctx.runQuery(
+            internal.telephony.getQueuedVoiceIntakes, {}
+        );
+
+        let processed = 0;
+        let failed = 0;
+
+        for (const intake of queued) {
+            try {
+                const transcript = intake.transcript ?? (intake.recordingUrl ? await transcribeRecording(intake.recordingUrl) : null);
+                if (!transcript) {
+                    await ctx.runMutation(internal.telephony.markVoiceIntakeFailed, {
+                        voiceIntakeId: intake._id,
+                        errorMessage: "Voice intake needs either a recording URL or transcript text",
+                    });
+                    failed++;
+                    continue;
+                }
+                const extracted = await extractProfileWithLlm(transcript, intake.fromPhone);
+                await ctx.runMutation(internal.telephony.completeVoiceIntake, {
+                    voiceIntakeId: intake._id,
+                    transcript,
+                    ...extracted,
+                });
+                processed++;
+            } catch (error) {
+                await ctx.runMutation(internal.telephony.markVoiceIntakeFailed, {
+                    voiceIntakeId: intake._id,
+                    errorMessage: errorMessage(error),
+                });
+                failed++;
+            }
+        }
+
+        return { processed, failed };
+    },
+});
