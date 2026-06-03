@@ -1,0 +1,10 @@
+[allowlist]
+description = "Test/example secrets"
+paths = [
+  '''node_modules/''',
+  '''.git/''',
+  '''dist/''',
+  '''build/''',
+  '''.expo/''',
+  '''.turbo/''',
+]
