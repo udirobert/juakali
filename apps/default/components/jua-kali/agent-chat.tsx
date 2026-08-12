@@ -32,10 +32,12 @@ interface ChatMessage {
 }
 
 const quickPrompts = [
-    "Register a welding master named John Ochieng from Kisumu who teaches arc welding, safety, and metalwork",
-    "Find carpentry masters near Kariobangi for an apprentice",
-    "What's the current system status?",
-    "Seed demo data for testing",
+    "Seed the invest demo data",
+    "List active ventures and their KPI progress",
+    "Log 4 meetings booked this week for Amina Sales Pod — two SME owners and one clinic admin",
+    "Investor email: Please push Amina on follow-ups this week and summarize pipeline for me by Friday.",
+    "Draft an investor digest for Amina with recommendations",
+    "Show the public ledger totals",
 ];
 
 export function AgentChat() {
@@ -111,15 +113,15 @@ export function AgentChat() {
             />
 
             <View style={styles.header}>
-                <Text style={styles.headerTitle}>JuaKali Agent</Text>
-                <Text style={styles.headerSubtitle}>Powered by Gemini on Google Cloud</Text>
+                <Text style={styles.headerTitle}>JuaKali Operating Partner</Text>
+                <Text style={styles.headerSubtitle}>Investor digests · KPI logging · soft pledges · Gemini</Text>
             </View>
 
             {messages.length === 0 ? (
                 <View style={styles.emptyState}>
-                    <Text style={styles.emptyTitle}>Talk to the JuaKali Agent</Text>
+                    <Text style={styles.emptyTitle}>Agent for invest-in-public</Text>
                     <Text style={styles.emptyBody}>
-                        Try registering a master artisan, finding matches, or checking system status.
+                        Seed demo data, log hard KPIs, paste an investor email, or draft a digest. Soft pledges only — not live payments.
                     </Text>
                     <View style={styles.quickPrompts}>
                         {quickPrompts.map((prompt) => (

@@ -1,5 +1,3 @@
 #!/bin/sh
-. "$(dirname "$0")/_/husky.sh"
-
 echo "Running gitleaks secret detection..."
-gitleaks detect --source . --verbose --no-color
+gitleaks detect --source . --no-color

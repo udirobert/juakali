@@ -200,6 +200,130 @@ export function registerTools(server: McpServer): void {
         }
     );
 
+    server.tool(
+        "list_ventures",
+        "List investable apprentice ventures with KPI targets, totals, and pledged capital.",
+        {},
+        async () => {
+            const result = await callBackend<{ ventures: unknown[] }>("invest:listVenturesViaMcp", {}, "query");
+            return {
+                content: [{ type: "text" as const, text: JSON.stringify(result.ventures, null, 2) }],
+            };
+        }
+    );
+
+    server.tool(
+        "pledge_commitment",
+        "Create a soft revenue-share microcommitment from the default demo investor into a venture. Demo only — not a live payment.",
+        {
+            ventureName: z.string().optional().describe("Venture name or partial match"),
+            ventureSlug: z.string().optional().describe("Public slug if known"),
+            amountKes: z.number().describe("Soft pledge amount in Kenyan Shillings"),
+            shareBps: z.number().optional().describe("Revenue share in basis points (1000 = 10%)"),
+            capMultiple: z.number().optional().describe("Cap multiple (e.g. 2)"),
+            thesis: z.string().optional().describe("Short investment thesis"),
+        },
+        async (input) => {
+            const result = await callBackend<{ commitmentId: string; message: string }>(
+                "invest:pledgeViaMcp",
+                {
+                    ventureName: input.ventureName,
+                    ventureSlug: input.ventureSlug,
+                    amountKes: input.amountKes,
+                    shareBps: input.shareBps,
+                    capMultiple: input.capMultiple,
+                    thesis: input.thesis,
+                },
+                "mutation"
+            );
+            return {
+                content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+            };
+        }
+    );
+
+    server.tool(
+        "log_kpi_checkin",
+        "Log a hard KPI result for a venture and publish it to the public ledger.",
+        {
+            ventureName: z.string().optional().describe("Venture name or partial match"),
+            ventureSlug: z.string().optional().describe("Public slug if known"),
+            metric: z.string().describe("Metric key e.g. meetings_booked, revenue_kes"),
+            value: z.number().describe("Numeric result"),
+            periodLabel: z.string().optional().describe("Period label e.g. Week 3"),
+            note: z.string().optional().describe("Evidence note"),
+            source: z.enum(["agent", "sms", "manual", "email_paste"]).optional().describe("Evidence source"),
+        },
+        async (input) => {
+            const result = await callBackend<{ checkInId: string; message: string }>(
+                "invest:logKpiViaMcp",
+                {
+                    ventureName: input.ventureName,
+                    ventureSlug: input.ventureSlug,
+                    metric: input.metric,
+                    value: input.value,
+                    periodLabel: input.periodLabel,
+                    note: input.note,
+                    source: input.source ?? "agent",
+                },
+                "mutation"
+            );
+            return {
+                content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+            };
+        }
+    );
+
+    server.tool(
+        "create_investor_digest",
+        "Draft an investor digest summarizing progress and recommended next actions.",
+        {
+            ventureName: z.string().optional().describe("Venture name or partial match"),
+            summary: z.string().describe("Short headline summary of results"),
+            insights: z.string().describe("Recommendations for the investor"),
+        },
+        async (input) => {
+            const result = await callBackend<{ digestId: string; message: string }>(
+                "invest:createDigestViaMcp",
+                {
+                    ventureName: input.ventureName,
+                    summary: input.summary,
+                    insights: input.insights,
+                },
+                "mutation"
+            );
+            return {
+                content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+            };
+        }
+    );
+
+    server.tool(
+        "get_public_ledger",
+        "Read the public invest-in-public ledger: pledges, check-ins, digests, and totals.",
+        {
+            limit: z.number().optional().describe("Max events to return"),
+        },
+        async (input) => {
+            const result = await callBackend<unknown>("invest:getPublicLedgerViaMcp", { limit: input.limit ?? 20 }, "query");
+            return {
+                content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+            };
+        }
+    );
+
+    server.tool(
+        "seed_invest_demo",
+        "Seed demo investors, ventures, pledges, KPI check-ins, digests, and ledger events.",
+        {},
+        async () => {
+            const result = await callBackend<unknown>("invest:seedInvestDemo", {}, "mutation");
+            return {
+                content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+            };
+        }
+    );
+
     server.prompt(
         "intake_interview",
         "Process a voice intake transcript and extract a master artisan profile",
@@ -225,6 +349,21 @@ export function registerTools(server: McpServer): void {
                 content: {
                     type: "text" as const,
                     text: `Find the best master artisan matches for an apprentice looking to learn ${args.craft} near ${args.location}. Use match_apprentice to find matches, then list_masters to get additional details about the top results.`,
+                },
+            }],
+        })
+    );
+
+    server.prompt(
+        "invest_digest",
+        "Turn recent KPI evidence into an investor digest",
+        { ventureName: z.string() },
+        (args) => ({
+            messages: [{
+                role: "user" as const,
+                content: {
+                    type: "text" as const,
+                    text: `Review progress for ${args.ventureName}. Use list_ventures and get_public_ledger, then create_investor_digest with a concise summary and actionable insights for the busy investor.`,
                 },
             }],
         })

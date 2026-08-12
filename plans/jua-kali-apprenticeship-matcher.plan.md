@@ -2,6 +2,8 @@
 
 ## Status: completed
 
+> Historical funnel prototype. Product direction continues in [invest-in-public-mvp.plan.md](./invest-in-public-mvp.plan.md) (investor microcommitments + public ledger + agent operating partner).
+
 ## Goal
 Build an Expo + Convex prototype that lets Masters register by voice webhook, Apprentices discover Masters by SMS/USSD, and program managers monitor the system from an admin dashboard.
 

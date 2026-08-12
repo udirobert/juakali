@@ -1,6 +1,6 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { auth } from "./auth";
 
 const http = httpRouter();
@@ -144,6 +144,71 @@ http.route({
             rawPayload: JSON.stringify(payload),
         });
         return textResponse(reply);
+    }),
+});
+
+http.route({
+    path: "/webhooks/agentmail",
+    method: "POST",
+    handler: httpAction(async (ctx, request) => {
+        // Thin AgentMail scaffold: accept message.received payloads (and simple demo JSON).
+        // Signature verification (svix) should be added before production.
+        const json: unknown = await request.json().catch(() => null);
+        if (!isRecord(json)) {
+            return new Response(JSON.stringify({ ok: false, error: "Invalid JSON" }), {
+                status: 400,
+                headers: { "Content-Type": "application/json" },
+            });
+        }
+
+        const eventType = typeof json.event_type === "string" ? json.event_type : "";
+        const message = isRecord(json.message) ? json.message : json;
+        const toList = Array.isArray(message.to) ? message.to : [];
+        const toAddress =
+            (typeof toList[0] === "string" ? toList[0] : "") ||
+            (typeof message.toAddress === "string" ? message.toAddress : "") ||
+            (typeof json.toAddress === "string" ? json.toAddress : "");
+        const fromAddress =
+            (typeof message.from === "string" ? message.from : "") ||
+            (typeof message.fromAddress === "string" ? message.fromAddress : "") ||
+            (typeof json.fromAddress === "string" ? json.fromAddress : "");
+        const subject =
+            (typeof message.subject === "string" ? message.subject : undefined) ||
+            (typeof json.subject === "string" ? json.subject : undefined);
+        const body =
+            (typeof message.text === "string" ? message.text : "") ||
+            (typeof message.extracted_text === "string" ? message.extracted_text : "") ||
+            (typeof message.preview === "string" ? message.preview : "") ||
+            (typeof message.body === "string" ? message.body : "") ||
+            (typeof json.body === "string" ? json.body : "");
+        const eventId = typeof json.event_id === "string" ? json.event_id : undefined;
+
+        if (eventType && !eventType.startsWith("message.received") && eventType !== "demo.inbound") {
+            return new Response(JSON.stringify({ ok: true, ignored: eventType }), {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+            });
+        }
+
+        if (!toAddress || !fromAddress || !body) {
+            return new Response(
+                JSON.stringify({ ok: false, error: "toAddress, fromAddress, and body are required" }),
+                { status: 400, headers: { "Content-Type": "application/json" } }
+            );
+        }
+
+        const result = await ctx.runMutation(api.invest.handleAgentMailInbound, {
+            toAddress,
+            fromAddress,
+            subject,
+            body,
+            eventId,
+        });
+
+        return new Response(JSON.stringify(result), {
+            status: result.ok ? 200 : 404,
+            headers: { "Content-Type": "application/json" },
+        });
     }),
 });
 

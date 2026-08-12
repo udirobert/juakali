@@ -10,7 +10,29 @@ const outboundMessageType = v.union(
     v.literal("welcome"),
     v.literal("interview_reply"),
     v.literal("master_alert"),
-    v.literal("confirmation_prompt")
+    v.literal("confirmation_prompt"),
+    v.literal("digest"),
+    v.literal("kpi_prompt")
+);
+
+const kpiUnit = v.union(v.literal("meetings"), v.literal("revenue_kes"), v.literal("jobs"));
+const commitmentStatus = v.union(
+    v.literal("pledged"),
+    v.literal("active"),
+    v.literal("completed"),
+    v.literal("written_off")
+);
+const kpiSource = v.union(
+    v.literal("agent"),
+    v.literal("sms"),
+    v.literal("manual"),
+    v.literal("email_paste")
+);
+const ledgerEventType = v.union(
+    v.literal("pledge"),
+    v.literal("checkin"),
+    v.literal("digest"),
+    v.literal("action")
 );
 
 export default defineSchema({
@@ -181,4 +203,114 @@ export default defineSchema({
         .index("by_relatedMasterId", ["relatedMasterId"])
         .index("by_relatedApprenticeId", ["relatedApprenticeId"])
         .index("by_relatedMatchRequestId", ["relatedMatchRequestId"]),
+
+    // --- Invest in Public ---
+
+    ventures: defineTable({
+        name: v.string(),
+        craftText: v.string(),
+        craftKey: v.string(),
+        locationText: v.string(),
+        locationKey: v.string(),
+        summary: v.string(),
+        kpiLabel: v.string(),
+        kpiUnit,
+        kpiTarget: v.number(),
+        peerMedian: v.optional(v.number()),
+        agentEmail: v.optional(v.string()),
+        publicSlug: v.string(),
+        masterId: v.optional(v.union(v.id("masters"), v.null())),
+        apprenticeId: v.optional(v.union(v.id("apprentices"), v.null())),
+        status: v.union(v.literal("active"), v.literal("paused"), v.literal("graduated")),
+        createdAt: v.number(),
+        updatedAt: v.number(),
+    })
+        .index("by_publicSlug", ["publicSlug"])
+        .index("by_status", ["status"])
+        .index("by_craftKey", ["craftKey"])
+        .index("by_agentEmail", ["agentEmail"]),
+
+    investors: defineTable({
+        displayName: v.string(),
+        email: v.optional(v.union(v.string(), v.null())),
+        phone: v.optional(v.union(v.string(), v.null())),
+        userId: v.optional(v.union(v.id("users"), v.null())),
+        isDefaultDemo: v.optional(v.boolean()),
+        createdAt: v.number(),
+    })
+        .index("by_email", ["email"])
+        .index("by_isDefaultDemo", ["isDefaultDemo"]),
+
+    commitments: defineTable({
+        investorId: v.id("investors"),
+        ventureId: v.id("ventures"),
+        amountKes: v.number(),
+        shareBps: v.number(),
+        capMultiple: v.number(),
+        status: commitmentStatus,
+        thesis: v.string(),
+        nextDigestAt: v.optional(v.number()),
+        digestCadence: v.optional(v.string()),
+        createdAt: v.number(),
+        updatedAt: v.number(),
+    })
+        .index("by_investorId", ["investorId"])
+        .index("by_ventureId", ["ventureId"])
+        .index("by_status", ["status"]),
+
+    kpiCheckIns: defineTable({
+        ventureId: v.id("ventures"),
+        commitmentId: v.optional(v.union(v.id("commitments"), v.null())),
+        periodLabel: v.string(),
+        metric: v.string(),
+        value: v.number(),
+        note: v.string(),
+        source: kpiSource,
+        createdAt: v.number(),
+    })
+        .index("by_ventureId", ["ventureId"])
+        .index("by_commitmentId", ["commitmentId"])
+        .index("by_createdAt", ["createdAt"]),
+
+    agentDigests: defineTable({
+        commitmentId: v.id("commitments"),
+        ventureId: v.id("ventures"),
+        summary: v.string(),
+        insights: v.string(),
+        createdAt: v.number(),
+    })
+        .index("by_commitmentId", ["commitmentId"])
+        .index("by_ventureId", ["ventureId"])
+        .index("by_createdAt", ["createdAt"]),
+
+    agentEmails: defineTable({
+        commitmentId: v.id("commitments"),
+        ventureId: v.id("ventures"),
+        investorId: v.id("investors"),
+        direction: v.union(v.literal("inbound"), v.literal("outbound")),
+        fromAddress: v.string(),
+        toAddress: v.string(),
+        subject: v.string(),
+        body: v.string(),
+        createdAt: v.number(),
+    })
+        .index("by_commitmentId", ["commitmentId"])
+        .index("by_ventureId", ["ventureId"])
+        .index("by_investorId", ["investorId"])
+        .index("by_createdAt", ["createdAt"]),
+
+    ledgerEvents: defineTable({
+        type: ledgerEventType,
+        ventureId: v.optional(v.union(v.id("ventures"), v.null())),
+        commitmentId: v.optional(v.union(v.id("commitments"), v.null())),
+        summary: v.string(),
+        amountKes: v.optional(v.union(v.number(), v.null())),
+        metric: v.optional(v.union(v.string(), v.null())),
+        value: v.optional(v.union(v.number(), v.null())),
+        createdAt: v.number(),
+        publicVisible: v.boolean(),
+    })
+        .index("by_publicVisible_and_createdAt", ["publicVisible", "createdAt"])
+        .index("by_ventureId", ["ventureId"])
+        .index("by_createdAt", ["createdAt"]),
 });

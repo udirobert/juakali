@@ -17,6 +17,9 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
     dashboardQuery: { kind: "token bucket", rate: 60, period: MINUTE, capacity: 80 },
     // SMS queueing: 30 per minute per phone
     queueSms: { kind: "token bucket", rate: 30, period: MINUTE, capacity: 40 },
+    // Invest demo surfaces
+    investQuery: { kind: "token bucket", rate: 60, period: MINUTE, capacity: 80 },
+    investMutate: { kind: "token bucket", rate: 30, period: MINUTE, capacity: 40 },
 });
 
 // =============================================================================

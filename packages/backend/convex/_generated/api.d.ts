@@ -13,6 +13,7 @@ import type * as crons from "../crons.js";
 import type * as env from "../env.js";
 import type * as functions from "../functions.js";
 import type * as http from "../http.js";
+import type * as invest from "../invest.js";
 import type * as juaKaliHelpers from "../juaKaliHelpers.js";
 import type * as migrations from "../migrations.js";
 import type * as rateLimit from "../rateLimit.js";
@@ -32,6 +33,7 @@ declare const fullApi: ApiFromModules<{
   env: typeof env;
   functions: typeof functions;
   http: typeof http;
+  invest: typeof invest;
   juaKaliHelpers: typeof juaKaliHelpers;
   migrations: typeof migrations;
   rateLimit: typeof rateLimit;

@@ -5,8 +5,81 @@ const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY ?? "");
 
 const toolDeclarations: FunctionDeclaration[] = [
     {
+        name: "list_ventures",
+        description: "List investable apprentice ventures with KPI targets, totals, and pledged capital.",
+        parameters: { type: SchemaType.OBJECT, properties: {} },
+    },
+    {
+        name: "pledge_commitment",
+        description:
+            "Create a soft revenue-share microcommitment from the default demo investor into a venture. Demo only — not a live payment.",
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                ventureName: { type: SchemaType.STRING, description: "Venture name or partial match (e.g. Amina)" },
+                ventureSlug: { type: SchemaType.STRING, description: "Public slug if known" },
+                amountKes: { type: SchemaType.NUMBER, description: "Soft pledge amount in Kenyan Shillings" },
+                shareBps: { type: SchemaType.NUMBER, description: "Revenue share in basis points (1000 = 10%)" },
+                capMultiple: { type: SchemaType.NUMBER, description: "Cap multiple (e.g. 2)" },
+                thesis: { type: SchemaType.STRING, description: "Short investment thesis" },
+            },
+            required: ["amountKes"],
+        },
+    },
+    {
+        name: "log_kpi_checkin",
+        description:
+            "Log a hard KPI result for a venture (meetings booked, revenue_kes, jobs_completed, etc.) and publish it to the public ledger.",
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                ventureName: { type: SchemaType.STRING, description: "Venture name or partial match" },
+                ventureSlug: { type: SchemaType.STRING, description: "Public slug if known" },
+                metric: { type: SchemaType.STRING, description: "Metric key e.g. meetings_booked, revenue_kes, jobs_completed" },
+                value: { type: SchemaType.NUMBER, description: "Numeric result" },
+                periodLabel: { type: SchemaType.STRING, description: "Period label e.g. Week 3" },
+                note: { type: SchemaType.STRING, description: "Evidence note" },
+                source: {
+                    type: SchemaType.STRING,
+                    format: "enum",
+                    enum: ["agent", "sms", "manual", "email_paste"],
+                    description: "How the evidence arrived",
+                },
+            },
+            required: ["metric", "value"],
+        },
+    },
+    {
+        name: "create_investor_digest",
+        description: "Draft an investor digest summarizing progress and recommended next actions for a funded venture.",
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                ventureName: { type: SchemaType.STRING, description: "Venture name or partial match" },
+                summary: { type: SchemaType.STRING, description: "Short headline summary of results" },
+                insights: { type: SchemaType.STRING, description: "Recommendations / insights for the investor" },
+            },
+            required: ["summary", "insights"],
+        },
+    },
+    {
+        name: "get_public_ledger",
+        description: "Read the public invest-in-public ledger: pledges, check-ins, digests, and totals.",
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                limit: { type: SchemaType.NUMBER, description: "Max events to return" },
+            },
+        },
+    },
+    {
+        name: "seed_invest_demo",
+        description: "Seed demo investors, ventures, pledges, KPI check-ins, digests, and ledger events.",
+        parameters: { type: SchemaType.OBJECT, properties: {} },
+    },
+    {
         name: "register_master",
-        description: "Register a new master artisan profile. Masters are skilled craftspeople who teach apprentices.",
+        description: "Funnel tool: register a master artisan profile.",
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
@@ -16,14 +89,19 @@ const toolDeclarations: FunctionDeclaration[] = [
                 craftText: { type: SchemaType.STRING, description: "Primary craft" },
                 keySkills: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: "Skills taught (max 6)" },
                 profileSummary: { type: SchemaType.STRING, description: "Short bio" },
-                language: { type: SchemaType.STRING, enum: ["sw", "en", "mixed", "unknown"], description: "Language" },
+                language: {
+                    type: SchemaType.STRING,
+                    format: "enum",
+                    enum: ["sw", "en", "mixed", "unknown"],
+                    description: "Language",
+                },
             },
             required: ["name", "locationText", "craftText", "keySkills", "profileSummary", "language"],
         },
     },
     {
         name: "match_apprentice",
-        description: "Find and match an apprentice with the best available master artisans by craft and location.",
+        description: "Funnel tool: match an apprentice to masters by craft and location.",
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
@@ -36,17 +114,17 @@ const toolDeclarations: FunctionDeclaration[] = [
     },
     {
         name: "get_dashboard",
-        description: "Get system status: counts of masters, apprentices, matches, queued SMS, and analytics.",
+        description: "Funnel ops: masters/apprentices/match analytics.",
         parameters: { type: SchemaType.OBJECT, properties: {} },
     },
     {
         name: "list_masters",
-        description: "List registered master artisans with their craft, location, skills, and verification status.",
+        description: "Funnel ops: list registered master artisans.",
         parameters: { type: SchemaType.OBJECT, properties: {} },
     },
     {
         name: "queue_sms",
-        description: "Queue an SMS for delivery to a phone number.",
+        description: "Queue an SMS for delivery.",
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
@@ -58,26 +136,32 @@ const toolDeclarations: FunctionDeclaration[] = [
     },
     {
         name: "seed_demo",
-        description: "Populate demo master artisans and sample matches for testing.",
+        description: "Seed telephony funnel demo masters/matches.",
         parameters: { type: SchemaType.OBJECT, properties: {} },
     },
 ];
 
-const SYSTEM_PROMPT = `You are the JuaKali Voice Agent — an autonomous AI that manages an apprenticeship matching platform for Kenya's informal sector ("Jua Kali").
+const SYSTEM_PROMPT = `You are the JuaKali Agent — an autonomous operating partner for "invest in public" microinvestments in Kenya's informal sector ("Jua Kali").
 
-Your job:
-- Process voice intakes: artisans call in to register as masters. You extract their profile from transcripts.
-- Match apprentices: people text in wanting to learn a craft near their location. You find the best master matches.
-- Manage SMS flows: welcome messages, craft/location interviews, match results, confirmation prompts.
-- Track reputation: after matches, ask both parties if they connected. Confirmed matches boost the master's reputation.
+Primary job (investor is the client):
+- Help busy investors make soft revenue-share microcommitments into apprentice ventures (demo pledges, not live payments or securities).
+- Mentor ventures: turn investor emails/notes pasted into chat into structured actions and KPI check-ins.
+- Log hard results (meetings booked, revenue_kes, jobs completed) onto the public ledger.
+- Draft investor digests summarizing evidence and recommending next actions.
+- Keep the public ledger accurate: capital → actions → results.
 
-Common crafts: carpentry, welding, tailoring, mechanics, masonry, plumbing, electrical, hairdressing, painting, metalwork.
+Secondary job (matching funnel):
+- Register masters from voice transcripts, match apprentices by craft/location, queue SMS, track connection confirmations.
+
+Instrument language:
+- Soft pledge + revenue share (basis points, cap multiple). Never claim regulated equity or live escrow.
+- Be transparent about demo mode when relevant.
+
+Common crafts: carpentry, welding, tailoring, mechanics, sales, masonry, plumbing, electrical, hairdressing.
 Common locations: Kariobangi, Kisumu, Mombasa, Thika, Eldoret, Nakuru, Kibera, Nairobi.
 
-Languages: Swahili and English. Reply in the language the user uses. Use warm, encouraging tone.
-Phone format: E.164 (+254...). Kenyan phones starting with 0 become +254.
-
-Always use your tools to take action — don't just describe what should happen, actually do it.`;
+Languages: Swahili and English. Reply in the user's language. Warm, direct, fiduciary tone toward the investor.
+Always use your tools to take action — don't just describe what should happen.`;
 
 interface ToolCallResult {
     name: string;
@@ -86,6 +170,45 @@ interface ToolCallResult {
 
 async function executeToolCall(name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
     switch (name) {
+        case "list_ventures":
+            return await convexQuery("invest:listVenturesViaMcp", {});
+
+        case "pledge_commitment":
+            return await convexMutation("invest:pledgeViaMcp", {
+                ventureName: (args.ventureName as string) || undefined,
+                ventureSlug: (args.ventureSlug as string) || undefined,
+                amountKes: args.amountKes as number,
+                shareBps: (args.shareBps as number) || undefined,
+                capMultiple: (args.capMultiple as number) || undefined,
+                thesis: (args.thesis as string) || undefined,
+            });
+
+        case "log_kpi_checkin":
+            return await convexMutation("invest:logKpiViaMcp", {
+                ventureName: (args.ventureName as string) || undefined,
+                ventureSlug: (args.ventureSlug as string) || undefined,
+                metric: args.metric as string,
+                value: args.value as number,
+                periodLabel: (args.periodLabel as string) || undefined,
+                note: (args.note as string) || undefined,
+                source: (args.source as string) || "agent",
+            });
+
+        case "create_investor_digest":
+            return await convexMutation("invest:createDigestViaMcp", {
+                ventureName: (args.ventureName as string) || undefined,
+                summary: args.summary as string,
+                insights: args.insights as string,
+            });
+
+        case "get_public_ledger":
+            return await convexQuery("invest:getPublicLedgerViaMcp", {
+                limit: (args.limit as number) || 20,
+            });
+
+        case "seed_invest_demo":
+            return await convexMutation("invest:seedInvestDemo", {});
+
         case "register_master":
             return await convexMutation("telephony:registerMasterViaMcp", {
                 name: args.name as string,
