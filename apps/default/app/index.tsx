@@ -7,15 +7,10 @@ import { AgentChat } from "@/components/jua-kali/agent-chat";
 import { InvestorCockpit } from "@/components/jua-kali/investor-cockpit";
 import { Onboarding } from "@/components/jua-kali/onboarding";
 import { PublicLedger } from "@/components/jua-kali/public-ledger";
+import { color, font } from "@/components/jua-kali/theme";
 
 type Screen = "home" | "ledger" | "lab";
 type LabScreen = "agent" | "funnel" | "ops";
-
-const palette = {
-    terracotta: "#E07A5F",
-    olive: "#3B4D3B",
-    cream: "#F5F1E8",
-};
 
 const primaryTabs: Array<{ id: Screen; label: string }> = [
     { id: "home", label: "Home" },
@@ -102,16 +97,19 @@ function TabButton({
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: palette.cream },
+    container: { flex: 1, backgroundColor: color.stone },
     content: { flex: 1 },
     tabBar: {
         borderTopWidth: 1,
-        borderTopColor: "rgba(59,77,59,0.1)",
-        backgroundColor: "rgba(245,241,232,0.98)",
+        borderTopColor: color.line,
+        backgroundColor: color.paper,
     },
     tabRow: {
         flexDirection: "row",
-        justifyContent: "space-around",
+        justifyContent: "center",
+        maxWidth: 880,
+        width: "100%",
+        alignSelf: "center",
         paddingHorizontal: 8,
     },
     labRow: {
@@ -123,9 +121,10 @@ const styles = StyleSheet.create({
     },
     tab: {
         flex: 1,
-        paddingVertical: 12,
+        maxWidth: 160,
+        paddingVertical: 14,
         alignItems: "center",
-        minHeight: 44,
+        minHeight: 48,
         justifyContent: "center",
     },
     tabCompact: {
@@ -136,17 +135,15 @@ const styles = StyleSheet.create({
     },
     tabActive: {
         borderTopWidth: 2,
-        borderTopColor: palette.terracotta,
+        borderTopColor: color.brass,
     },
     tabText: {
-        color: "rgba(36,49,36,0.5)",
+        fontFamily: font.bodyBold,
+        color: color.mist,
         fontSize: 13,
         fontWeight: "700",
+        letterSpacing: 0.3,
     },
-    tabTextCompact: {
-        fontSize: 11,
-    },
-    tabTextActive: {
-        color: palette.olive,
-    },
+    tabTextCompact: { fontSize: 11 },
+    tabTextActive: { color: color.charcoal },
 });

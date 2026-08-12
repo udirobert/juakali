@@ -89,3 +89,5 @@ Point your MCP client at that package with `JUAKALI_BACKEND_URL` set to your Con
 ## Stack
 
 Gemini 2.5 Flash · Cloud Run · MCP · Convex · Expo · AgentMail webhook scaffold · Twilio / Africa’s Talking (funnel)
+
+Pre-commit (Husky): gitleaks on staged changes + ESLint via lint-staged (`apps/default`, `packages/backend`). Requires [`gitleaks`](https://github.com/gitleaks/gitleaks#installing) on your PATH.

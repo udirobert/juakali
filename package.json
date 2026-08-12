@@ -18,8 +18,17 @@
         "gitleaks": "gitleaks detect --source . --verbose",
         "prepare": "husky"
     },
+    "lint-staged": {
+        "apps/default/**/*.{js,jsx,ts,tsx}": [
+            "eslint --max-warnings=0 -c apps/default/eslint.config.mjs"
+        ],
+        "packages/backend/**/*.{js,jsx,ts,tsx,mjs}": [
+            "eslint --max-warnings=0 -c packages/backend/eslint.config.mjs"
+        ]
+    },
     "devDependencies": {
-        "turbo": "^2.0.12",
-        "husky": "^9.0.0"
+        "husky": "^9.0.0",
+        "lint-staged": "^16.4.0",
+        "turbo": "^2.0.12"
     }
 }

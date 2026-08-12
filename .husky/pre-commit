@@ -1,3 +1,15 @@
 #!/bin/sh
-echo "Running gitleaks secret detection..."
-gitleaks detect --source . --no-color
+set -e
+
+echo "▸ Secrets (gitleaks)…"
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "error: gitleaks is required for commits."
+  echo "  macOS: brew install gitleaks"
+  echo "  docs:  https://github.com/gitleaks/gitleaks#installing"
+  exit 1
+fi
+# Scan staged changes only (faster + matches what you're committing)
+gitleaks protect --staged --no-color --redact
+
+echo "▸ Lint (staged files)…"
+npx lint-staged

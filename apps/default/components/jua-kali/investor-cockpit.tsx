@@ -10,6 +10,7 @@ import {
     useWindowDimensions,
     View,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
     FadeIn,
@@ -26,19 +27,12 @@ import type { Id } from "@/convex/_generated/dataModel";
 import type { FunctionReturnType } from "convex/server";
 
 import { api } from "@/convex/_generated/api";
+import { color, font, layout, type } from "@/components/jua-kali/theme";
 
 type Cockpit = FunctionReturnType<typeof api.invest.investorCockpit>;
 type Commitment = Cockpit["commitments"][number];
 type ToolResult = { tool: string; detail: string; status: "running" | "done" };
 type AgentPhase = "idle" | "queued" | "acting" | "done";
-
-const palette = {
-    terracotta: "#E07A5F",
-    cream: "#F5F1E8",
-    olive: "#3B4D3B",
-    ink: "#243124",
-    moss: "#71845F",
-};
 
 function formatKes(value: number) {
     return `KES ${value.toLocaleString()}`;
@@ -77,14 +71,13 @@ function Sparkline({ values }: { values: number[] }) {
         <View style={styles.sparkRow}>
             {values.map((value, index) => (
                 <View key={`${index}-${value}`} style={styles.sparkBarTrack}>
-                    <View style={[styles.sparkBar, { height: Math.max(4, Math.round((value / max) * 32)) }]} />
+                    <View style={[styles.sparkBar, { height: Math.max(4, Math.round((value / max) * 36)) }]} />
                 </View>
             ))}
         </View>
     );
 }
 
-/** One shimmer = one waiting state. Idle surfaces stay still. */
 function WaitingShimmer({ active }: { active: boolean }) {
     const reduceMotion = useReducedMotion();
     const progress = useSharedValue(0);
@@ -94,12 +87,12 @@ function WaitingShimmer({ active }: { active: boolean }) {
             progress.value = 0;
             return;
         }
-        progress.value = withRepeat(withTiming(1, { duration: 1200 }), -1, true);
+        progress.value = withRepeat(withTiming(1, { duration: 1100 }), -1, true);
     }, [active, progress, reduceMotion]);
 
     const style = useAnimatedStyle(() => ({
-        opacity: active ? 0.35 + progress.value * 0.45 : 0,
-        transform: [{ translateX: (progress.value - 0.5) * 24 }],
+        opacity: active ? 0.4 + progress.value * 0.5 : 0,
+        transform: [{ translateX: (progress.value - 0.5) * 40 }],
     }));
 
     if (!active) return null;
@@ -119,9 +112,7 @@ function ElapsedActing({ phase }: { phase: AgentPhase }) {
             return;
         }
         const started = Date.now();
-        const id = setInterval(() => {
-            setSeconds(Math.floor((Date.now() - started) / 1000));
-        }, 250);
+        const id = setInterval(() => setSeconds(Math.floor((Date.now() - started) / 1000)), 250);
         return () => clearInterval(id);
     }, [phase]);
 
@@ -136,8 +127,8 @@ export function InvestorCockpit() {
     const sendInvestorEmail = useMutation(api.invest.sendInvestorEmail);
     const insets = useSafeAreaInsets();
     const { width } = useWindowDimensions();
-    const isWide = width >= 960;
     const isCompact = width < 420;
+    const padX = Math.max(16, Math.min(32, (width - layout.maxWidth) / 2 + 20));
 
     const [selectedCommitmentId, setSelectedCommitmentId] = useState<Id<"commitments"> | null>(null);
     const [selectedVentureId, setSelectedVentureId] = useState<Id<"ventures"> | null>(null);
@@ -190,10 +181,7 @@ export function InvestorCockpit() {
         }
         setIsPledging(true);
         try {
-            const result = await pledgeCommitment({
-                ventureId: selectedVenture.id,
-                amountKes,
-            });
+            const result = await pledgeCommitment({ ventureId: selectedVenture.id, amountKes });
             setSelectedCommitmentId(result.commitmentId);
             setStatusMessage(result.message);
             setShowPledge(false);
@@ -210,7 +198,7 @@ export function InvestorCockpit() {
         setPendingBody(body);
         setAgentPhase("queued");
         setToolResults([]);
-        setStatusMessage("Queued — approve to run agent tools.");
+        setStatusMessage("Queued — choose an approval path below.");
         void AccessibilityInfo.announceForAccessibility("Email queued. Awaiting your approval.");
     }
 
@@ -224,24 +212,22 @@ export function InvestorCockpit() {
         if (!pendingBody || !selectedCommitment) return;
         setIsSending(true);
         setAgentPhase("acting");
-        const runningTools: ToolResult[] = [
-            { tool: "log_kpi_check_in", detail: "Inferring hard KPI from note…", status: "running" },
-            { tool: "create_digest", detail: "Writing investor digest…", status: "running" },
-            { tool: "ledger_event", detail: "Publishing evidence to ledger…", status: "running" },
-            { tool: "send_reply", detail: "Queuing agent reply…", status: "running" },
-        ];
-        setToolResults(runningTools);
+        setToolResults([
+            { tool: "log_kpi", detail: "Inferring hard KPI…", status: "running" },
+            { tool: "digest", detail: "Writing digest artifact…", status: "running" },
+            { tool: "ledger", detail: "Publishing evidence…", status: "running" },
+            { tool: "reply", detail: "Queuing agent reply…", status: "running" },
+        ]);
 
         try {
             const result = await sendInvestorEmail({
                 commitmentId: selectedCommitment.id,
                 body: pendingBody,
             });
-            // Brief beat so spinner→check reads as a state change, not a flash.
             await new Promise((resolve) => setTimeout(resolve, 420));
             setToolResults(
                 result.toolResults.map((row) => ({
-                    tool: row.tool,
+                    tool: row.tool.replace(/_/g, " "),
                     detail: row.detail,
                     status: "done" as const,
                 }))
@@ -269,65 +255,74 @@ export function InvestorCockpit() {
     if (data === undefined) {
         return (
             <View style={[styles.loadingScreen, { paddingTop: insets.top }]}>
-                <ActivityIndicator color={palette.olive} />
-                <Text style={styles.loadingText}>Loading cockpit…</Text>
+                <ActivityIndicator color={color.brass} />
+                <Text style={styles.loadingText}>Loading commitments…</Text>
             </View>
         );
     }
 
     return (
         <View style={[styles.screen, { paddingTop: insets.top }]}>
+            <LinearGradient
+                colors={["rgba(166,124,45,0.08)", "transparent", "rgba(20,24,22,0.03)"]}
+                locations={[0, 0.35, 1]}
+                style={StyleSheet.absoluteFill}
+                pointerEvents="none"
+            />
             <ScrollView
                 contentContainerStyle={[
                     styles.content,
                     {
-                        paddingHorizontal: isCompact ? 14 : 20,
-                        paddingBottom: Math.max(insets.bottom, 24) + 72,
+                        paddingHorizontal: padX,
+                        paddingBottom: Math.max(insets.bottom, 24) + 88,
+                        maxWidth: layout.maxWidth,
+                        width: "100%",
+                        alignSelf: "center",
                     },
                 ]}
                 showsVerticalScrollIndicator={false}
             >
-                <View style={[styles.topBar, isCompact && styles.topBarCompact]}>
-                    <View style={{ flex: 1, gap: 4 }}>
-                        <Text style={styles.eyebrow}>Juakali · Invest in public</Text>
-                        <Text style={[styles.title, isCompact && styles.titleCompact]}>Your commitments</Text>
-                        <Text style={styles.subtitle}>
-                            Soft pledges, hard KPIs, agent digests. Artifacts first — chat stays short.
-                        </Text>
-                    </View>
-                    <View style={styles.topActions}>
-                        <Pressable
-                            onPress={() => setShowPledge((v) => !v)}
-                            style={styles.ghostButton}
-                            accessibilityRole="button"
-                        >
-                            <Text style={styles.ghostButtonText}>{showPledge ? "Hide" : "Pledge"}</Text>
-                        </Pressable>
+                <Animated.View entering={FadeIn.duration(320)} style={styles.hero}>
+                    <Text style={type.eyebrow}>Invest in public</Text>
+                    <Text accessibilityRole="header" style={[styles.brand, isCompact && styles.brandCompact]}>
+                        JuaKali
+                    </Text>
+                    <Text style={styles.lead}>
+                        Soft pledges. Hard KPIs. Agent digests on a public ledger — demo only, not securities.
+                    </Text>
+                    <View style={styles.heroActions}>
                         <Pressable
                             onPress={handleSeed}
                             disabled={isSeeding}
                             style={[styles.primaryButton, isSeeding && styles.disabled]}
-                            accessibilityRole="button"
                         >
                             <Text style={styles.primaryButtonText}>{isSeeding ? "Seeding…" : "Seed demo"}</Text>
                         </Pressable>
+                        <Pressable onPress={() => setShowPledge((v) => !v)} style={styles.ghostButton}>
+                            <Text style={styles.ghostButtonText}>{showPledge ? "Hide pledge" : "Soft pledge"}</Text>
+                        </Pressable>
                     </View>
-                </View>
+                    {statusMessage ? <Text style={styles.statusLine}>{statusMessage}</Text> : null}
+                </Animated.View>
 
-                {statusMessage ? <Text style={styles.statusLine}>{statusMessage}</Text> : null}
-
-                <View style={styles.ritualStrip}>
-                    <RitualStep n="01" label="Queue" detail="Compose a short note" />
-                    <Text style={styles.ritualArrow}>→</Text>
-                    <RitualStep n="02" label="Approve" detail="You stay in control" />
-                    <Text style={styles.ritualArrow}>→</Text>
-                    <RitualStep n="03" label="Artifacts" detail="KPI · digest · ledger" />
+                <View style={styles.ritualRail}>
+                    {[
+                        { n: "01", label: "Queue" },
+                        { n: "02", label: "Approve" },
+                        { n: "03", label: "Artifacts" },
+                    ].map((step, i) => (
+                        <View key={step.n} style={styles.ritualItem}>
+                            {i > 0 ? <Text style={styles.ritualDot}>·</Text> : null}
+                            <Text style={styles.ritualN}>{step.n}</Text>
+                            <Text style={styles.ritualLabel}>{step.label}</Text>
+                        </View>
+                    ))}
                 </View>
 
                 {showPledge ? (
                     <Animated.View entering={FadeInDown.duration(220)} style={styles.panel}>
                         <Text style={styles.panelTitle}>Soft pledge</Text>
-                        <Text style={styles.panelHint}>Demo microcommitment — not a live payment.</Text>
+                        <Text style={styles.panelHint}>Microcommitment for the demo — no live payment.</Text>
                         <View style={styles.chipRow}>
                             {data.availableVentures.map((venture) => (
                                 <Pressable
@@ -352,7 +347,7 @@ export function InvestorCockpit() {
                             keyboardType="number-pad"
                             style={styles.input}
                             placeholder="Amount KES"
-                            placeholderTextColor="rgba(36,49,36,0.35)"
+                            placeholderTextColor={color.mist}
                         />
                         <Pressable
                             onPress={handlePledge}
@@ -369,41 +364,30 @@ export function InvestorCockpit() {
                 {data.commitments.length === 0 ? (
                     <View style={styles.panel}>
                         <Text style={styles.panelTitle}>No commitments yet</Text>
-                        <Text style={styles.panelHint}>Seed the demo or add a soft pledge to open the cockpit.</Text>
+                        <Text style={styles.panelHint}>Seed the demo to open the investor walkthrough.</Text>
                     </View>
                 ) : (
-                    <View style={[styles.mainGrid, isWide && styles.mainGridWide]}>
-                        <View style={[styles.panel, { flex: 1 }]}>
-                            <Text style={styles.panelTitle}>Portfolio</Text>
+                    <>
+                        <View style={styles.portfolioStrip}>
                             {data.commitments.map((row) => {
                                 const active = selectedCommitment?.id === row.id;
-                                const progress =
-                                    row.venture.kpiTarget > 0
-                                        ? Math.min(1, row.venture.kpiTotal / row.venture.kpiTarget)
-                                        : 0;
                                 return (
                                     <Pressable
                                         key={row.id}
                                         onPress={() => setSelectedCommitmentId(row.id)}
-                                        style={[styles.commitmentRow, active && styles.commitmentRowActive]}
+                                        style={[styles.portfolioChip, active && styles.portfolioChipActive]}
                                     >
-                                        <View style={styles.commitmentTop}>
-                                            <Text style={styles.commitmentName}>{row.venture.name}</Text>
-                                            <Text style={styles.commitmentAmount}>{formatKes(row.amountKes)}</Text>
-                                        </View>
-                                        <Text style={styles.metaLine}>
-                                            Next digest · {formatDigestDue(row.nextDigestAt)}
+                                        <Text style={[styles.portfolioName, active && styles.portfolioNameActive]}>
+                                            {row.venture.name}
                                         </Text>
-                                        <View style={styles.progressTrack}>
-                                            <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
-                                        </View>
+                                        <Text style={styles.portfolioAmount}>{formatKes(row.amountKes)}</Text>
                                     </Pressable>
                                 );
                             })}
                         </View>
 
                         {selectedCommitment ? (
-                            <View style={[styles.panel, { flex: 1.4, gap: 14 }]}>
+                            <View style={styles.stack}>
                                 <Scorecard commitment={selectedCommitment} />
                                 <EmailRitual
                                     commitment={selectedCommitment}
@@ -422,19 +406,9 @@ export function InvestorCockpit() {
                                 />
                             </View>
                         ) : null}
-                    </View>
+                    </>
                 )}
             </ScrollView>
-        </View>
-    );
-}
-
-function RitualStep({ n, label, detail }: { n: string; label: string; detail: string }) {
-    return (
-        <View style={styles.ritualStep}>
-            <Text style={styles.ritualN}>{n}</Text>
-            <Text style={styles.ritualLabel}>{label}</Text>
-            <Text style={styles.ritualDetail}>{detail}</Text>
         </View>
     );
 }
@@ -451,18 +425,27 @@ function Scorecard({ commitment }: { commitment: Commitment }) {
               : latest > peer
                 ? "above peer median"
                 : "below peer median";
+    const progress =
+        venture.kpiTarget > 0 ? Math.min(1, venture.kpiTotal / venture.kpiTarget) : 0;
 
     return (
-        <View style={styles.scorecard}>
+        <Animated.View entering={FadeInUp.duration(280)} style={styles.scorecard}>
             <View style={styles.scoreHeader}>
-                <Text style={styles.panelTitle}>{venture.name}</Text>
-                <Text style={styles.badge}>{commitment.digestCadence ?? "Weekly digest"}</Text>
+                <View style={{ flex: 1, gap: 4 }}>
+                    <Text style={styles.panelTitle}>{venture.name}</Text>
+                    <Text style={styles.panelHint}>{venture.summary}</Text>
+                </View>
+                <Text style={styles.badge}>{commitment.digestCadence ?? "Weekly"}</Text>
             </View>
-            <Text style={styles.panelHint}>{venture.summary}</Text>
+
             <View style={styles.scoreMetrics}>
                 <MetricCell value={venture.kpiTotal} label={`${venture.kpiLabel} total`} />
                 <MetricCell value={venture.kpiTarget} label="Target" />
                 <MetricCell value={peer ?? "—"} label="Peer median" />
+            </View>
+
+            <View style={styles.progressTrack}>
+                <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
             </View>
             {vsPeer ? (
                 <Text style={styles.peerLine}>
@@ -471,7 +454,7 @@ function Scorecard({ commitment }: { commitment: Commitment }) {
             ) : null}
             <Sparkline values={venture.sparkline} />
             <Text style={styles.channelLine}>
-                Channels · Email {venture.agentEmail ?? "agent@…"} · SMS · Ledger
+                Next digest · {formatDigestDue(commitment.nextDigestAt)} · {venture.agentEmail ?? "agent@…"}
             </Text>
 
             {commitment.latestDigest ? (
@@ -489,20 +472,19 @@ function Scorecard({ commitment }: { commitment: Commitment }) {
                     ))}
                 </View>
             ) : null}
-        </View>
+        </Animated.View>
     );
 }
 
 function MetricCell({ value, label }: { value: number | string; label: string }) {
     return (
-        <Animated.View entering={FadeIn.duration(280)} style={styles.scoreMetric}>
+        <View style={styles.scoreMetric}>
             <Text style={styles.scoreValue}>{value}</Text>
             <Text style={styles.scoreLabel}>{label}</Text>
-        </Animated.View>
+        </View>
     );
 }
 
-/** Artifact card — primary surface for digest, not a chat wall. */
 function DigestArtifact({
     digest,
     cadence,
@@ -512,28 +494,20 @@ function DigestArtifact({
 }) {
     const nextMatch = digest.insights.match(/Next digest[^.]*\.?/i);
     const insightBody = nextMatch
-        ? digest.insights.replace(nextMatch[0], "").trim().replace(/\s+$/, "") || digest.insights
+        ? digest.insights.replace(nextMatch[0], "").trim() || digest.insights
         : digest.insights;
     const nextAction = nextMatch?.[0]?.trim() || (cadence ? `Next digest · ${cadence}` : null);
 
     return (
-        <Animated.View entering={FadeInUp.duration(260)} style={styles.artifactCard}>
+        <View style={styles.artifactCard}>
             <View style={styles.artifactHeader}>
-                <Text style={styles.digestLabel}>Digest artifact</Text>
+                <Text style={styles.digestLabel}>Insight</Text>
                 <Text style={styles.artifactStamp}>
-                    {new Date(digest.createdAt).toLocaleDateString(undefined, {
-                        month: "short",
-                        day: "numeric",
-                    })}
+                    {new Date(digest.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                 </Text>
             </View>
             <Text style={styles.artifactSummary}>{digest.summary}</Text>
-            {insightBody ? (
-                <View style={styles.artifactSection}>
-                    <Text style={styles.artifactSectionLabel}>Insight</Text>
-                    <Text style={styles.artifactBody}>{insightBody}</Text>
-                </View>
-            ) : null}
+            {insightBody ? <Text style={styles.artifactBody}>{insightBody}</Text> : null}
             {nextAction ? (
                 <View style={styles.artifactSection}>
                     <Text style={styles.artifactSectionLabel}>Next</Text>
@@ -542,9 +516,9 @@ function DigestArtifact({
             ) : null}
             <View style={styles.evidenceRow}>
                 <Text style={styles.sourceTag}>evidence</Text>
-                <Text style={styles.evidenceText}>Logged to public ledger · email ritual</Text>
+                <Text style={styles.evidenceText}>Public ledger · email ritual</Text>
             </View>
-        </Animated.View>
+        </View>
     );
 }
 
@@ -586,12 +560,9 @@ function EmailRitual({
                 <Text style={styles.panelTitle}>Email ritual</Text>
                 <AgentStatusChip phase={agentPhase} />
             </View>
-            <Text style={styles.panelHint}>
-                Queue → approve → tools. Composer stays short; digests live as cards above.
-            </Text>
+            <Text style={styles.panelHint}>Composer stays short. Digests live as insight cards above.</Text>
 
             <WaitingShimmer active={waiting} />
-
             <View style={styles.statusChipRow}>
                 <PhaseChip label="Queued" active={agentPhase === "queued"} />
                 <PhaseChip label="Acting" active={agentPhase === "acting"} />
@@ -600,35 +571,32 @@ function EmailRitual({
             </View>
 
             {toolResults.length > 0 ? (
-                <View style={styles.toolResults}>
-                    <Text style={styles.digestLabel}>Agent tools</Text>
+                <View style={styles.toolChipRow}>
                     {toolResults.map((result, index) => (
-                        <ToolResultCard key={`${result.tool}-${index}`} result={result} index={index} />
+                        <ToolChip key={`${result.tool}-${index}`} result={result} index={index} />
                     ))}
                 </View>
             ) : null}
 
             {pendingBody ? (
                 <Animated.View entering={FadeInDown.duration(200)} style={styles.approvalCard}>
-                    <Text style={styles.digestLabel}>Awaiting your approval</Text>
+                    <Text style={styles.digestLabel}>Before the agent acts</Text>
                     <Text style={styles.approvalHint}>
-                        Agent will log KPI (if present), write a digest artifact, update the ledger, then reply.
+                        KPI (if present) → digest artifact → public ledger → reply.
                     </Text>
                     <Text style={styles.emailBody}>{pendingBody}</Text>
-                    <View style={styles.approvalActions}>
-                        <Pressable onPress={onDiscard} style={styles.ghostButton} accessibilityRole="button">
-                            <Text style={styles.ghostButtonText}>Discard</Text>
-                        </Pressable>
+                    <View style={styles.approvalChoices}>
                         <Pressable
                             onPress={onApprove}
                             disabled={sending}
-                            style={[styles.primaryButton, sending && styles.disabled]}
-                            accessibilityRole="button"
-                            accessibilityLabel="Approve send and run agent tools"
+                            style={[styles.choicePrimary, sending && styles.disabled]}
                         >
-                            <Text style={styles.primaryButtonText}>
-                                {sending ? "Acting…" : "Approve send"}
+                            <Text style={styles.choicePrimaryText}>
+                                {sending ? "Acting…" : "Approve · run tools"}
                             </Text>
+                        </Pressable>
+                        <Pressable onPress={onDiscard} style={styles.choiceSecondary}>
+                            <Text style={styles.choiceSecondaryText}>Discard</Text>
                         </Pressable>
                     </View>
                 </Animated.View>
@@ -640,10 +608,10 @@ function EmailRitual({
                         multiline
                         style={[styles.input, styles.emailInput]}
                         placeholder="Short note to the agent…"
-                        placeholderTextColor="rgba(36,49,36,0.35)"
+                        placeholderTextColor={color.mist}
                         maxLength={480}
                     />
-                    <Pressable onPress={onQueue} style={styles.primaryButton} accessibilityRole="button">
+                    <Pressable onPress={onQueue} style={styles.primaryButton}>
                         <Text style={styles.primaryButtonText}>Queue for agent</Text>
                     </Pressable>
                 </>
@@ -651,9 +619,11 @@ function EmailRitual({
 
             {emails.length > 0 ? (
                 <View style={styles.thread}>
-                    <Pressable onPress={onToggleThread} style={styles.threadToggle}>
+                    <Pressable onPress={onToggleThread}>
                         <Text style={styles.threadToggleText}>
-                            {showThread ? "Hide thread" : `Thread · ${emails.length} message${emails.length === 1 ? "" : "s"}`}
+                            {showThread
+                                ? "Hide thread"
+                                : `Thread · ${emails.length} message${emails.length === 1 ? "" : "s"}`}
                         </Text>
                     </Pressable>
                     {visibleEmails.map((email) => (
@@ -681,22 +651,26 @@ function EmailRitual({
     );
 }
 
-function ToolResultCard({ result, index }: { result: ToolResult; index: number }) {
+function ToolChip({ result, index }: { result: ToolResult; index: number }) {
     const running = result.status === "running";
     return (
         <Animated.View
-            entering={FadeInUp.delay(index * 40).duration(220)}
-            style={[styles.toolCard, running && styles.toolCardRunning]}
+            entering={FadeInUp.delay(index * 35).duration(200)}
+            style={[styles.toolChip, running && styles.toolChipRunning]}
         >
-            <View style={styles.toolTop}>
-                {running ? (
-                    <ActivityIndicator size="small" color={palette.terracotta} />
-                ) : (
-                    <Text style={styles.toolCheck}>✓</Text>
-                )}
-                <Text style={styles.toolName}>{result.tool}</Text>
+            {running ? (
+                <ActivityIndicator size="small" color={color.brass} />
+            ) : (
+                <Text style={styles.toolCheck}>✓</Text>
+            )}
+            <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.toolName} numberOfLines={1}>
+                    {result.tool}
+                </Text>
+                <Text style={styles.toolDetail} numberOfLines={2}>
+                    {result.detail}
+                </Text>
             </View>
-            <Text style={styles.toolDetail}>{result.detail}</Text>
         </Animated.View>
     );
 }
@@ -722,252 +696,325 @@ function PhaseChip({ label, active }: { label: string; active: boolean }) {
 }
 
 const styles = StyleSheet.create({
-    screen: { flex: 1, backgroundColor: palette.cream },
+    screen: { flex: 1, backgroundColor: color.stone },
     loadingScreen: {
         flex: 1,
         alignItems: "center",
         justifyContent: "center",
         gap: 12,
-        backgroundColor: palette.cream,
+        backgroundColor: color.stone,
     },
-    loadingText: { color: palette.ink, opacity: 0.7 },
-    content: { gap: 14 },
-    topBar: { flexDirection: "row", gap: 16, alignItems: "flex-start", flexWrap: "wrap" },
-    topBarCompact: { gap: 10 },
-    eyebrow: {
-        color: palette.terracotta,
-        fontSize: 11,
+    loadingText: { ...type.meta, color: color.mist },
+    content: { gap: 20, paddingTop: 12 },
+    hero: { gap: 10, alignItems: "center", paddingTop: 8 },
+    brand: { ...type.brand, textAlign: "center" },
+    brandCompact: { fontSize: 34 },
+    lead: {
+        ...type.body,
+        textAlign: "center",
+        color: color.mist,
+        maxWidth: 480,
+    },
+    heroActions: { flexDirection: "row", gap: 10, flexWrap: "wrap", justifyContent: "center", marginTop: 6 },
+    primaryButton: {
+        backgroundColor: color.charcoal,
+        paddingHorizontal: 18,
+        paddingVertical: 12,
+        borderRadius: 4,
+        minHeight: 44,
+        justifyContent: "center",
+    },
+    primaryButtonText: {
+        fontFamily: font.bodyBold,
+        color: color.paper,
         fontWeight: "700",
-        letterSpacing: 1.2,
-        textTransform: "uppercase",
+        fontSize: 13,
+        letterSpacing: 0.2,
     },
-    title: { color: palette.olive, fontSize: 28, fontWeight: "800", letterSpacing: -0.8 },
-    titleCompact: { fontSize: 22 },
-    subtitle: { color: "rgba(36,49,36,0.72)", fontSize: 13, lineHeight: 19, maxWidth: 520 },
-    topActions: { flexDirection: "row", gap: 8, alignItems: "center" },
     ghostButton: {
         borderWidth: 1,
-        borderColor: "rgba(59,77,59,0.25)",
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        borderRadius: 14,
+        borderColor: color.lineStrong,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderRadius: 4,
         minHeight: 44,
         justifyContent: "center",
+        backgroundColor: color.paper,
     },
-    ghostButtonText: { color: palette.olive, fontWeight: "700", fontSize: 13 },
-    primaryButton: {
-        alignSelf: "flex-start",
-        backgroundColor: palette.terracotta,
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        borderRadius: 14,
-        minHeight: 44,
-        justifyContent: "center",
+    ghostButtonText: {
+        fontFamily: font.bodyBold,
+        color: color.charcoal,
+        fontWeight: "700",
+        fontSize: 13,
     },
-    primaryButtonText: { color: palette.cream, fontWeight: "700", fontSize: 13 },
-    disabled: { opacity: 0.55 },
-    statusLine: { color: palette.moss, fontSize: 13 },
-    ritualStrip: {
+    disabled: { opacity: 0.5 },
+    statusLine: { ...type.meta, color: color.brass, textAlign: "center", marginTop: 4 },
+    ritualRail: {
         flexDirection: "row",
+        justifyContent: "center",
         alignItems: "center",
         flexWrap: "wrap",
-        gap: 8,
-        padding: 12,
-        borderRadius: 16,
-        backgroundColor: "rgba(59,77,59,0.06)",
-        borderWidth: 1,
-        borderColor: "rgba(59,77,59,0.1)",
+        gap: 6,
+        paddingVertical: 4,
     },
-    ritualStep: { minWidth: 96, gap: 2, flexGrow: 1 },
-    ritualN: { color: palette.terracotta, fontSize: 11, fontWeight: "800" },
-    ritualLabel: { color: palette.olive, fontSize: 13, fontWeight: "800" },
-    ritualDetail: { color: "rgba(36,49,36,0.65)", fontSize: 11 },
-    ritualArrow: { color: "rgba(36,49,36,0.35)", fontWeight: "700", paddingHorizontal: 4 },
-    mainGrid: { gap: 12 },
-    mainGridWide: { flexDirection: "row", alignItems: "flex-start" },
+    ritualItem: { flexDirection: "row", alignItems: "center", gap: 6 },
+    ritualDot: { color: color.mist, marginHorizontal: 4 },
+    ritualN: { fontFamily: font.bodyBold, color: color.brass, fontSize: 11, fontWeight: "700" },
+    ritualLabel: { fontFamily: font.bodyMedium, color: color.charcoal, fontSize: 13, fontWeight: "500" },
     panel: {
-        gap: 10,
-        padding: 14,
-        backgroundColor: "rgba(255,253,247,0.9)",
+        gap: 12,
+        padding: 18,
+        backgroundColor: color.paper,
         borderWidth: 1,
-        borderColor: "rgba(59,77,59,0.12)",
-        borderRadius: 18,
+        borderColor: color.line,
+        borderRadius: 6,
     },
-    panelTitle: { color: palette.olive, fontSize: 17, fontWeight: "800" },
-    panelHint: { color: "rgba(36,49,36,0.65)", fontSize: 12, lineHeight: 17 },
+    panelTitle: { ...type.title, fontSize: 22 },
+    panelHint: { ...type.meta, lineHeight: 18 },
     chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
     chip: {
-        paddingHorizontal: 10,
+        paddingHorizontal: 12,
         paddingVertical: 8,
-        borderRadius: 12,
-        backgroundColor: "rgba(156,175,136,0.18)",
+        borderRadius: 4,
+        backgroundColor: "rgba(20,24,22,0.05)",
         minHeight: 40,
         justifyContent: "center",
     },
-    chipActive: { backgroundColor: "rgba(224,122,95,0.2)" },
-    chipText: { color: palette.olive, fontWeight: "700", fontSize: 12 },
-    chipTextActive: { color: palette.ink },
+    chipActive: { backgroundColor: color.brassSoft, borderWidth: 1, borderColor: color.brass },
+    chipText: { fontFamily: font.bodyMedium, color: color.ink, fontWeight: "500", fontSize: 13 },
+    chipTextActive: { color: color.charcoal, fontWeight: "700" },
     input: {
         borderWidth: 1,
-        borderColor: "rgba(59,77,59,0.2)",
-        borderRadius: 12,
-        paddingHorizontal: 12,
+        borderColor: color.lineStrong,
+        borderRadius: 4,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        color: color.ink,
+        backgroundColor: color.stone,
+        fontFamily: font.body,
+        fontSize: 15,
+    },
+    portfolioStrip: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
+    portfolioChip: {
+        paddingHorizontal: 14,
         paddingVertical: 10,
-        color: palette.ink,
-        backgroundColor: "rgba(245,241,232,0.95)",
-        fontSize: 14,
-        fontWeight: "600",
+        borderRadius: 4,
+        backgroundColor: color.paper,
+        borderWidth: 1,
+        borderColor: color.line,
+        gap: 2,
+        minWidth: 140,
     },
-    commitmentRow: {
-        gap: 6,
-        paddingVertical: 10,
-        borderTopWidth: 1,
-        borderTopColor: "rgba(59,77,59,0.08)",
+    portfolioChipActive: { borderColor: color.brass, backgroundColor: color.brassSoft },
+    portfolioName: { fontFamily: font.bodyBold, color: color.ink, fontSize: 13, fontWeight: "700" },
+    portfolioNameActive: { color: color.charcoal },
+    portfolioAmount: { fontFamily: font.body, color: color.brass, fontSize: 12, fontWeight: "600" },
+    stack: { gap: 14 },
+    scorecard: {
+        gap: 12,
+        padding: 20,
+        backgroundColor: color.paper,
+        borderWidth: 1,
+        borderColor: color.line,
+        borderRadius: 6,
     },
-    commitmentRowActive: {
-        backgroundColor: "rgba(224,122,95,0.08)",
-        marginHorizontal: -6,
-        paddingHorizontal: 6,
-        borderRadius: 12,
-    },
-    commitmentTop: { flexDirection: "row", justifyContent: "space-between", gap: 8 },
-    commitmentName: { flex: 1, color: palette.olive, fontWeight: "800", fontSize: 14 },
-    commitmentAmount: { color: palette.terracotta, fontWeight: "800", fontSize: 13 },
-    metaLine: { color: "rgba(36,49,36,0.65)", fontSize: 11 },
-    progressTrack: {
-        height: 6,
-        borderRadius: 99,
-        backgroundColor: "rgba(59,77,59,0.1)",
-        overflow: "hidden",
-    },
-    progressFill: { height: "100%", backgroundColor: palette.olive },
-    scorecard: { gap: 8 },
-    scoreHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
+    scoreHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 12 },
     badge: {
-        color: palette.terracotta,
+        fontFamily: font.bodyBold,
+        color: color.brass,
         fontSize: 10,
-        fontWeight: "800",
-        letterSpacing: 0.4,
+        fontWeight: "700",
+        letterSpacing: 0.8,
         textTransform: "uppercase",
     },
     scoreMetrics: { flexDirection: "row", gap: 10 },
     scoreMetric: {
         flex: 1,
-        padding: 10,
-        borderRadius: 12,
-        backgroundColor: "rgba(59,77,59,0.05)",
-        gap: 2,
-    },
-    scoreValue: { color: palette.olive, fontSize: 20, fontWeight: "800" },
-    scoreLabel: { color: "rgba(36,49,36,0.6)", fontSize: 10, fontWeight: "600", textTransform: "uppercase" },
-    peerLine: { color: palette.moss, fontSize: 12, fontWeight: "600" },
-    sparkRow: { flexDirection: "row", alignItems: "flex-end", gap: 6, height: 36 },
-    sparkBarTrack: {
-        flex: 1,
-        height: 36,
-        justifyContent: "flex-end",
-        backgroundColor: "rgba(59,77,59,0.06)",
+        padding: 12,
         borderRadius: 4,
+        backgroundColor: color.stone,
+        gap: 4,
+    },
+    scoreValue: {
+        fontFamily: font.display,
+        color: color.charcoal,
+        fontSize: 24,
+        fontWeight: "700",
+        letterSpacing: -0.5,
+    },
+    scoreLabel: {
+        fontFamily: font.bodyBold,
+        color: color.mist,
+        fontSize: 10,
+        fontWeight: "700",
+        textTransform: "uppercase",
+        letterSpacing: 0.6,
+    },
+    progressTrack: {
+        height: 4,
+        borderRadius: 2,
+        backgroundColor: "rgba(20,24,22,0.08)",
         overflow: "hidden",
     },
-    sparkBar: { width: "100%", backgroundColor: palette.olive, borderRadius: 4 },
-    sparkEmpty: { color: "rgba(36,49,36,0.45)", fontSize: 11 },
-    channelLine: { color: "rgba(36,49,36,0.55)", fontSize: 11 },
+    progressFill: { height: "100%", backgroundColor: color.brass },
+    peerLine: { fontFamily: font.bodyMedium, color: color.mist, fontSize: 13, fontWeight: "500" },
+    sparkRow: { flexDirection: "row", alignItems: "flex-end", gap: 5, height: 40 },
+    sparkBarTrack: {
+        flex: 1,
+        height: 40,
+        justifyContent: "flex-end",
+        backgroundColor: "rgba(20,24,22,0.05)",
+        borderRadius: 2,
+        overflow: "hidden",
+    },
+    sparkBar: { width: "100%", backgroundColor: color.charcoal, borderRadius: 2 },
+    sparkEmpty: { ...type.meta },
+    channelLine: { ...type.meta },
     artifactCard: {
         gap: 8,
-        padding: 12,
-        borderRadius: 14,
-        backgroundColor: "rgba(156,175,136,0.16)",
+        padding: 14,
+        borderRadius: 4,
+        backgroundColor: color.brassSoft,
         borderWidth: 1,
-        borderColor: "rgba(59,77,59,0.14)",
+        borderColor: "rgba(166,124,45,0.28)",
     },
     artifactHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-    artifactStamp: { color: "rgba(36,49,36,0.5)", fontSize: 11, fontWeight: "600" },
-    artifactSummary: { color: palette.ink, fontSize: 15, fontWeight: "700", lineHeight: 21 },
+    artifactStamp: { ...type.meta },
+    artifactSummary: {
+        fontFamily: font.displayMedium,
+        color: color.charcoal,
+        fontSize: 17,
+        fontWeight: "600",
+        lineHeight: 24,
+    },
     artifactSection: { gap: 2 },
     artifactSectionLabel: {
-        color: palette.terracotta,
+        fontFamily: font.bodyBold,
+        color: color.brass,
         fontSize: 10,
-        fontWeight: "800",
-        letterSpacing: 0.5,
-        textTransform: "uppercase",
-    },
-    artifactBody: { color: "rgba(36,49,36,0.78)", fontSize: 13, lineHeight: 18 },
-    evidenceRow: { flexDirection: "row", gap: 8, alignItems: "flex-start" },
-    evidenceText: { flex: 1, color: "rgba(36,49,36,0.7)", fontSize: 12, lineHeight: 16 },
-    digestLabel: {
-        color: palette.terracotta,
-        fontSize: 10,
-        fontWeight: "800",
+        fontWeight: "700",
         letterSpacing: 0.6,
         textTransform: "uppercase",
     },
+    artifactBody: { fontFamily: font.body, color: color.ink, fontSize: 13, lineHeight: 19 },
+    evidenceRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+    evidenceText: { flex: 1, ...type.meta },
+    digestLabel: {
+        fontFamily: font.bodyBold,
+        color: color.brass,
+        fontSize: 10,
+        fontWeight: "700",
+        letterSpacing: 0.8,
+        textTransform: "uppercase",
+    },
     checkIns: { gap: 4 },
-    checkInLine: { color: "rgba(36,49,36,0.7)", fontSize: 11, lineHeight: 16 },
+    checkInLine: { fontFamily: font.body, color: color.mist, fontSize: 12, lineHeight: 17 },
     sourceTag: {
-        color: palette.terracotta,
-        fontWeight: "800",
+        fontFamily: font.bodyBold,
+        color: color.brass,
+        fontWeight: "700",
         textTransform: "uppercase",
         fontSize: 10,
     },
-    emailPanel: { gap: 8, borderTopWidth: 1, borderTopColor: "rgba(59,77,59,0.1)", paddingTop: 12 },
+    emailPanel: {
+        gap: 10,
+        padding: 20,
+        backgroundColor: color.paper,
+        borderWidth: 1,
+        borderColor: color.line,
+        borderRadius: 6,
+    },
     shimmerTrack: {
-        height: 3,
+        height: 2,
         borderRadius: 99,
         overflow: "hidden",
-        backgroundColor: "rgba(224,122,95,0.12)",
+        backgroundColor: "rgba(166,124,45,0.12)",
     },
     shimmerBar: {
-        width: "40%",
+        width: "36%",
         height: "100%",
         borderRadius: 99,
-        backgroundColor: palette.terracotta,
+        backgroundColor: color.brass,
     },
     statusChipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, alignItems: "center" },
     phaseChip: {
         paddingHorizontal: 10,
-        paddingVertical: 6,
-        borderRadius: 999,
-        backgroundColor: "rgba(59,77,59,0.08)",
+        paddingVertical: 5,
+        borderRadius: 3,
+        backgroundColor: "rgba(20,24,22,0.05)",
     },
-    phaseChipActive: { backgroundColor: "rgba(224,122,95,0.2)" },
-    phaseChipText: { color: "rgba(36,49,36,0.55)", fontSize: 11, fontWeight: "700" },
-    phaseChipTextActive: { color: palette.ink },
-    elapsed: { color: palette.moss, fontSize: 11, fontWeight: "700", marginLeft: 4 },
-    thread: { gap: 8 },
-    threadToggle: { paddingVertical: 4 },
-    threadToggleText: { color: palette.moss, fontSize: 12, fontWeight: "700" },
-    emailBubble: { gap: 3, padding: 10, borderRadius: 12 },
-    emailInbound: { backgroundColor: "rgba(59,77,59,0.06)" },
-    emailOutbound: { backgroundColor: "rgba(224,122,95,0.12)" },
-    emailMeta: { color: "rgba(36,49,36,0.55)", fontSize: 10, fontWeight: "700" },
-    emailSubject: { color: palette.olive, fontSize: 12, fontWeight: "700" },
-    emailBody: { color: palette.ink, fontSize: 12, lineHeight: 17 },
-    emailInput: { minHeight: 64, maxHeight: 120, textAlignVertical: "top", fontWeight: "400" },
-    approvalCard: {
-        gap: 8,
-        padding: 12,
-        borderRadius: 14,
-        backgroundColor: "rgba(224,122,95,0.12)",
-        borderWidth: 1,
-        borderColor: "rgba(224,122,95,0.35)",
-    },
-    approvalHint: { color: "rgba(36,49,36,0.65)", fontSize: 11, lineHeight: 16 },
-    approvalActions: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
-    toolResults: { gap: 6, marginTop: 4 },
-    toolCard: {
+    phaseChipActive: { backgroundColor: color.brassSoft },
+    phaseChipText: { fontFamily: font.bodyBold, color: color.mist, fontSize: 11, fontWeight: "700" },
+    phaseChipTextActive: { color: color.charcoal },
+    elapsed: { fontFamily: font.bodyBold, color: color.brass, fontSize: 11, fontWeight: "700", marginLeft: 4 },
+    toolChipRow: { gap: 6 },
+    toolChip: {
+        flexDirection: "row",
+        alignItems: "flex-start",
+        gap: 10,
         padding: 10,
-        borderRadius: 12,
-        backgroundColor: "rgba(59,77,59,0.06)",
-        gap: 4,
+        borderRadius: 4,
+        backgroundColor: color.stone,
     },
-    toolCardRunning: {
-        backgroundColor: "rgba(224,122,95,0.08)",
+    toolChipRunning: {
+        backgroundColor: color.brassSoft,
         borderWidth: 1,
-        borderColor: "rgba(224,122,95,0.22)",
+        borderColor: "rgba(166,124,45,0.25)",
     },
-    toolTop: { flexDirection: "row", alignItems: "center", gap: 8 },
-    toolCheck: { color: palette.olive, fontSize: 14, fontWeight: "800", width: 18 },
-    toolName: { color: palette.olive, fontSize: 11, fontWeight: "800", letterSpacing: 0.3 },
-    toolDetail: { color: "rgba(36,49,36,0.72)", fontSize: 12, lineHeight: 16 },
+    toolCheck: { fontFamily: font.bodyBold, color: color.success, fontSize: 14, fontWeight: "700", width: 16 },
+    toolName: {
+        fontFamily: font.bodyBold,
+        color: color.charcoal,
+        fontSize: 11,
+        fontWeight: "700",
+        letterSpacing: 0.3,
+        textTransform: "uppercase",
+    },
+    toolDetail: { fontFamily: font.body, color: color.mist, fontSize: 12, lineHeight: 16 },
+    thread: { gap: 8 },
+    threadToggleText: { fontFamily: font.bodyBold, color: color.brass, fontSize: 12, fontWeight: "700" },
+    emailBubble: { gap: 3, padding: 12, borderRadius: 4 },
+    emailInbound: { backgroundColor: color.stone },
+    emailOutbound: { backgroundColor: color.brassSoft },
+    emailMeta: { ...type.meta, fontSize: 10 },
+    emailSubject: { fontFamily: font.bodyBold, color: color.charcoal, fontSize: 12, fontWeight: "700" },
+    emailBody: { fontFamily: font.body, color: color.ink, fontSize: 13, lineHeight: 18 },
+    emailInput: { minHeight: 72, maxHeight: 120, textAlignVertical: "top" },
+    approvalCard: {
+        gap: 10,
+        padding: 14,
+        borderRadius: 4,
+        backgroundColor: color.brassSoft,
+        borderWidth: 1,
+        borderColor: "rgba(166,124,45,0.35)",
+    },
+    approvalHint: { ...type.meta, lineHeight: 17 },
+    approvalChoices: { gap: 8 },
+    choicePrimary: {
+        backgroundColor: color.charcoal,
+        paddingVertical: 14,
+        paddingHorizontal: 16,
+        borderRadius: 4,
+        alignItems: "center",
+    },
+    choicePrimaryText: {
+        fontFamily: font.bodyBold,
+        color: color.paper,
+        fontWeight: "700",
+        fontSize: 14,
+    },
+    choiceSecondary: {
+        paddingVertical: 12,
+        alignItems: "center",
+        borderWidth: 1,
+        borderColor: color.lineStrong,
+        borderRadius: 4,
+        backgroundColor: color.paper,
+    },
+    choiceSecondaryText: {
+        fontFamily: font.bodyBold,
+        color: color.charcoal,
+        fontWeight: "700",
+        fontSize: 13,
+    },
 });

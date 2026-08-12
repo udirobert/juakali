@@ -43,6 +43,8 @@ Ship a demoable full thin loop for investor leads: soft revenue-share microcommi
 - **Ritual:** Queue email → approve → agent tools (KPI, digest, ledger, reply).
 - **Trust:** KPI vs target, peer median, evidence tags, next digest cadence.
 - **Email path:** In-app ritual today; AgentMail webhook at `/webhooks/agentmail` (same mutations). Gmail OAuth later.
+- **Visual:** Centred “Nairobi ledger” shell (stone / charcoal / brass + Fraunces / IBM Plex). Quiet motion only.
+- **Useful from beautiful-ui primitives:** approval choices, tool chips, insight cards, elapsed acting — not marketing fireworks.
 - **Avoid:** Vanity AI scores, LangGraph until loops need durable branching.
 
 ## Notes
