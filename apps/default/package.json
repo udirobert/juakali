@@ -10,6 +10,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "dev": "expo start",
+    "export:web": "expo export -p web",
     "lint": "expo lint"
   },
   "dependencies": {

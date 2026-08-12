@@ -1,14 +1,14 @@
 {
     "expo": {
-        "name": "Bloom app (rename me)",
-        "slug": "bloom-app-rename-me",
+        "name": "JuaKali",
+        "slug": "juakali",
         "version": "1.0.0",
         "runtimeVersion": {
             "policy": "sdkVersion"
         },
         "orientation": "portrait",
         "icon": "../../assets/images/icon.png",
-        "scheme": "myapp",
+        "scheme": "juakali",
         "userInterfaceStyle": "automatic",
         "newArchEnabled": true,
         "ios": {

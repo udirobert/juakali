@@ -10,6 +10,8 @@
         "dev:backend": "turbo run dev --filter=@bloom/backend",
         "dev:mobile": "turbo run dev --filter=@bloom/mobile",
         "build": "turbo run build",
+        "export:web": "bun run --filter @bloom/mobile export:web",
+        "deploy:backend": "bun run --filter @bloom/backend deploy",
         "lint": "turbo run lint",
         "typecheck": "turbo run typecheck",
         "test": "turbo run test",

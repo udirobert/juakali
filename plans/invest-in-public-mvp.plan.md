@@ -50,3 +50,5 @@ Ship a demoable full thin loop for investor leads: soft revenue-share microcommi
 - AgentMail svix signature verification is TODO before production.
 - Tasteful trust only: cadence, evidence source tags, peer median — no vanity AI confidence scores.
 - README stays short and links here for UX / demo / decisions.
+- Live review: Netlify (Expo web) + Convex prod `zealous-scorpion-285` (Papa Jams / `juakali`). Agent Cloud Run optional for Lab.
+- After first Netlify URL is known, set Convex `SITE_URL` to match (`convex env set SITE_URL … --prod`).
