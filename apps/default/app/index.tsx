@@ -1,10 +1,14 @@
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AdminDashboard } from "@/components/jua-kali/admin-dashboard";
 import { AgentChat } from "@/components/jua-kali/agent-chat";
 import { InvestorCockpit } from "@/components/jua-kali/investor-cockpit";
+import {
+    InvestorOnboarding,
+    useInvestorOnboardingGate,
+} from "@/components/jua-kali/investor-onboarding";
 import { Onboarding } from "@/components/jua-kali/onboarding";
 import { PublicLedger } from "@/components/jua-kali/public-ledger";
 import { color, font } from "@/components/jua-kali/theme";
@@ -28,6 +32,19 @@ export default function Index() {
     const [screen, setScreen] = useState<Screen>("home");
     const [labScreen, setLabScreen] = useState<LabScreen>("agent");
     const insets = useSafeAreaInsets();
+    const onboarding = useInvestorOnboardingGate();
+
+    if (!onboarding.ready) {
+        return (
+            <View style={styles.boot}>
+                <ActivityIndicator color={color.brass} />
+            </View>
+        );
+    }
+
+    if (onboarding.show) {
+        return <InvestorOnboarding onDone={() => void onboarding.complete()} />;
+    }
 
     return (
         <View style={styles.container}>
@@ -97,6 +114,7 @@ function TabButton({
 }
 
 const styles = StyleSheet.create({
+    boot: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: color.stone },
     container: { flex: 1, backgroundColor: color.stone },
     content: { flex: 1 },
     tabBar: {

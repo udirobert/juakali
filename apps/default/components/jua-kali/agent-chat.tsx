@@ -10,17 +10,10 @@ import {
     TextInput,
     View,
 } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeIn } from "react-native-reanimated";
 
-const palette = {
-    sage: "#9CAF88",
-    terracotta: "#E07A5F",
-    cream: "#F5F1E8",
-    olive: "#3B4D3B",
-    ink: "#243124",
-    moss: "#71845F",
-};
+import { color, font, layout } from "@/components/jua-kali/theme";
 
 const AGENT_URL = process.env.EXPO_PUBLIC_AGENT_URL ?? "http://localhost:8080";
 
@@ -31,106 +24,90 @@ interface ChatMessage {
     timestamp: number;
 }
 
-const quickPrompts = [
-    "Seed the invest demo data",
-    "List active ventures and their KPI progress",
-    "Log 4 meetings booked this week for Amina Sales Pod — two SME owners and one clinic admin",
-    "Investor email: Please push Amina on follow-ups this week and summarize pipeline for me by Friday.",
-    "Draft an investor digest for Amina with recommendations",
-    "Show the public ledger totals",
+/** Short labels only — full prompt sent on press. */
+const chips: Array<{ label: string; prompt: string }> = [
+    { label: "Seed", prompt: "Seed the invest demo data" },
+    { label: "KPIs", prompt: "List active ventures and their KPI progress" },
+    { label: "Digest", prompt: "Draft an investor digest for Amina with recommendations" },
 ];
 
 export function AgentChat() {
+    const insets = useSafeAreaInsets();
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [inputText, setInputText] = useState("");
     const [isSending, setIsSending] = useState(false);
     const listRef = useRef<FlatList>(null);
 
-    const sendMessage = useCallback(async (text: string) => {
-        const trimmed = text.trim();
-        if (!trimmed || isSending) return;
+    const sendMessage = useCallback(
+        async (text: string) => {
+            const trimmed = text.trim();
+            if (!trimmed || isSending) return;
 
-        const userMessage: ChatMessage = {
-            id: `user-${Date.now()}`,
-            role: "user",
-            text: trimmed,
-            timestamp: Date.now(),
-        };
-
-        setMessages((prev) => [...prev, userMessage]);
-        setInputText("");
-        setIsSending(true);
-
-        try {
-            const response = await fetch(`${AGENT_URL}/webhooks/voice/agent`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ message: trimmed }),
-            });
-
-            const data = (await response.json()) as { reply?: string; error?: string };
-            const agentMessage: ChatMessage = {
-                id: `agent-${Date.now()}`,
-                role: "agent",
-                text: data.reply ?? data.error ?? "No response from agent.",
+            const userMessage: ChatMessage = {
+                id: `user-${Date.now()}`,
+                role: "user",
+                text: trimmed,
                 timestamp: Date.now(),
             };
 
-            setMessages((prev) => [...prev, agentMessage]);
-        } catch (error) {
-            const errorMessage: ChatMessage = {
-                id: `error-${Date.now()}`,
-                role: "agent",
-                text: `Connection error: ${error instanceof Error ? error.message : "Could not reach agent service."}`,
-                timestamp: Date.now(),
-            };
-            setMessages((prev) => [...prev, errorMessage]);
-        } finally {
-            setIsSending(false);
-        }
-    }, [isSending]);
+            setMessages((prev) => [...prev, userMessage]);
+            setInputText("");
+            setIsSending(true);
 
-    function renderMessage({ item }: { item: ChatMessage }) {
-        const isAgent = item.role === "agent";
-        return (
-            <Animated.View entering={FadeIn.duration(200)} style={[styles.messageRow, isAgent && styles.agentRow]}>
-                <View style={[styles.bubble, isAgent ? styles.agentBubble : styles.userBubble]}>
-                    <Text style={[styles.bubbleText, isAgent && styles.agentText]}>{item.text}</Text>
-                </View>
-            </Animated.View>
-        );
-    }
+            try {
+                const response = await fetch(`${AGENT_URL}/webhooks/voice/agent`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ message: trimmed }),
+                });
+
+                const data = (await response.json()) as { reply?: string; error?: string };
+                setMessages((prev) => [
+                    ...prev,
+                    {
+                        id: `agent-${Date.now()}`,
+                        role: "agent",
+                        text: data.reply ?? data.error ?? "No response.",
+                        timestamp: Date.now(),
+                    },
+                ]);
+            } catch (error) {
+                setMessages((prev) => [
+                    ...prev,
+                    {
+                        id: `error-${Date.now()}`,
+                        role: "agent",
+                        text: error instanceof Error ? error.message : "Agent unreachable.",
+                        timestamp: Date.now(),
+                    },
+                ]);
+            } finally {
+                setIsSending(false);
+            }
+        },
+        [isSending]
+    );
 
     return (
         <KeyboardAvoidingView
-            style={styles.screen}
+            style={[styles.screen, { paddingTop: insets.top }]}
             behavior={Platform.OS === "ios" ? "padding" : undefined}
             keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
         >
-            <LinearGradient
-                colors={[palette.cream, "#EFE2D1"]}
-                style={StyleSheet.absoluteFill}
-            />
-
             <View style={styles.header}>
-                <Text style={styles.headerTitle}>JuaKali Operating Partner</Text>
-                <Text style={styles.headerSubtitle}>Investor digests · KPI logging · soft pledges · Gemini</Text>
+                <Text style={styles.title}>Agent</Text>
             </View>
 
             {messages.length === 0 ? (
-                <View style={styles.emptyState}>
-                    <Text style={styles.emptyTitle}>Agent for invest-in-public</Text>
-                    <Text style={styles.emptyBody}>
-                        Seed demo data, log hard KPIs, paste an investor email, or draft a digest. Soft pledges only — not live payments.
-                    </Text>
-                    <View style={styles.quickPrompts}>
-                        {quickPrompts.map((prompt) => (
+                <View style={styles.empty}>
+                    <View style={styles.chipRow}>
+                        {chips.map((chip) => (
                             <Pressable
-                                key={prompt}
-                                onPress={() => sendMessage(prompt)}
-                                style={styles.quickPrompt}
+                                key={chip.label}
+                                onPress={() => void sendMessage(chip.prompt)}
+                                style={styles.chip}
                             >
-                                <Text style={styles.quickPromptText}>{prompt}</Text>
+                                <Text style={styles.chipText}>{chip.label}</Text>
                             </Pressable>
                         ))}
                     </View>
@@ -139,31 +116,45 @@ export function AgentChat() {
                 <FlatList
                     ref={listRef}
                     data={messages}
-                    renderItem={renderMessage}
                     keyExtractor={(item) => item.id}
-                    contentContainerStyle={styles.messageList}
+                    contentContainerStyle={styles.list}
                     onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
+                    renderItem={({ item }) => {
+                        const agent = item.role === "agent";
+                        return (
+                            <Animated.View
+                                entering={FadeIn.duration(160)}
+                                style={[styles.row, agent && styles.rowAgent]}
+                            >
+                                <View style={[styles.bubble, agent ? styles.bubbleAgent : styles.bubbleUser]}>
+                                    <Text style={[styles.bubbleText, agent && styles.bubbleTextAgent]}>
+                                        {item.text}
+                                    </Text>
+                                </View>
+                            </Animated.View>
+                        );
+                    }}
                 />
             )}
 
-            <View style={styles.inputRow}>
+            <View style={[styles.inputRow, { paddingBottom: Math.max(insets.bottom, 8) }]}>
                 <TextInput
                     value={inputText}
                     onChangeText={setInputText}
-                    placeholder="Ask the agent..."
-                    placeholderTextColor="rgba(36,49,36,0.4)"
+                    placeholder="Message…"
+                    placeholderTextColor={color.mist}
                     style={styles.input}
                     multiline
                     editable={!isSending}
-                    onSubmitEditing={() => sendMessage(inputText)}
+                    onSubmitEditing={() => void sendMessage(inputText)}
                 />
                 <Pressable
-                    onPress={() => sendMessage(inputText)}
+                    onPress={() => void sendMessage(inputText)}
                     disabled={isSending || !inputText.trim()}
-                    style={[styles.sendButton, (isSending || !inputText.trim()) && styles.sendDisabled]}
+                    style={[styles.send, (isSending || !inputText.trim()) && styles.sendOff]}
                 >
                     {isSending ? (
-                        <ActivityIndicator color="#FFFDF7" size="small" />
+                        <ActivityIndicator color={color.paper} size="small" />
                     ) : (
                         <Text style={styles.sendText}>Send</Text>
                     )}
@@ -174,79 +165,70 @@ export function AgentChat() {
 }
 
 const styles = StyleSheet.create({
-    screen: { flex: 1 },
-    header: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
-    headerTitle: { color: palette.olive, fontSize: 24, fontWeight: "800", letterSpacing: -1 },
-    headerSubtitle: { color: palette.moss, fontSize: 12, fontWeight: "700", marginTop: 2 },
-
-    emptyState: { flex: 1, justifyContent: "center", paddingHorizontal: 20, gap: 12 },
-    emptyTitle: { color: palette.olive, fontSize: 22, fontWeight: "800", letterSpacing: -0.5 },
-    emptyBody: { color: "rgba(36,49,36,0.7)", fontSize: 14, fontWeight: "300", lineHeight: 20 },
-    quickPrompts: { gap: 8, marginTop: 8 },
-    quickPrompt: {
-        padding: 14,
-        backgroundColor: "rgba(255,253,247,0.82)",
-        borderRadius: 18,
-        borderTopLeftRadius: 6,
+    screen: { flex: 1, backgroundColor: color.stone, maxWidth: layout.maxWidth, width: "100%", alignSelf: "center" },
+    header: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4 },
+    title: {
+        fontFamily: font.display,
+        fontSize: 28,
+        fontWeight: "700",
+        letterSpacing: -0.8,
+        color: color.charcoal,
+    },
+    empty: { flex: 1, justifyContent: "center", paddingHorizontal: 20 },
+    chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
+    chip: {
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        borderRadius: 4,
+        backgroundColor: color.paper,
         borderWidth: 1,
-        borderColor: "rgba(59,77,59,0.12)",
+        borderColor: color.line,
     },
-    quickPromptText: { color: palette.olive, fontSize: 13, fontWeight: "600", lineHeight: 18 },
-
-    messageList: { paddingHorizontal: 16, paddingVertical: 8, gap: 8 },
-    messageRow: { alignItems: "flex-end" },
-    agentRow: { alignItems: "flex-start" },
-    bubble: { maxWidth: "82%", paddingHorizontal: 16, paddingVertical: 12 },
-    userBubble: {
-        backgroundColor: palette.terracotta,
-        borderTopLeftRadius: 18,
-        borderTopRightRadius: 18,
-        borderBottomLeftRadius: 18,
-        borderBottomRightRadius: 4,
-    },
-    agentBubble: {
-        backgroundColor: "rgba(255,253,247,0.9)",
-        borderTopLeftRadius: 4,
-        borderTopRightRadius: 18,
-        borderBottomLeftRadius: 18,
-        borderBottomRightRadius: 18,
+    chipText: { fontFamily: font.bodyBold, fontSize: 13, fontWeight: "700", color: color.charcoal },
+    list: { paddingHorizontal: 16, paddingVertical: 8, gap: 8 },
+    row: { alignItems: "flex-end" },
+    rowAgent: { alignItems: "flex-start" },
+    bubble: { maxWidth: "82%", paddingHorizontal: 14, paddingVertical: 10, borderRadius: 6 },
+    bubbleUser: { backgroundColor: color.charcoal },
+    bubbleAgent: {
+        backgroundColor: color.paper,
         borderWidth: 1,
-        borderColor: "rgba(59,77,59,0.1)",
+        borderColor: color.line,
     },
-    bubbleText: { color: "#FFFDF7", fontSize: 14, fontWeight: "500", lineHeight: 20 },
-    agentText: { color: palette.ink },
-
+    bubbleText: { fontFamily: font.body, color: color.paper, fontSize: 14, lineHeight: 20 },
+    bubbleTextAgent: { color: color.ink },
     inputRow: {
         flexDirection: "row",
         alignItems: "flex-end",
         paddingHorizontal: 12,
-        paddingVertical: 8,
+        paddingTop: 8,
         gap: 8,
         borderTopWidth: 1,
-        borderTopColor: "rgba(59,77,59,0.1)",
-        backgroundColor: "rgba(245,241,232,0.95)",
+        borderTopColor: color.line,
+        backgroundColor: color.paper,
     },
     input: {
         flex: 1,
         minHeight: 42,
-        maxHeight: 120,
-        paddingHorizontal: 16,
+        maxHeight: 100,
+        paddingHorizontal: 14,
         paddingVertical: 10,
-        borderRadius: 21,
-        backgroundColor: "rgba(255,253,247,0.9)",
+        borderRadius: 4,
+        backgroundColor: color.stone,
         borderWidth: 1,
-        borderColor: "rgba(59,77,59,0.16)",
-        color: palette.ink,
+        borderColor: color.lineStrong,
+        color: color.ink,
+        fontFamily: font.body,
         fontSize: 14,
     },
-    sendButton: {
-        paddingHorizontal: 20,
+    send: {
+        paddingHorizontal: 16,
         paddingVertical: 11,
-        borderRadius: 21,
-        backgroundColor: palette.terracotta,
-        minWidth: 72,
+        borderRadius: 4,
+        backgroundColor: color.charcoal,
+        minWidth: 64,
         alignItems: "center",
     },
-    sendDisabled: { opacity: 0.5 },
-    sendText: { color: "#FFFDF7", fontSize: 14, fontWeight: "800" },
+    sendOff: { opacity: 0.45 },
+    sendText: { fontFamily: font.bodyBold, color: color.paper, fontSize: 13, fontWeight: "700" },
 });
