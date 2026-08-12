@@ -35,12 +35,15 @@ web-build/
 *.tsbuildinfo/
 
 # ============================================
-# Lock files (use pnpm/yarn workspaces)
+# Lock files
 # ============================================
-package-lock.json
+# Netlify CI uses package-lock.json + npm (Bun GitHub installs are flaky there).
+# Keep bun.lock local-only for developers using Bun.
+bun.lock
+bun.lockb
+*.lockb
 yarn.lock
 pnpm-lock.yaml
-*.lockb
 
 # ============================================
 # Native / Mobile
