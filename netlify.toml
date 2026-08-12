@@ -1,14 +1,15 @@
 # Netlify — Expo web (SPA) for investor review
 # Docs: https://docs.expo.dev/guides/publishing-websites/#netlify
+# Use npm here so builds don't depend on mise downloading Bun (GitHub release 503s).
 
 [build]
   base = "/"
-  command = "bun install && bun run export:web"
+  command = "npm install --ignore-scripts && npm run export:web -w @bloom/mobile"
   publish = "apps/default/dist"
 
 [build.environment]
   NODE_VERSION = "22"
-  BUN_VERSION = "1.2.17"
+  HUSKY = "0"
   # Public Convex prod (safe to bake into the client bundle)
   EXPO_PUBLIC_CONVEX_URL = "https://zealous-scorpion-285.convex.cloud"
   EXPO_PUBLIC_CONVEX_SITE_URL = "https://zealous-scorpion-285.convex.site"
