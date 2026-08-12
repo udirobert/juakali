@@ -1,0 +1,22 @@
+{
+  "name": "JuaKali",
+  "short_name": "JuaKali",
+  "description": "Soft-pledge into apprentice ventures. An agent drives weekly KPIs, digests, and a public ledger — non-securities, non-settling commitments.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#E6E4DF",
+  "theme_color": "#E6E4DF",
+  "lang": "en-KE",
+  "icons": [
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon"
+    }
+  ]
+}

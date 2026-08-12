@@ -3,6 +3,7 @@ import { ActivityIndicator, Platform, View } from "react-native";
 import { ConvexReactClient } from "convex/react";
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { Stack } from "expo-router";
+import Head from "expo-router/head";
 import * as SecureStore from "expo-secure-store";
 import {
     Fraunces_600SemiBold,
@@ -17,6 +18,7 @@ import {
 } from "@expo-google-fonts/ibm-plex-sans";
 
 import { color } from "@/components/jua-kali/theme";
+import { SITE, absoluteUrl } from "@/lib/site";
 
 const convex = new ConvexReactClient(process.env.EXPO_PUBLIC_CONVEX_URL!, {
     unsavedChangesWarning: false,
@@ -61,8 +63,21 @@ export default function RootLayout() {
         );
     }
 
+    const ogImage = absoluteUrl(SITE.ogImagePath);
+
     return (
         <ConvexAuthProvider client={convex} storage={isNative ? secureStorage : undefined}>
+            <Head>
+                <title>{SITE.title}</title>
+                <meta name="description" content={SITE.description} />
+                <meta property="og:title" content={SITE.title} />
+                <meta property="og:description" content={SITE.description} />
+                <meta property="og:image" content={ogImage} />
+                <meta name="twitter:card" content="summary_large_image" />
+                <meta name="twitter:title" content={SITE.title} />
+                <meta name="twitter:description" content={SITE.description} />
+                <meta name="twitter:image" content={ogImage} />
+            </Head>
             <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: color.stone } }} />
         </ConvexAuthProvider>
     );

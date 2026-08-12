@@ -3,13 +3,14 @@
         "name": "JuaKali",
         "slug": "juakali",
         "version": "1.0.0",
+        "description": "Soft-pledge into apprentice ventures. An agent drives weekly KPIs, digests, and a public ledger — non-securities, non-settling commitments.",
         "runtimeVersion": {
             "policy": "sdkVersion"
         },
         "orientation": "portrait",
         "icon": "../../assets/images/icon.png",
         "scheme": "juakali",
-        "userInterfaceStyle": "automatic",
+        "userInterfaceStyle": "light",
         "newArchEnabled": true,
         "ios": {
             "supportsTablet": true
@@ -17,13 +18,19 @@
         "android": {
             "adaptiveIcon": {
                 "foregroundImage": "../../assets/images/adaptive-icon.png",
-                "backgroundColor": "#ffffff"
+                "backgroundColor": "#E6E4DF"
             }
         },
         "web": {
             "bundler": "metro",
             "output": "single",
-            "favicon": "../../assets/images/icon.png"
+            "favicon": "../../assets/images/icon.png",
+            "name": "JuaKali",
+            "shortName": "JuaKali",
+            "description": "Soft-pledge into apprentice ventures. An agent drives weekly KPIs, digests, and a public ledger — non-securities, non-settling commitments.",
+            "themeColor": "#E6E4DF",
+            "backgroundColor": "#E6E4DF",
+            "lang": "en"
         },
         "plugins": [
             "expo-router",
@@ -33,7 +40,7 @@
                     "image": "../../assets/images/splash-icon.png",
                     "imageWidth": 200,
                     "resizeMode": "contain",
-                    "backgroundColor": "#FAFAFA"
+                    "backgroundColor": "#E6E4DF"
                 }
             ],
             "expo-secure-store",
