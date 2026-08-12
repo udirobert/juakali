@@ -1,12 +1,12 @@
-import { useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AdminDashboard } from "@/components/jua-kali/admin-dashboard";
 import { AgentChat } from "@/components/jua-kali/agent-chat";
 import { InvestorCockpit } from "@/components/jua-kali/investor-cockpit";
 import {
-    InvestorOnboarding,
+    InvestorLanding,
     useInvestorOnboardingGate,
 } from "@/components/jua-kali/investor-onboarding";
 import { Onboarding } from "@/components/jua-kali/onboarding";
@@ -16,23 +16,47 @@ import { color, font } from "@/components/jua-kali/theme";
 type Screen = "home" | "ledger" | "lab";
 type LabScreen = "agent" | "funnel" | "ops";
 
-const primaryTabs: Array<{ id: Screen; label: string }> = [
-    { id: "home", label: "Home" },
-    { id: "ledger", label: "Ledger" },
-    { id: "lab", label: "Lab" },
-];
-
 const labTabs: Array<{ id: LabScreen; label: string }> = [
     { id: "agent", label: "Agent" },
     { id: "funnel", label: "Funnel" },
     { id: "ops", label: "Ops" },
 ];
 
+/** Public demo hides Lab unless `?lab=1` (or native __DEV__). */
+function useLabUnlocked() {
+    const [unlocked, setUnlocked] = useState(() => {
+        if (__DEV__ && Platform.OS !== "web") return true;
+        return false;
+    });
+
+    useEffect(() => {
+        if (Platform.OS !== "web" || typeof window === "undefined") return;
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("lab") === "1") setUnlocked(true);
+    }, []);
+
+    return unlocked;
+}
+
 export default function Index() {
     const [screen, setScreen] = useState<Screen>("home");
     const [labScreen, setLabScreen] = useState<LabScreen>("agent");
     const insets = useSafeAreaInsets();
     const onboarding = useInvestorOnboardingGate();
+    const labUnlocked = useLabUnlocked();
+
+    const primaryTabs = useMemo(() => {
+        const tabs: Array<{ id: Screen; label: string }> = [
+            { id: "home", label: "Home" },
+            { id: "ledger", label: "Ledger" },
+        ];
+        if (labUnlocked) tabs.push({ id: "lab", label: "Lab" });
+        return tabs;
+    }, [labUnlocked]);
+
+    useEffect(() => {
+        if (!labUnlocked && screen === "lab") setScreen("home");
+    }, [labUnlocked, screen]);
 
     if (!onboarding.ready) {
         return (
@@ -43,7 +67,7 @@ export default function Index() {
     }
 
     if (onboarding.show) {
-        return <InvestorOnboarding onDone={() => void onboarding.complete()} />;
+        return <InvestorLanding onEnter={() => void onboarding.complete()} />;
     }
 
     return (
@@ -72,7 +96,7 @@ export default function Index() {
                         />
                     ))}
                 </View>
-                {screen === "lab" ? (
+                {screen === "lab" && labUnlocked ? (
                     <View style={styles.labRow}>
                         {labTabs.map((tab) => (
                             <TabButton

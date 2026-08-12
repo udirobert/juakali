@@ -64,6 +64,7 @@ Open **Home** → **Seed** for sample pledges, KPIs, email, and ledger events.
 
 - **Frontend (Expo web):** Netlify builds from `main` via [`netlify.toml`](netlify.toml) (`bun run export:web` → `apps/default/dist`).
 - **Backend:** Convex prod (`zealous-scorpion-285`) — not Google Cloud. Agent (Lab chat) → Cloud Run later.
+- **Demo UX:** First visit = landing → **See a commitment** (seeds) → Home. Lab only with `?lab=1`.
 - Details: [plans/invest-in-public-mvp.plan.md](plans/invest-in-public-mvp.plan.md).
 
 ## Deploy agent (Cloud Run)

@@ -12,7 +12,6 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
-    FadeIn,
     FadeInDown,
     useAnimatedStyle,
     useReducedMotion,
@@ -109,54 +108,6 @@ function PressableScale({
         >
             <Animated.View style={[style, anim, disabled && styles.disabled]}>{children}</Animated.View>
         </Pressable>
-    );
-}
-
-/** Problem → primitives, shown once — illustration over copy. */
-function LoopDiagram({ compact }: { compact: boolean }) {
-    const nodes = [
-        { key: "you", label: "You", sub: "Pledge · note" },
-        { key: "agent", label: "Agent", sub: "KPI · digest" },
-        { key: "ledger", label: "Ledger", sub: "Public proof" },
-    ];
-    return (
-        <Animated.View entering={FadeIn.duration(280)} style={styles.loop}>
-            <Text style={styles.problem}>
-                {compact
-                    ? "Busy capital can’t mentor every week."
-                    : "Busy capital can’t mentor every week — so the agent does, in public."}
-            </Text>
-            <View style={styles.loopRow}>
-                {nodes.map((node, i) => (
-                    <View key={node.key} style={styles.loopNodeWrap}>
-                        {i > 0 ? (
-                            <View style={styles.loopArrow}>
-                                <View style={styles.loopArrowLine} />
-                            </View>
-                        ) : null}
-                        <View style={[styles.loopNode, node.key === "agent" && styles.loopNodeAccent]}>
-                            <View style={[styles.loopMark, node.key === "agent" && styles.loopMarkAccent]} />
-                            <Text style={styles.loopLabel}>{node.label}</Text>
-                            {!compact ? <Text style={styles.loopSub}>{node.sub}</Text> : null}
-                        </View>
-                    </View>
-                ))}
-            </View>
-            <View style={styles.primitiveRow}>
-                {[
-                    { t: "Note", d: "Email the agent" },
-                    { t: "Gate", d: "You approve" },
-                    { t: "KPI", d: "Hard number" },
-                    { t: "Digest", d: "Weekly card" },
-                    { t: "Ledger", d: "Public feed" },
-                ].map((p) => (
-                    <View key={p.t} style={styles.primitive}>
-                        <Text style={styles.primitiveTitle}>{p.t}</Text>
-                        {!compact ? <Text style={styles.primitiveDetail}>{p.d}</Text> : null}
-                    </View>
-                ))}
-            </View>
-        </Animated.View>
     );
 }
 
@@ -325,22 +276,21 @@ export function InvestorCockpit() {
                 showsVerticalScrollIndicator={false}
             >
                 <View style={styles.hero}>
-                    <Text style={styles.brand}>JuaKali</Text>
-                    <LoopDiagram compact={compact} />
-                    <View style={styles.heroActions}>
-                        {empty || showPledge ? (
-                            <PressableScale
-                                onPress={handleSeed}
-                                disabled={isSeeding}
-                                style={[styles.btnPrimary, isSeeding && styles.disabled]}
-                            >
-                                <Text style={styles.btnPrimaryText}>{isSeeding ? "…" : "Seed"}</Text>
-                            </PressableScale>
-                        ) : null}
+                    <View style={styles.heroRow}>
+                        <Text style={styles.brand}>JuaKali</Text>
                         <PressableScale onPress={() => setShowPledge((v) => !v)} style={styles.btnGhost}>
                             <Text style={styles.btnGhostText}>{showPledge ? "Close" : "Pledge"}</Text>
                         </PressableScale>
                     </View>
+                    {empty ? (
+                        <PressableScale
+                            onPress={handleSeed}
+                            disabled={isSeeding}
+                            style={[styles.btnPrimary, isSeeding && styles.disabled]}
+                        >
+                            <Text style={styles.btnPrimaryText}>{isSeeding ? "…" : "Seed"}</Text>
+                        </PressableScale>
+                    ) : null}
                     {statusMessage ? <Text style={styles.status}>{statusMessage}</Text> : null}
                 </View>
 
@@ -611,78 +561,20 @@ const styles = StyleSheet.create({
     screen: { flex: 1, backgroundColor: color.stone },
     loadingScreen: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: color.stone },
     content: { gap: 14, paddingTop: 8 },
-    hero: { gap: 12, alignItems: "center" },
+    hero: { gap: 10 },
+    heroRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+    },
     brand: {
         fontFamily: font.display,
-        fontSize: 36,
+        fontSize: 28,
         fontWeight: "700",
-        letterSpacing: -1.2,
+        letterSpacing: -1,
         color: color.charcoal,
     },
-    problem: {
-        fontFamily: font.body,
-        fontSize: 14,
-        lineHeight: 20,
-        color: color.mist,
-        textAlign: "center",
-        maxWidth: 340,
-    },
-    loop: { width: "100%", gap: 12, alignItems: "center" },
-    loopRow: { flexDirection: "row", alignItems: "stretch", justifyContent: "center", width: "100%" },
-    loopNodeWrap: { flex: 1, flexDirection: "row", alignItems: "center", maxWidth: 140 },
-    loopNode: {
-        flex: 1,
-        alignItems: "center",
-        gap: 6,
-        paddingVertical: 12,
-        paddingHorizontal: 6,
-        backgroundColor: color.paper,
-        borderWidth: 1,
-        borderColor: color.line,
-        borderRadius: 6,
-    },
-    loopNodeAccent: { borderColor: color.brass, backgroundColor: color.brassSoft },
-    loopMark: {
-        width: 10,
-        height: 10,
-        borderRadius: 5,
-        backgroundColor: color.charcoal,
-    },
-    loopMarkAccent: { backgroundColor: color.brass },
-    loopLabel: {
-        fontFamily: font.bodyBold,
-        fontSize: 12,
-        fontWeight: "700",
-        color: color.charcoal,
-    },
-    loopSub: { fontFamily: font.body, fontSize: 10, color: color.mist, textAlign: "center" },
-    loopArrow: { width: 12, alignItems: "center", justifyContent: "center" },
-    loopArrowLine: { width: 10, height: 1, backgroundColor: color.lineStrong },
-    primitiveRow: {
-        flexDirection: "row",
-        flexWrap: "wrap",
-        justifyContent: "center",
-        gap: 6,
-        width: "100%",
-    },
-    primitive: {
-        paddingHorizontal: 10,
-        paddingVertical: 8,
-        borderRadius: 4,
-        backgroundColor: color.paper,
-        borderWidth: 1,
-        borderColor: color.line,
-        minWidth: 56,
-        alignItems: "center",
-    },
-    primitiveTitle: {
-        fontFamily: font.bodyBold,
-        fontSize: 11,
-        fontWeight: "700",
-        color: color.charcoal,
-        letterSpacing: 0.2,
-    },
-    primitiveDetail: { fontFamily: font.body, fontSize: 10, color: color.mist, marginTop: 2 },
     heroActions: { flexDirection: "row", gap: 8, justifyContent: "center" },
     btnPrimary: {
         backgroundColor: color.charcoal,
