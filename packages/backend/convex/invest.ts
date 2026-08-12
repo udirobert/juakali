@@ -141,6 +141,311 @@ async function resolveDefaultInvestorId(ctx: DbCtx) {
     return any?._id ?? null;
 }
 
+function uniqueSlugBase(name: string) {
+    const base = normalizeKey(name).slice(0, 40) || "venture";
+    return base;
+}
+
+async function allocatePublicSlug(ctx: DbCtx, name: string) {
+    const base = uniqueSlugBase(name);
+    let candidate = base;
+    for (let i = 0; i < 12; i++) {
+        const existing = await ctx.db
+            .query("ventures")
+            .withIndex("by_publicSlug", (q) => q.eq("publicSlug", candidate))
+            .first();
+        if (!existing) return candidate;
+        candidate = `${base}-${Math.random().toString(36).slice(2, 6)}`;
+    }
+    return `${base}-${Date.now().toString(36)}`;
+}
+
+async function upsertInvestorRecord(
+    ctx: MutationCtx,
+    args: { displayName: string; email?: string | null; phone?: string | null }
+) {
+    const displayName = args.displayName.trim() || "Investor";
+    const email = args.email?.trim().toLowerCase() || null;
+    const phone = args.phone?.trim() || null;
+    const now = Date.now();
+
+    if (email) {
+        const existing = await ctx.db
+            .query("investors")
+            .withIndex("by_email", (q) => q.eq("email", email))
+            .first();
+        if (existing) {
+            await ctx.db.patch(existing._id, {
+                displayName: displayName || existing.displayName,
+                phone: phone ?? existing.phone ?? null,
+            });
+            return existing._id;
+        }
+    }
+
+    return await ctx.db.insert("investors", {
+        displayName,
+        email,
+        phone,
+        userId: null,
+        isDefaultDemo: false,
+        createdAt: now,
+    });
+}
+
+export const upsertInvestor = mutation({
+    args: {
+        displayName: v.string(),
+        email: v.optional(v.string()),
+        phone: v.optional(v.string()),
+    },
+    returns: v.object({
+        investorId: v.id("investors"),
+        message: v.string(),
+    }),
+    handler: async (ctx, args) => {
+        await rateLimiter.limit(ctx, "investMutate", { key: "investor" });
+        const investorId = await upsertInvestorRecord(ctx, args);
+        return { investorId, message: "Investor ready." };
+    },
+});
+
+export const createVenture = mutation({
+    args: {
+        name: v.string(),
+        craftText: v.string(),
+        locationText: v.string(),
+        summary: v.optional(v.string()),
+        kpiLabel: v.string(),
+        kpiUnit: kpiUnitValidator,
+        kpiTarget: v.number(),
+        peerMedian: v.optional(v.number()),
+        publicSlug: v.optional(v.string()),
+    },
+    returns: v.object({
+        ventureId: v.id("ventures"),
+        publicSlug: v.string(),
+        agentEmail: v.string(),
+        message: v.string(),
+    }),
+    handler: async (ctx, args) => {
+        await rateLimiter.limit(ctx, "investMutate", { key: "venture" });
+        const name = args.name.trim();
+        if (!name) throw new Error("Venture name is required");
+        if (args.kpiTarget <= 0) throw new Error("kpiTarget must be positive");
+
+        const craftText = args.craftText.trim() || "General";
+        const locationText = args.locationText.trim() || "Kenya";
+        const summary =
+            args.summary?.trim() ||
+            `${name} — soft revenue-share venture tracked on the public ledger.`;
+        const now = Date.now();
+        const publicSlug = args.publicSlug?.trim()
+            ? normalizeKey(args.publicSlug)
+            : await allocatePublicSlug(ctx, name);
+        const agentEmail = `${publicSlug}@agent.juakali.demo`;
+
+        const existingSlug = await ctx.db
+            .query("ventures")
+            .withIndex("by_publicSlug", (q) => q.eq("publicSlug", publicSlug))
+            .first();
+        if (existingSlug) throw new Error(`Slug "${publicSlug}" is already taken.`);
+
+        const ventureId = await ctx.db.insert("ventures", {
+            name,
+            craftText,
+            craftKey: normalizeKey(craftText),
+            locationText,
+            locationKey: normalizeKey(locationText),
+            summary,
+            kpiLabel: args.kpiLabel.trim() || "KPI",
+            kpiUnit: args.kpiUnit,
+            kpiTarget: Math.round(args.kpiTarget),
+            peerMedian: args.peerMedian,
+            agentEmail,
+            publicSlug,
+            masterId: null,
+            apprenticeId: null,
+            status: "active",
+            createdAt: now,
+            updatedAt: now,
+        });
+
+        return {
+            ventureId,
+            publicSlug,
+            agentEmail,
+            message: `Created ${name}.`,
+        };
+    },
+});
+
+/** Atomic first-deal path: investor + venture + soft pledge. */
+export const startCommitment = mutation({
+    args: {
+        investorName: v.string(),
+        investorEmail: v.optional(v.string()),
+        ventureName: v.string(),
+        craftText: v.string(),
+        locationText: v.string(),
+        summary: v.optional(v.string()),
+        kpiLabel: v.string(),
+        kpiUnit: kpiUnitValidator,
+        kpiTarget: v.number(),
+        peerMedian: v.optional(v.number()),
+        amountKes: v.number(),
+        shareBps: v.optional(v.number()),
+        capMultiple: v.optional(v.number()),
+        thesis: v.optional(v.string()),
+    },
+    returns: v.object({
+        investorId: v.id("investors"),
+        ventureId: v.id("ventures"),
+        commitmentId: v.id("commitments"),
+        publicSlug: v.string(),
+        message: v.string(),
+    }),
+    handler: async (ctx, args) => {
+        await rateLimiter.limit(ctx, "investMutate", { key: "startCommitment" });
+        if (args.amountKes <= 0) throw new Error("amountKes must be positive");
+        if (args.kpiTarget <= 0) throw new Error("kpiTarget must be positive");
+
+        const investorId = await upsertInvestorRecord(ctx, {
+            displayName: args.investorName,
+            email: args.investorEmail,
+        });
+
+        const name = args.ventureName.trim();
+        if (!name) throw new Error("Venture name is required");
+        const craftText = args.craftText.trim() || "General";
+        const locationText = args.locationText.trim() || "Kenya";
+        const summary =
+            args.summary?.trim() ||
+            `${name} — soft revenue-share venture tracked on the public ledger.`;
+        const now = Date.now();
+        const publicSlug = await allocatePublicSlug(ctx, name);
+        const agentEmail = `${publicSlug}@agent.juakali.demo`;
+
+        const ventureId = await ctx.db.insert("ventures", {
+            name,
+            craftText,
+            craftKey: normalizeKey(craftText),
+            locationText,
+            locationKey: normalizeKey(locationText),
+            summary,
+            kpiLabel: args.kpiLabel.trim() || "KPI",
+            kpiUnit: args.kpiUnit,
+            kpiTarget: Math.round(args.kpiTarget),
+            peerMedian: args.peerMedian,
+            agentEmail,
+            publicSlug,
+            masterId: null,
+            apprenticeId: null,
+            status: "active",
+            createdAt: now,
+            updatedAt: now,
+        });
+
+        const shareBps = args.shareBps ?? 1000;
+        const capMultiple = args.capMultiple ?? 2;
+        const thesis =
+            args.thesis?.trim() ||
+            `Soft revenue-share pledge into ${name}: ${(shareBps / 100).toFixed(1)}% of cashflow until ${capMultiple}×.`;
+
+        const commitmentId = await ctx.db.insert("commitments", {
+            investorId,
+            ventureId,
+            amountKes: Math.round(args.amountKes),
+            shareBps,
+            capMultiple,
+            status: "pledged",
+            thesis,
+            nextDigestAt: nextFridayEightEAT(now),
+            digestCadence: "Weekly · Fri 08:00 EAT",
+            createdAt: now,
+            updatedAt: now,
+        });
+
+        const investor = await ctx.db.get(investorId);
+        await writeLedgerEvent(ctx, {
+            type: "pledge",
+            ventureId,
+            commitmentId,
+            summary: `${investor?.displayName ?? "Investor"} pledged KES ${Math.round(args.amountKes).toLocaleString()} into ${name} (${(shareBps / 100).toFixed(1)}% until ${capMultiple}×)`,
+            amountKes: Math.round(args.amountKes),
+            createdAt: now,
+        });
+
+        return {
+            investorId,
+            ventureId,
+            commitmentId,
+            publicSlug,
+            message: `Commitment opened for ${name}.`,
+        };
+    },
+});
+
+export const getDeal = query({
+    args: {
+        commitmentId: v.optional(v.id("commitments")),
+        ventureSlug: v.optional(v.string()),
+    },
+    returns: v.union(
+        v.object({
+            commitmentId: v.id("commitments"),
+            investorId: v.id("investors"),
+            ventureId: v.id("ventures"),
+            amountKes: v.number(),
+            status: commitmentStatusValidator,
+            publicSlug: v.string(),
+            ventureName: v.string(),
+        }),
+        v.null()
+    ),
+    handler: async (ctx, args) => {
+        if (args.commitmentId) {
+            const commitment = await ctx.db.get(args.commitmentId);
+            if (!commitment) return null;
+            const venture = await ctx.db.get(commitment.ventureId);
+            if (!venture) return null;
+            return {
+                commitmentId: commitment._id,
+                investorId: commitment.investorId,
+                ventureId: commitment.ventureId,
+                amountKes: commitment.amountKes,
+                status: commitment.status,
+                publicSlug: venture.publicSlug,
+                ventureName: venture.name,
+            };
+        }
+        if (args.ventureSlug) {
+            const slug = normalizeKey(args.ventureSlug);
+            const venture = await ctx.db
+                .query("ventures")
+                .withIndex("by_publicSlug", (q) => q.eq("publicSlug", slug))
+                .first();
+            if (!venture) return null;
+            const commitment = await ctx.db
+                .query("commitments")
+                .withIndex("by_ventureId", (q) => q.eq("ventureId", venture._id))
+                .order("desc")
+                .first();
+            if (!commitment) return null;
+            return {
+                commitmentId: commitment._id,
+                investorId: commitment.investorId,
+                ventureId: venture._id,
+                amountKes: commitment.amountKes,
+                status: commitment.status,
+                publicSlug: venture.publicSlug,
+                ventureName: venture.name,
+            };
+        }
+        return null;
+    },
+});
+
 export const publicLedger = query({
     args: {
         limit: v.optional(v.number()),
@@ -226,6 +531,8 @@ export const listVentures = query({
 export const investorCockpit = query({
     args: {
         investorId: v.optional(v.id("investors")),
+        commitmentId: v.optional(v.id("commitments")),
+        ventureSlug: v.optional(v.string()),
     },
     returns: v.object({
         investor: v.union(
@@ -236,6 +543,7 @@ export const investorCockpit = query({
             }),
             v.null()
         ),
+        focusCommitmentId: v.union(v.id("commitments"), v.null()),
         commitments: v.array(
             v.object({
                 id: v.id("commitments"),
@@ -285,6 +593,35 @@ export const investorCockpit = query({
     }),
     handler: async (ctx, args) => {
         let investorId = args.investorId ?? null;
+        let focusCommitmentId: typeof args.commitmentId | null = args.commitmentId ?? null;
+
+        if (!investorId && args.commitmentId) {
+            const commitment = await ctx.db.get(args.commitmentId);
+            if (commitment) {
+                investorId = commitment.investorId;
+                focusCommitmentId = commitment._id;
+            }
+        }
+
+        if (!investorId && args.ventureSlug) {
+            const slug = normalizeKey(args.ventureSlug);
+            const venture = await ctx.db
+                .query("ventures")
+                .withIndex("by_publicSlug", (q) => q.eq("publicSlug", slug))
+                .first();
+            if (venture) {
+                const commitment = await ctx.db
+                    .query("commitments")
+                    .withIndex("by_ventureId", (q) => q.eq("ventureId", venture._id))
+                    .order("desc")
+                    .first();
+                if (commitment) {
+                    investorId = commitment.investorId;
+                    focusCommitmentId = commitment._id;
+                }
+            }
+        }
+
         if (!investorId) {
             investorId = await resolveDefaultInvestorId(ctx);
         }
@@ -371,13 +708,20 @@ export const investorCockpit = query({
             if (summary) availableVentures.push(summary);
         }
 
-        return { investor, commitments, availableVentures };
+        return {
+            investor,
+            focusCommitmentId: focusCommitmentId ?? commitments[0]?.id ?? null,
+            commitments,
+            availableVentures,
+        };
     },
 });
 
 export const pledgeCommitment = mutation({
     args: {
         investorId: v.optional(v.id("investors")),
+        investorName: v.optional(v.string()),
+        investorEmail: v.optional(v.string()),
         ventureId: v.id("ventures"),
         amountKes: v.number(),
         shareBps: v.optional(v.number()),
@@ -386,6 +730,7 @@ export const pledgeCommitment = mutation({
     },
     returns: v.object({
         commitmentId: v.id("commitments"),
+        investorId: v.id("investors"),
         message: v.string(),
     }),
     handler: async (ctx, args) => {
@@ -396,10 +741,21 @@ export const pledgeCommitment = mutation({
         if (!venture) throw new Error("Venture not found");
 
         let investorId = args.investorId ?? null;
+        if (!investorId && (args.investorName?.trim() || args.investorEmail?.trim())) {
+            investorId = await upsertInvestorRecord(ctx, {
+                displayName: args.investorName?.trim() || "Investor",
+                email: args.investorEmail,
+            });
+        }
         if (!investorId) {
             investorId = await resolveDefaultInvestorId(ctx);
         }
-        if (!investorId) throw new Error("No investor found. Seed the invest demo first.");
+        if (!investorId) {
+            investorId = await upsertInvestorRecord(ctx, {
+                displayName: "Investor",
+                email: null,
+            });
+        }
 
         const investor = await ctx.db.get(investorId);
         if (!investor) throw new Error("Investor not found");
@@ -436,6 +792,7 @@ export const pledgeCommitment = mutation({
 
         return {
             commitmentId,
+            investorId,
             message: `Pledged KES ${Math.round(args.amountKes).toLocaleString()} into ${venture.name}.`,
         };
     },
@@ -1268,8 +1625,13 @@ export const pledgeViaMcp = mutation({
         const venture = await ctx.db.get(ventureId);
         if (!venture) throw new Error("Venture not found");
 
-        const investorId = await resolveDefaultInvestorId(ctx);
-        if (!investorId) throw new Error("No investor found. Seed the invest demo first.");
+        let investorId = await resolveDefaultInvestorId(ctx);
+        if (!investorId) {
+            investorId = await upsertInvestorRecord(ctx, {
+                displayName: "Investor",
+                email: null,
+            });
+        }
         const investor = await ctx.db.get(investorId);
         if (!investor) throw new Error("Investor not found");
 

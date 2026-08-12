@@ -1,7 +1,5 @@
-import { useState } from "react";
 import {
     ActivityIndicator,
-    Pressable,
     ScrollView,
     StyleSheet,
     Text,
@@ -9,7 +7,7 @@ import {
     View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useMutation, useQuery } from "convex/react";
+import { useQuery } from "convex/react";
 
 import { api } from "@/convex/_generated/api";
 import { color, font, layout } from "@/components/jua-kali/theme";
@@ -42,21 +40,10 @@ function typeLabel(type: string) {
 
 export function PublicLedger() {
     const data = useQuery(api.invest.publicLedger, { limit: 40 });
-    const seedInvestDemo = useMutation(api.invest.seedInvestDemo);
     const insets = useSafeAreaInsets();
     const { width } = useWindowDimensions();
     const compact = width < 440;
     const padX = Math.max(14, Math.min(28, (width - layout.maxWidth) / 2 + 16));
-    const [isSeeding, setIsSeeding] = useState(false);
-
-    async function handleSeed() {
-        setIsSeeding(true);
-        try {
-            await seedInvestDemo({});
-        } finally {
-            setIsSeeding(false);
-        }
-    }
 
     if (data === undefined) {
         return (
@@ -94,20 +81,11 @@ export function PublicLedger() {
                         <Text style={styles.statDot}>·</Text>
                         <Text style={styles.stat}>{data.totals.digests} digests</Text>
                     </View>
-                    {data.events.length === 0 ? (
-                        <Pressable
-                            onPress={handleSeed}
-                            disabled={isSeeding}
-                            style={[styles.btn, isSeeding && styles.disabled]}
-                        >
-                            <Text style={styles.btnText}>{isSeeding ? "…" : "Seed"}</Text>
-                        </Pressable>
-                    ) : null}
                 </View>
 
                 <View style={styles.feed}>
                     {data.events.length === 0 ? (
-                        <Text style={styles.empty}>No events yet</Text>
+                        <Text style={styles.empty}>No events yet — approve an agent action from Home.</Text>
                     ) : (
                         data.events.map((event) => (
                             <View key={event.id} style={styles.row}>
@@ -164,15 +142,6 @@ const styles = StyleSheet.create({
     stats: { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap", justifyContent: "center" },
     stat: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.mist },
     statDot: { color: color.mist },
-    btn: {
-        marginTop: 6,
-        backgroundColor: color.charcoal,
-        paddingHorizontal: 18,
-        paddingVertical: 12,
-        borderRadius: 4,
-    },
-    btnText: { fontFamily: font.bodyBold, color: color.paper, fontWeight: "700", fontSize: 13 },
-    disabled: { opacity: 0.5 },
     feed: {
         backgroundColor: color.paper,
         borderWidth: 1,

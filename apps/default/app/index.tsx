@@ -12,6 +12,7 @@ import {
 import { Onboarding } from "@/components/jua-kali/onboarding";
 import { PublicLedger } from "@/components/jua-kali/public-ledger";
 import { color, font } from "@/components/jua-kali/theme";
+import type { Id } from "@/convex/_generated/dataModel";
 
 type Screen = "home" | "ledger" | "lab";
 type LabScreen = "agent" | "funnel" | "ops";
@@ -41,9 +42,20 @@ function useLabUnlocked() {
 export default function Index() {
     const [screen, setScreen] = useState<Screen>("home");
     const [labScreen, setLabScreen] = useState<LabScreen>("agent");
+    const [focusCommitmentId, setFocusCommitmentId] = useState<Id<"commitments"> | undefined>(() => {
+        if (Platform.OS !== "web" || typeof window === "undefined") return undefined;
+        const c = new URLSearchParams(window.location.search).get("c");
+        return c ? (c as Id<"commitments">) : undefined;
+    });
     const insets = useSafeAreaInsets();
     const onboarding = useInvestorOnboardingGate();
     const labUnlocked = useLabUnlocked();
+
+    const hasDealLink = useMemo(() => {
+        if (focusCommitmentId) return true;
+        if (Platform.OS !== "web" || typeof window === "undefined") return false;
+        return Boolean(new URLSearchParams(window.location.search).get("v"));
+    }, [focusCommitmentId]);
 
     const primaryTabs = useMemo(() => {
         const tabs: Array<{ id: Screen; label: string }> = [
@@ -58,6 +70,12 @@ export default function Index() {
         if (!labUnlocked && screen === "lab") setScreen("home");
     }, [labUnlocked, screen]);
 
+    useEffect(() => {
+        if (onboarding.show && hasDealLink) {
+            void onboarding.complete();
+        }
+    }, [onboarding.show, onboarding.complete, hasDealLink]);
+
     if (!onboarding.ready) {
         return (
             <View style={styles.boot}>
@@ -66,15 +84,22 @@ export default function Index() {
         );
     }
 
-    if (onboarding.show) {
-        return <InvestorLanding onEnter={() => void onboarding.complete()} />;
+    if (onboarding.show && !hasDealLink) {
+        return (
+            <InvestorLanding
+                onEnter={(opts) => {
+                    if (opts?.commitmentId) setFocusCommitmentId(opts.commitmentId);
+                    void onboarding.complete();
+                }}
+            />
+        );
     }
 
     return (
         <View style={styles.container}>
             <View style={styles.content}>
                 {screen === "home" ? (
-                    <InvestorCockpit />
+                    <InvestorCockpit initialCommitmentId={focusCommitmentId} />
                 ) : screen === "ledger" ? (
                     <PublicLedger />
                 ) : labScreen === "agent" ? (

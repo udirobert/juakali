@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
     AccessibilityInfo,
     ActivityIndicator,
+    Platform,
     Pressable,
     ScrollView,
     StyleSheet,
@@ -31,6 +32,17 @@ type Cockpit = FunctionReturnType<typeof api.invest.investorCockpit>;
 type Commitment = Cockpit["commitments"][number];
 type ToolResult = { tool: string; detail: string; status: "running" | "done" };
 type AgentPhase = "idle" | "queued" | "acting" | "done";
+
+function readDealParams(): { commitmentId?: Id<"commitments">; ventureSlug?: string } {
+    if (Platform.OS !== "web" || typeof window === "undefined") return {};
+    const params = new URLSearchParams(window.location.search);
+    const c = params.get("c");
+    const v = params.get("v");
+    return {
+        commitmentId: c ? (c as Id<"commitments">) : undefined,
+        ventureSlug: v?.trim() || undefined,
+    };
+}
 
 function formatKes(value: number) {
     return `KES ${value.toLocaleString()}`;
@@ -111,8 +123,23 @@ function PressableScale({
     );
 }
 
-export function InvestorCockpit() {
-    const data = useQuery(api.invest.investorCockpit, {});
+export function InvestorCockpit({
+    initialCommitmentId,
+}: {
+    initialCommitmentId?: Id<"commitments">;
+} = {}) {
+    const dealParams = useMemo(() => {
+        const fromUrl = readDealParams();
+        return {
+            commitmentId: initialCommitmentId ?? fromUrl.commitmentId,
+            ventureSlug: fromUrl.ventureSlug,
+        };
+    }, [initialCommitmentId]);
+
+    const data = useQuery(api.invest.investorCockpit, {
+        commitmentId: dealParams.commitmentId,
+        ventureSlug: dealParams.ventureSlug,
+    });
     const seedInvestDemo = useMutation(api.invest.seedInvestDemo);
     const pledgeCommitment = useMutation(api.invest.pledgeCommitment);
     const sendInvestorEmail = useMutation(api.invest.sendInvestorEmail);
@@ -121,7 +148,9 @@ export function InvestorCockpit() {
     const compact = width < 440;
     const padX = Math.max(14, Math.min(28, (width - layout.maxWidth) / 2 + 16));
 
-    const [selectedCommitmentId, setSelectedCommitmentId] = useState<Id<"commitments"> | null>(null);
+    const [selectedCommitmentId, setSelectedCommitmentId] = useState<Id<"commitments"> | null>(
+        dealParams.commitmentId ?? null
+    );
     const [selectedVentureId, setSelectedVentureId] = useState<Id<"ventures"> | null>(null);
     const [amountText, setAmountText] = useState("10000");
     const [emailDraft, setEmailDraft] = useState("Push follow-ups this week. Reply with what moved.");
@@ -136,9 +165,14 @@ export function InvestorCockpit() {
     const [showThread, setShowThread] = useState(false);
     const [actingSeconds, setActingSeconds] = useState(0);
 
+    useEffect(() => {
+        if (!data?.focusCommitmentId) return;
+        setSelectedCommitmentId((prev) => prev ?? data.focusCommitmentId);
+    }, [data?.focusCommitmentId]);
+
     const selectedCommitment: Commitment | null = useMemo(() => {
         if (!data || data.commitments.length === 0) return null;
-        const id = selectedCommitmentId ?? data.commitments[0]!.id;
+        const id = selectedCommitmentId ?? data.focusCommitmentId ?? data.commitments[0]!.id;
         return data.commitments.find((row) => row.id === id) ?? data.commitments[0]!;
     }, [data, selectedCommitmentId]);
 
@@ -282,15 +316,6 @@ export function InvestorCockpit() {
                             <Text style={styles.btnGhostText}>{showPledge ? "Close" : "Pledge"}</Text>
                         </PressableScale>
                     </View>
-                    {empty ? (
-                        <PressableScale
-                            onPress={handleSeed}
-                            disabled={isSeeding}
-                            style={[styles.btnPrimary, isSeeding && styles.disabled]}
-                        >
-                            <Text style={styles.btnPrimaryText}>{isSeeding ? "…" : "Seed"}</Text>
-                        </PressableScale>
-                    ) : null}
                     {statusMessage ? <Text style={styles.status}>{statusMessage}</Text> : null}
                 </View>
 
@@ -309,6 +334,9 @@ export function InvestorCockpit() {
                                 </Pressable>
                             ))}
                         </View>
+                        {data.availableVentures.length === 0 ? (
+                            <Text style={styles.status}>No ventures yet — start a commitment from the landing.</Text>
+                        ) : null}
                         <TextInput
                             value={amountText}
                             onChangeText={setAmountText}
@@ -322,7 +350,7 @@ export function InvestorCockpit() {
                             disabled={isPledging || !selectedVenture}
                             style={styles.btnPrimary}
                         >
-                            <Text style={styles.btnPrimaryText}>{isPledging ? "…" : "Commit"}</Text>
+                            <Text style={styles.btnPrimaryText}>{isPledging ? "…" : "Soft pledge"}</Text>
                         </PressableScale>
                     </Animated.View>
                 ) : null}
@@ -333,9 +361,17 @@ export function InvestorCockpit() {
                             <View style={styles.emptyRing} />
                             <View style={[styles.emptyRing, styles.emptyRingInner]} />
                         </View>
-                        <Text style={styles.emptyTitle}>Start with one venture</Text>
-                        <PressableScale onPress={handleSeed} disabled={isSeeding} style={styles.btnPrimary}>
-                            <Text style={styles.btnPrimaryText}>{isSeeding ? "…" : "Seed demo"}</Text>
+                        <Text style={styles.emptyTitle}>No commitment yet</Text>
+                        <Text style={styles.status}>Open a soft pledge for a named venture, or load an example.</Text>
+                        <PressableScale
+                            onPress={() => setShowPledge(true)}
+                            style={styles.btnPrimary}
+                            disabled={data.availableVentures.length === 0}
+                        >
+                            <Text style={styles.btnPrimaryText}>Pledge</Text>
+                        </PressableScale>
+                        <PressableScale onPress={handleSeed} disabled={isSeeding} style={styles.btnGhost}>
+                            <Text style={styles.btnGhostText}>{isSeeding ? "…" : "See an example"}</Text>
                         </PressableScale>
                     </View>
                 ) : (
