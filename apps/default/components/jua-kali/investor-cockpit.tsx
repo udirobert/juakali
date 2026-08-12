@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
     AccessibilityInfo,
     ActivityIndicator,
@@ -10,16 +10,15 @@ import {
     useWindowDimensions,
     View,
 } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
     FadeIn,
     FadeInDown,
-    FadeInUp,
     useAnimatedStyle,
     useReducedMotion,
     useSharedValue,
     withRepeat,
+    withSpring,
     withTiming,
 } from "react-native-reanimated";
 import { useMutation, useQuery } from "convex/react";
@@ -27,7 +26,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import type { FunctionReturnType } from "convex/server";
 
 import { api } from "@/convex/_generated/api";
-import { color, font, layout, type } from "@/components/jua-kali/theme";
+import { color, font, layout } from "@/components/jua-kali/theme";
 
 type Cockpit = FunctionReturnType<typeof api.invest.investorCockpit>;
 type Commitment = Cockpit["commitments"][number];
@@ -38,40 +37,19 @@ function formatKes(value: number) {
     return `KES ${value.toLocaleString()}`;
 }
 
-function formatDigestDue(ts: number | null) {
-    if (!ts) return "Not scheduled";
-    return new Date(ts).toLocaleString(undefined, {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-    });
-}
-
-function sourceLabel(source: string) {
-    switch (source) {
-        case "email_paste":
-            return "email";
-        case "sms":
-            return "sms";
-        case "manual":
-            return "manual";
-        default:
-            return "agent";
-    }
+function formatDue(ts: number | null) {
+    if (!ts) return "—";
+    return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function Sparkline({ values }: { values: number[] }) {
-    if (values.length === 0) {
-        return <Text style={styles.sparkEmpty}>No trend yet</Text>;
-    }
+    if (values.length === 0) return null;
     const max = Math.max(...values, 1);
     return (
         <View style={styles.sparkRow}>
             {values.map((value, index) => (
-                <View key={`${index}-${value}`} style={styles.sparkBarTrack}>
-                    <View style={[styles.sparkBar, { height: Math.max(4, Math.round((value / max) * 36)) }]} />
+                <View key={`${index}-${value}`} style={styles.sparkTrack}>
+                    <View style={[styles.sparkBar, { height: Math.max(3, Math.round((value / max) * 28)) }]} />
                 </View>
             ))}
         </View>
@@ -87,12 +65,12 @@ function WaitingShimmer({ active }: { active: boolean }) {
             progress.value = 0;
             return;
         }
-        progress.value = withRepeat(withTiming(1, { duration: 1100 }), -1, true);
+        progress.value = withRepeat(withTiming(1, { duration: 900 }), -1, true);
     }, [active, progress, reduceMotion]);
 
     const style = useAnimatedStyle(() => ({
-        opacity: active ? 0.4 + progress.value * 0.5 : 0,
-        transform: [{ translateX: (progress.value - 0.5) * 40 }],
+        opacity: active ? 0.45 + progress.value * 0.4 : 0,
+        transform: [{ translateX: (progress.value - 0.5) * 48 }],
     }));
 
     if (!active) return null;
@@ -103,21 +81,83 @@ function WaitingShimmer({ active }: { active: boolean }) {
     );
 }
 
-function ElapsedActing({ phase }: { phase: AgentPhase }) {
-    const [seconds, setSeconds] = useState(0);
+function PressableScale({
+    onPress,
+    disabled,
+    style,
+    children,
+}: {
+    onPress: () => void;
+    disabled?: boolean;
+    style?: object | object[];
+    children: ReactNode;
+}) {
+    const reduceMotion = useReducedMotion();
+    const scale = useSharedValue(1);
+    const anim = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
-    useEffect(() => {
-        if (phase !== "acting") {
-            setSeconds(0);
-            return;
-        }
-        const started = Date.now();
-        const id = setInterval(() => setSeconds(Math.floor((Date.now() - started) / 1000)), 250);
-        return () => clearInterval(id);
-    }, [phase]);
+    return (
+        <Pressable
+            disabled={disabled}
+            onPressIn={() => {
+                if (!reduceMotion) scale.value = withSpring(0.97, { damping: 20, stiffness: 400 });
+            }}
+            onPressOut={() => {
+                if (!reduceMotion) scale.value = withSpring(1, { damping: 18, stiffness: 320 });
+            }}
+            onPress={onPress}
+        >
+            <Animated.View style={[style, anim, disabled && styles.disabled]}>{children}</Animated.View>
+        </Pressable>
+    );
+}
 
-    if (phase !== "acting") return null;
-    return <Text style={styles.elapsed}>Acting · {seconds}s</Text>;
+/** Problem → primitives, shown once — illustration over copy. */
+function LoopDiagram({ compact }: { compact: boolean }) {
+    const nodes = [
+        { key: "you", label: "You", sub: "Pledge · note" },
+        { key: "agent", label: "Agent", sub: "KPI · digest" },
+        { key: "ledger", label: "Ledger", sub: "Public proof" },
+    ];
+    return (
+        <Animated.View entering={FadeIn.duration(280)} style={styles.loop}>
+            <Text style={styles.problem}>
+                {compact
+                    ? "Busy capital can’t mentor every week."
+                    : "Busy capital can’t mentor every week — so the agent does, in public."}
+            </Text>
+            <View style={styles.loopRow}>
+                {nodes.map((node, i) => (
+                    <View key={node.key} style={styles.loopNodeWrap}>
+                        {i > 0 ? (
+                            <View style={styles.loopArrow}>
+                                <View style={styles.loopArrowLine} />
+                            </View>
+                        ) : null}
+                        <View style={[styles.loopNode, node.key === "agent" && styles.loopNodeAccent]}>
+                            <View style={[styles.loopMark, node.key === "agent" && styles.loopMarkAccent]} />
+                            <Text style={styles.loopLabel}>{node.label}</Text>
+                            {!compact ? <Text style={styles.loopSub}>{node.sub}</Text> : null}
+                        </View>
+                    </View>
+                ))}
+            </View>
+            <View style={styles.primitiveRow}>
+                {[
+                    { t: "Note", d: "Email the agent" },
+                    { t: "Gate", d: "You approve" },
+                    { t: "KPI", d: "Hard number" },
+                    { t: "Digest", d: "Weekly card" },
+                    { t: "Ledger", d: "Public feed" },
+                ].map((p) => (
+                    <View key={p.t} style={styles.primitive}>
+                        <Text style={styles.primitiveTitle}>{p.t}</Text>
+                        {!compact ? <Text style={styles.primitiveDetail}>{p.d}</Text> : null}
+                    </View>
+                ))}
+            </View>
+        </Animated.View>
+    );
 }
 
 export function InvestorCockpit() {
@@ -127,15 +167,13 @@ export function InvestorCockpit() {
     const sendInvestorEmail = useMutation(api.invest.sendInvestorEmail);
     const insets = useSafeAreaInsets();
     const { width } = useWindowDimensions();
-    const isCompact = width < 420;
-    const padX = Math.max(16, Math.min(32, (width - layout.maxWidth) / 2 + 20));
+    const compact = width < 440;
+    const padX = Math.max(14, Math.min(28, (width - layout.maxWidth) / 2 + 16));
 
     const [selectedCommitmentId, setSelectedCommitmentId] = useState<Id<"commitments"> | null>(null);
     const [selectedVentureId, setSelectedVentureId] = useState<Id<"ventures"> | null>(null);
     const [amountText, setAmountText] = useState("10000");
-    const [emailDraft, setEmailDraft] = useState(
-        "Please push follow-ups this week and reply with what moved. Keep it short."
-    );
+    const [emailDraft, setEmailDraft] = useState("Push follow-ups this week. Reply with what moved.");
     const [pendingBody, setPendingBody] = useState<string | null>(null);
     const [agentPhase, setAgentPhase] = useState<AgentPhase>("idle");
     const [toolResults, setToolResults] = useState<ToolResult[]>([]);
@@ -145,6 +183,7 @@ export function InvestorCockpit() {
     const [isSending, setIsSending] = useState(false);
     const [showPledge, setShowPledge] = useState(false);
     const [showThread, setShowThread] = useState(false);
+    const [actingSeconds, setActingSeconds] = useState(0);
 
     const selectedCommitment: Commitment | null = useMemo(() => {
         if (!data || data.commitments.length === 0) return null;
@@ -159,6 +198,17 @@ export function InvestorCockpit() {
     }, [data, selectedVentureId]);
 
     const waiting = agentPhase === "queued" || agentPhase === "acting";
+    const empty = data !== undefined && data.commitments.length === 0;
+
+    useEffect(() => {
+        if (agentPhase !== "acting") {
+            setActingSeconds(0);
+            return;
+        }
+        const started = Date.now();
+        const id = setInterval(() => setActingSeconds(Math.floor((Date.now() - started) / 1000)), 250);
+        return () => clearInterval(id);
+    }, [agentPhase]);
 
     async function handleSeed() {
         setIsSeeding(true);
@@ -198,14 +248,13 @@ export function InvestorCockpit() {
         setPendingBody(body);
         setAgentPhase("queued");
         setToolResults([]);
-        setStatusMessage("Queued — choose an approval path below.");
-        void AccessibilityInfo.announceForAccessibility("Email queued. Awaiting your approval.");
+        setStatusMessage(null);
+        void AccessibilityInfo.announceForAccessibility("Queued. Awaiting approval.");
     }
 
     function handleDiscardQueue() {
         setPendingBody(null);
         setAgentPhase("idle");
-        setStatusMessage(null);
     }
 
     async function handleApproveEmail() {
@@ -213,10 +262,10 @@ export function InvestorCockpit() {
         setIsSending(true);
         setAgentPhase("acting");
         setToolResults([
-            { tool: "log_kpi", detail: "Inferring hard KPI…", status: "running" },
-            { tool: "digest", detail: "Writing digest artifact…", status: "running" },
-            { tool: "ledger", detail: "Publishing evidence…", status: "running" },
-            { tool: "reply", detail: "Queuing agent reply…", status: "running" },
+            { tool: "KPI", detail: "Logging…", status: "running" },
+            { tool: "Digest", detail: "Writing…", status: "running" },
+            { tool: "Ledger", detail: "Publishing…", status: "running" },
+            { tool: "Reply", detail: "Sending…", status: "running" },
         ]);
 
         try {
@@ -224,10 +273,10 @@ export function InvestorCockpit() {
                 commitmentId: selectedCommitment.id,
                 body: pendingBody,
             });
-            await new Promise((resolve) => setTimeout(resolve, 420));
+            await new Promise((resolve) => setTimeout(resolve, 380));
             setToolResults(
                 result.toolResults.map((row) => ({
-                    tool: row.tool.replace(/_/g, " "),
+                    tool: row.tool.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()).slice(0, 18),
                     detail: row.detail,
                     status: "done" as const,
                 }))
@@ -236,7 +285,7 @@ export function InvestorCockpit() {
             setEmailDraft("");
             setAgentPhase("done");
             setStatusMessage(result.message);
-            void AccessibilityInfo.announceForAccessibility("Agent finished. Digest and ledger updated.");
+            void AccessibilityInfo.announceForAccessibility("Done. Digest and ledger updated.");
         } catch (error) {
             setToolResults((prev) =>
                 prev.map((row) => ({
@@ -256,25 +305,18 @@ export function InvestorCockpit() {
         return (
             <View style={[styles.loadingScreen, { paddingTop: insets.top }]}>
                 <ActivityIndicator color={color.brass} />
-                <Text style={styles.loadingText}>Loading commitments…</Text>
             </View>
         );
     }
 
     return (
         <View style={[styles.screen, { paddingTop: insets.top }]}>
-            <LinearGradient
-                colors={["rgba(166,124,45,0.08)", "transparent", "rgba(20,24,22,0.03)"]}
-                locations={[0, 0.35, 1]}
-                style={StyleSheet.absoluteFill}
-                pointerEvents="none"
-            />
             <ScrollView
                 contentContainerStyle={[
                     styles.content,
                     {
                         paddingHorizontal: padX,
-                        paddingBottom: Math.max(insets.bottom, 24) + 88,
+                        paddingBottom: Math.max(insets.bottom, 20) + 80,
                         maxWidth: layout.maxWidth,
                         width: "100%",
                         alignSelf: "center",
@@ -282,60 +324,36 @@ export function InvestorCockpit() {
                 ]}
                 showsVerticalScrollIndicator={false}
             >
-                <Animated.View entering={FadeIn.duration(320)} style={styles.hero}>
-                    <Text style={type.eyebrow}>Invest in public</Text>
-                    <Text accessibilityRole="header" style={[styles.brand, isCompact && styles.brandCompact]}>
-                        JuaKali
-                    </Text>
-                    <Text style={styles.lead}>
-                        Soft pledges. Hard KPIs. Agent digests on a public ledger — demo only, not securities.
-                    </Text>
+                <View style={styles.hero}>
+                    <Text style={styles.brand}>JuaKali</Text>
+                    <LoopDiagram compact={compact} />
                     <View style={styles.heroActions}>
-                        <Pressable
-                            onPress={handleSeed}
-                            disabled={isSeeding}
-                            style={[styles.primaryButton, isSeeding && styles.disabled]}
-                        >
-                            <Text style={styles.primaryButtonText}>{isSeeding ? "Seeding…" : "Seed demo"}</Text>
-                        </Pressable>
-                        <Pressable onPress={() => setShowPledge((v) => !v)} style={styles.ghostButton}>
-                            <Text style={styles.ghostButtonText}>{showPledge ? "Hide pledge" : "Soft pledge"}</Text>
-                        </Pressable>
+                        {empty || showPledge ? (
+                            <PressableScale
+                                onPress={handleSeed}
+                                disabled={isSeeding}
+                                style={[styles.btnPrimary, isSeeding && styles.disabled]}
+                            >
+                                <Text style={styles.btnPrimaryText}>{isSeeding ? "…" : "Seed"}</Text>
+                            </PressableScale>
+                        ) : null}
+                        <PressableScale onPress={() => setShowPledge((v) => !v)} style={styles.btnGhost}>
+                            <Text style={styles.btnGhostText}>{showPledge ? "Close" : "Pledge"}</Text>
+                        </PressableScale>
                     </View>
-                    {statusMessage ? <Text style={styles.statusLine}>{statusMessage}</Text> : null}
-                </Animated.View>
-
-                <View style={styles.ritualRail}>
-                    {[
-                        { n: "01", label: "Queue" },
-                        { n: "02", label: "Approve" },
-                        { n: "03", label: "Artifacts" },
-                    ].map((step, i) => (
-                        <View key={step.n} style={styles.ritualItem}>
-                            {i > 0 ? <Text style={styles.ritualDot}>·</Text> : null}
-                            <Text style={styles.ritualN}>{step.n}</Text>
-                            <Text style={styles.ritualLabel}>{step.label}</Text>
-                        </View>
-                    ))}
+                    {statusMessage ? <Text style={styles.status}>{statusMessage}</Text> : null}
                 </View>
 
                 {showPledge ? (
-                    <Animated.View entering={FadeInDown.duration(220)} style={styles.panel}>
-                        <Text style={styles.panelTitle}>Soft pledge</Text>
-                        <Text style={styles.panelHint}>Microcommitment for the demo — no live payment.</Text>
+                    <Animated.View entering={FadeInDown.duration(180)} style={styles.card}>
                         <View style={styles.chipRow}>
                             {data.availableVentures.map((venture) => (
                                 <Pressable
                                     key={venture.id}
                                     onPress={() => setSelectedVentureId(venture.id)}
-                                    style={[styles.chip, selectedVenture?.id === venture.id && styles.chipActive]}
+                                    style={[styles.chip, selectedVenture?.id === venture.id && styles.chipOn]}
                                 >
-                                    <Text
-                                        style={[
-                                            styles.chipText,
-                                            selectedVenture?.id === venture.id && styles.chipTextActive,
-                                        ]}
-                                    >
+                                    <Text style={[styles.chipText, selectedVenture?.id === venture.id && styles.chipTextOn]}>
                                         {venture.name}
                                     </Text>
                                 </Pressable>
@@ -346,50 +364,54 @@ export function InvestorCockpit() {
                             onChangeText={setAmountText}
                             keyboardType="number-pad"
                             style={styles.input}
-                            placeholder="Amount KES"
+                            placeholder="KES"
                             placeholderTextColor={color.mist}
                         />
-                        <Pressable
+                        <PressableScale
                             onPress={handlePledge}
                             disabled={isPledging || !selectedVenture}
-                            style={[styles.primaryButton, (isPledging || !selectedVenture) && styles.disabled]}
+                            style={styles.btnPrimary}
                         >
-                            <Text style={styles.primaryButtonText}>
-                                {isPledging ? "Pledging…" : "Commit soft pledge"}
-                            </Text>
-                        </Pressable>
+                            <Text style={styles.btnPrimaryText}>{isPledging ? "…" : "Commit"}</Text>
+                        </PressableScale>
                     </Animated.View>
                 ) : null}
 
-                {data.commitments.length === 0 ? (
-                    <View style={styles.panel}>
-                        <Text style={styles.panelTitle}>No commitments yet</Text>
-                        <Text style={styles.panelHint}>Seed the demo to open the investor walkthrough.</Text>
+                {empty ? (
+                    <View style={styles.emptyCard}>
+                        <View style={styles.emptyGlyph}>
+                            <View style={styles.emptyRing} />
+                            <View style={[styles.emptyRing, styles.emptyRingInner]} />
+                        </View>
+                        <Text style={styles.emptyTitle}>Start with one venture</Text>
+                        <PressableScale onPress={handleSeed} disabled={isSeeding} style={styles.btnPrimary}>
+                            <Text style={styles.btnPrimaryText}>{isSeeding ? "…" : "Seed demo"}</Text>
+                        </PressableScale>
                     </View>
                 ) : (
                     <>
-                        <View style={styles.portfolioStrip}>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.strip}>
                             {data.commitments.map((row) => {
-                                const active = selectedCommitment?.id === row.id;
+                                const on = selectedCommitment?.id === row.id;
                                 return (
                                     <Pressable
                                         key={row.id}
                                         onPress={() => setSelectedCommitmentId(row.id)}
-                                        style={[styles.portfolioChip, active && styles.portfolioChipActive]}
+                                        style={[styles.stripItem, on && styles.stripItemOn]}
                                     >
-                                        <Text style={[styles.portfolioName, active && styles.portfolioNameActive]}>
+                                        <Text style={[styles.stripName, on && styles.stripNameOn]} numberOfLines={1}>
                                             {row.venture.name}
                                         </Text>
-                                        <Text style={styles.portfolioAmount}>{formatKes(row.amountKes)}</Text>
+                                        <Text style={styles.stripAmt}>{formatKes(row.amountKes)}</Text>
                                     </Pressable>
                                 );
                             })}
-                        </View>
+                        </ScrollView>
 
                         {selectedCommitment ? (
                             <View style={styles.stack}>
-                                <Scorecard commitment={selectedCommitment} />
-                                <EmailRitual
+                                <Scorecard commitment={selectedCommitment} compact={compact} />
+                                <Ritual
                                     commitment={selectedCommitment}
                                     draft={emailDraft}
                                     onChangeDraft={setEmailDraft}
@@ -397,12 +419,14 @@ export function InvestorCockpit() {
                                     agentPhase={agentPhase}
                                     toolResults={toolResults}
                                     waiting={waiting}
+                                    actingSeconds={actingSeconds}
                                     showThread={showThread}
                                     onToggleThread={() => setShowThread((v) => !v)}
                                     onQueue={handleQueueEmail}
                                     onApprove={handleApproveEmail}
                                     onDiscard={handleDiscardQueue}
                                     sending={isSending}
+                                    compact={compact}
                                 />
                             </View>
                         ) : null}
@@ -413,116 +437,53 @@ export function InvestorCockpit() {
     );
 }
 
-function Scorecard({ commitment }: { commitment: Commitment }) {
+function Scorecard({ commitment, compact }: { commitment: Commitment; compact: boolean }) {
     const { venture } = commitment;
     const peer = venture.peerMedian;
-    const latest = venture.kpiLatest;
-    const vsPeer =
-        peer == null
-            ? null
-            : latest === peer
-              ? "in line with peers"
-              : latest > peer
-                ? "above peer median"
-                : "below peer median";
-    const progress =
-        venture.kpiTarget > 0 ? Math.min(1, venture.kpiTotal / venture.kpiTarget) : 0;
+    const progress = venture.kpiTarget > 0 ? Math.min(1, venture.kpiTotal / venture.kpiTarget) : 0;
 
     return (
-        <Animated.View entering={FadeInUp.duration(280)} style={styles.scorecard}>
-            <View style={styles.scoreHeader}>
-                <View style={{ flex: 1, gap: 4 }}>
-                    <Text style={styles.panelTitle}>{venture.name}</Text>
-                    <Text style={styles.panelHint}>{venture.summary}</Text>
-                </View>
-                <Text style={styles.badge}>{commitment.digestCadence ?? "Weekly"}</Text>
+        <View style={styles.card}>
+            <View style={styles.cardTop}>
+                <Text style={styles.cardTitle} numberOfLines={1}>
+                    {venture.name}
+                </Text>
+                <Text style={styles.meta}>Due {formatDue(commitment.nextDigestAt)}</Text>
             </View>
 
-            <View style={styles.scoreMetrics}>
-                <MetricCell value={venture.kpiTotal} label={`${venture.kpiLabel} total`} />
-                <MetricCell value={venture.kpiTarget} label="Target" />
-                <MetricCell value={peer ?? "—"} label="Peer median" />
+            <View style={styles.metrics}>
+                <Metric value={venture.kpiTotal} label={venture.kpiLabel} />
+                <Metric value={venture.kpiTarget} label="Target" />
+                <Metric value={peer ?? "—"} label="Peers" />
             </View>
 
             <View style={styles.progressTrack}>
                 <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
             </View>
-            {vsPeer ? (
-                <Text style={styles.peerLine}>
-                    Latest {latest} · {vsPeer}
-                </Text>
-            ) : null}
             <Sparkline values={venture.sparkline} />
-            <Text style={styles.channelLine}>
-                Next digest · {formatDigestDue(commitment.nextDigestAt)} · {venture.agentEmail ?? "agent@…"}
-            </Text>
 
             {commitment.latestDigest ? (
-                <DigestArtifact digest={commitment.latestDigest} cadence={commitment.digestCadence} />
-            ) : null}
-
-            {commitment.recentCheckIns.length > 0 ? (
-                <View style={styles.checkIns}>
-                    {commitment.recentCheckIns.slice(0, 3).map((checkIn) => (
-                        <Text key={checkIn.id} style={styles.checkInLine}>
-                            <Text style={styles.sourceTag}>{sourceLabel(checkIn.source)}</Text> {checkIn.periodLabel}:{" "}
-                            {checkIn.metric}={checkIn.value}
-                            {checkIn.note ? ` — ${checkIn.note}` : ""}
-                        </Text>
-                    ))}
+                <View style={styles.insight}>
+                    <Text style={styles.insightLabel}>Digest</Text>
+                    <Text style={styles.insightBody} numberOfLines={compact ? 2 : 3}>
+                        {commitment.latestDigest.summary}
+                    </Text>
                 </View>
             ) : null}
-        </Animated.View>
-    );
-}
-
-function MetricCell({ value, label }: { value: number | string; label: string }) {
-    return (
-        <View style={styles.scoreMetric}>
-            <Text style={styles.scoreValue}>{value}</Text>
-            <Text style={styles.scoreLabel}>{label}</Text>
         </View>
     );
 }
 
-function DigestArtifact({
-    digest,
-    cadence,
-}: {
-    digest: NonNullable<Commitment["latestDigest"]>;
-    cadence: string | null;
-}) {
-    const nextMatch = digest.insights.match(/Next digest[^.]*\.?/i);
-    const insightBody = nextMatch
-        ? digest.insights.replace(nextMatch[0], "").trim() || digest.insights
-        : digest.insights;
-    const nextAction = nextMatch?.[0]?.trim() || (cadence ? `Next digest · ${cadence}` : null);
-
+function Metric({ value, label }: { value: number | string; label: string }) {
     return (
-        <View style={styles.artifactCard}>
-            <View style={styles.artifactHeader}>
-                <Text style={styles.digestLabel}>Insight</Text>
-                <Text style={styles.artifactStamp}>
-                    {new Date(digest.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                </Text>
-            </View>
-            <Text style={styles.artifactSummary}>{digest.summary}</Text>
-            {insightBody ? <Text style={styles.artifactBody}>{insightBody}</Text> : null}
-            {nextAction ? (
-                <View style={styles.artifactSection}>
-                    <Text style={styles.artifactSectionLabel}>Next</Text>
-                    <Text style={styles.artifactBody}>{nextAction}</Text>
-                </View>
-            ) : null}
-            <View style={styles.evidenceRow}>
-                <Text style={styles.sourceTag}>evidence</Text>
-                <Text style={styles.evidenceText}>Public ledger · email ritual</Text>
-            </View>
+        <View style={styles.metric}>
+            <Text style={styles.metricValue}>{value}</Text>
+            <Text style={styles.metricLabel}>{label}</Text>
         </View>
     );
 }
 
-function EmailRitual({
+function Ritual({
     commitment,
     draft,
     onChangeDraft,
@@ -530,12 +491,14 @@ function EmailRitual({
     agentPhase,
     toolResults,
     waiting,
+    actingSeconds,
     showThread,
     onToggleThread,
     onQueue,
     onApprove,
     onDiscard,
     sending,
+    compact,
 }: {
     commitment: Commitment;
     draft: string;
@@ -544,194 +507,199 @@ function EmailRitual({
     agentPhase: AgentPhase;
     toolResults: ToolResult[];
     waiting: boolean;
+    actingSeconds: number;
     showThread: boolean;
     onToggleThread: () => void;
     onQueue: () => void;
     onApprove: () => void;
     onDiscard: () => void;
     sending: boolean;
+    compact: boolean;
 }) {
     const emails = commitment.recentEmails;
-    const visibleEmails = showThread ? emails : emails.slice(0, 1);
+    const phaseLabel =
+        agentPhase === "queued"
+            ? "Awaiting you"
+            : agentPhase === "acting"
+              ? `Acting · ${actingSeconds}s`
+              : agentPhase === "done"
+                ? "Done"
+                : "Ready";
 
     return (
-        <View style={styles.emailPanel}>
-            <View style={styles.scoreHeader}>
-                <Text style={styles.panelTitle}>Email ritual</Text>
-                <AgentStatusChip phase={agentPhase} />
+        <View style={styles.card}>
+            <View style={styles.cardTop}>
+                <Text style={styles.cardTitle}>Agent</Text>
+                <Text style={styles.meta}>{phaseLabel}</Text>
             </View>
-            <Text style={styles.panelHint}>Composer stays short. Digests live as insight cards above.</Text>
 
             <WaitingShimmer active={waiting} />
-            <View style={styles.statusChipRow}>
-                <PhaseChip label="Queued" active={agentPhase === "queued"} />
-                <PhaseChip label="Acting" active={agentPhase === "acting"} />
-                <PhaseChip label="Done" active={agentPhase === "done"} />
-                <ElapsedActing phase={agentPhase} />
-            </View>
 
             {toolResults.length > 0 ? (
-                <View style={styles.toolChipRow}>
+                <View style={styles.toolRow}>
                     {toolResults.map((result, index) => (
-                        <ToolChip key={`${result.tool}-${index}`} result={result} index={index} />
+                        <View
+                            key={`${result.tool}-${index}`}
+                            style={[styles.toolChip, result.status === "running" && styles.toolChipRun]}
+                        >
+                            {result.status === "running" ? (
+                                <ActivityIndicator size="small" color={color.brass} />
+                            ) : (
+                                <Text style={styles.toolOk}>✓</Text>
+                            )}
+                            <Text style={styles.toolName} numberOfLines={1}>
+                                {result.tool}
+                            </Text>
+                        </View>
                     ))}
                 </View>
             ) : null}
 
             {pendingBody ? (
-                <Animated.View entering={FadeInDown.duration(200)} style={styles.approvalCard}>
-                    <Text style={styles.digestLabel}>Before the agent acts</Text>
-                    <Text style={styles.approvalHint}>
-                        KPI (if present) → digest artifact → public ledger → reply.
+                <Animated.View entering={FadeInDown.duration(160)} style={styles.gate}>
+                    <Text style={styles.gateBody} numberOfLines={compact ? 3 : 5}>
+                        {pendingBody}
                     </Text>
-                    <Text style={styles.emailBody}>{pendingBody}</Text>
-                    <View style={styles.approvalChoices}>
-                        <Pressable
-                            onPress={onApprove}
-                            disabled={sending}
-                            style={[styles.choicePrimary, sending && styles.disabled]}
-                        >
-                            <Text style={styles.choicePrimaryText}>
-                                {sending ? "Acting…" : "Approve · run tools"}
-                            </Text>
-                        </Pressable>
-                        <Pressable onPress={onDiscard} style={styles.choiceSecondary}>
-                            <Text style={styles.choiceSecondaryText}>Discard</Text>
-                        </Pressable>
-                    </View>
+                    <PressableScale onPress={onApprove} disabled={sending} style={styles.btnPrimary}>
+                        <Text style={styles.btnPrimaryText}>{sending ? "…" : "Approve"}</Text>
+                    </PressableScale>
+                    <Pressable onPress={onDiscard}>
+                        <Text style={styles.discard}>Discard</Text>
+                    </Pressable>
                 </Animated.View>
             ) : (
-                <>
+                <View style={styles.composer}>
                     <TextInput
                         value={draft}
                         onChangeText={onChangeDraft}
                         multiline
-                        style={[styles.input, styles.emailInput]}
-                        placeholder="Short note to the agent…"
+                        style={styles.composerInput}
+                        placeholder="Note to agent…"
                         placeholderTextColor={color.mist}
-                        maxLength={480}
+                        maxLength={320}
                     />
-                    <Pressable onPress={onQueue} style={styles.primaryButton}>
-                        <Text style={styles.primaryButtonText}>Queue for agent</Text>
-                    </Pressable>
-                </>
+                    <PressableScale onPress={onQueue} style={styles.btnPrimary}>
+                        <Text style={styles.btnPrimaryText}>Queue</Text>
+                    </PressableScale>
+                </View>
             )}
 
             {emails.length > 0 ? (
-                <View style={styles.thread}>
-                    <Pressable onPress={onToggleThread}>
-                        <Text style={styles.threadToggleText}>
-                            {showThread
-                                ? "Hide thread"
-                                : `Thread · ${emails.length} message${emails.length === 1 ? "" : "s"}`}
-                        </Text>
-                    </Pressable>
-                    {visibleEmails.map((email) => (
-                        <View
-                            key={email.id}
-                            style={[
-                                styles.emailBubble,
-                                email.direction === "inbound" ? styles.emailInbound : styles.emailOutbound,
-                            ]}
-                        >
-                            <Text style={styles.emailMeta}>
-                                {email.direction === "inbound" ? "You" : "Agent"} · {email.fromAddress}
-                            </Text>
-                            <Text style={styles.emailSubject}>{email.subject}</Text>
-                            <Text style={styles.emailBody} numberOfLines={showThread ? undefined : 3}>
-                                {email.body}
-                            </Text>
-                        </View>
-                    ))}
-                </View>
-            ) : (
-                <Text style={styles.panelHint}>No messages yet — queue the first note above.</Text>
-            )}
-        </View>
-    );
-}
-
-function ToolChip({ result, index }: { result: ToolResult; index: number }) {
-    const running = result.status === "running";
-    return (
-        <Animated.View
-            entering={FadeInUp.delay(index * 35).duration(200)}
-            style={[styles.toolChip, running && styles.toolChipRunning]}
-        >
-            {running ? (
-                <ActivityIndicator size="small" color={color.brass} />
-            ) : (
-                <Text style={styles.toolCheck}>✓</Text>
-            )}
-            <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.toolName} numberOfLines={1}>
-                    {result.tool}
-                </Text>
-                <Text style={styles.toolDetail} numberOfLines={2}>
-                    {result.detail}
-                </Text>
-            </View>
-        </Animated.View>
-    );
-}
-
-function AgentStatusChip({ phase }: { phase: AgentPhase }) {
-    const label =
-        phase === "queued"
-            ? "Awaiting approval"
-            : phase === "acting"
-              ? "Agent acting"
-              : phase === "done"
-                ? "Complete"
-                : "Ready";
-    return <Text style={styles.badge}>{label}</Text>;
-}
-
-function PhaseChip({ label, active }: { label: string; active: boolean }) {
-    return (
-        <View style={[styles.phaseChip, active && styles.phaseChipActive]}>
-            <Text style={[styles.phaseChipText, active && styles.phaseChipTextActive]}>{label}</Text>
+                <Pressable onPress={onToggleThread}>
+                    <Text style={styles.threadToggle}>
+                        {showThread ? "Hide thread" : `Thread · ${emails.length}`}
+                    </Text>
+                </Pressable>
+            ) : null}
+            {showThread
+                ? emails.map((email) => (
+                      <View key={email.id} style={styles.bubble}>
+                          <Text style={styles.bubbleMeta}>
+                              {email.direction === "inbound" ? "You" : "Agent"}
+                          </Text>
+                          <Text style={styles.bubbleBody} numberOfLines={4}>
+                              {email.body}
+                          </Text>
+                      </View>
+                  ))
+                : null}
         </View>
     );
 }
 
 const styles = StyleSheet.create({
     screen: { flex: 1, backgroundColor: color.stone },
-    loadingScreen: {
+    loadingScreen: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: color.stone },
+    content: { gap: 14, paddingTop: 8 },
+    hero: { gap: 12, alignItems: "center" },
+    brand: {
+        fontFamily: font.display,
+        fontSize: 36,
+        fontWeight: "700",
+        letterSpacing: -1.2,
+        color: color.charcoal,
+    },
+    problem: {
+        fontFamily: font.body,
+        fontSize: 14,
+        lineHeight: 20,
+        color: color.mist,
+        textAlign: "center",
+        maxWidth: 340,
+    },
+    loop: { width: "100%", gap: 12, alignItems: "center" },
+    loopRow: { flexDirection: "row", alignItems: "stretch", justifyContent: "center", width: "100%" },
+    loopNodeWrap: { flex: 1, flexDirection: "row", alignItems: "center", maxWidth: 140 },
+    loopNode: {
         flex: 1,
         alignItems: "center",
+        gap: 6,
+        paddingVertical: 12,
+        paddingHorizontal: 6,
+        backgroundColor: color.paper,
+        borderWidth: 1,
+        borderColor: color.line,
+        borderRadius: 6,
+    },
+    loopNodeAccent: { borderColor: color.brass, backgroundColor: color.brassSoft },
+    loopMark: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        backgroundColor: color.charcoal,
+    },
+    loopMarkAccent: { backgroundColor: color.brass },
+    loopLabel: {
+        fontFamily: font.bodyBold,
+        fontSize: 12,
+        fontWeight: "700",
+        color: color.charcoal,
+    },
+    loopSub: { fontFamily: font.body, fontSize: 10, color: color.mist, textAlign: "center" },
+    loopArrow: { width: 12, alignItems: "center", justifyContent: "center" },
+    loopArrowLine: { width: 10, height: 1, backgroundColor: color.lineStrong },
+    primitiveRow: {
+        flexDirection: "row",
+        flexWrap: "wrap",
         justifyContent: "center",
-        gap: 12,
-        backgroundColor: color.stone,
+        gap: 6,
+        width: "100%",
     },
-    loadingText: { ...type.meta, color: color.mist },
-    content: { gap: 20, paddingTop: 12 },
-    hero: { gap: 10, alignItems: "center", paddingTop: 8 },
-    brand: { ...type.brand, textAlign: "center" },
-    brandCompact: { fontSize: 34 },
-    lead: {
-        ...type.body,
-        textAlign: "center",
-        color: color.mist,
-        maxWidth: 480,
+    primitive: {
+        paddingHorizontal: 10,
+        paddingVertical: 8,
+        borderRadius: 4,
+        backgroundColor: color.paper,
+        borderWidth: 1,
+        borderColor: color.line,
+        minWidth: 56,
+        alignItems: "center",
     },
-    heroActions: { flexDirection: "row", gap: 10, flexWrap: "wrap", justifyContent: "center", marginTop: 6 },
-    primaryButton: {
+    primitiveTitle: {
+        fontFamily: font.bodyBold,
+        fontSize: 11,
+        fontWeight: "700",
+        color: color.charcoal,
+        letterSpacing: 0.2,
+    },
+    primitiveDetail: { fontFamily: font.body, fontSize: 10, color: color.mist, marginTop: 2 },
+    heroActions: { flexDirection: "row", gap: 8, justifyContent: "center" },
+    btnPrimary: {
         backgroundColor: color.charcoal,
         paddingHorizontal: 18,
         paddingVertical: 12,
         borderRadius: 4,
         minHeight: 44,
         justifyContent: "center",
+        alignItems: "center",
     },
-    primaryButtonText: {
+    btnPrimaryText: {
         fontFamily: font.bodyBold,
         color: color.paper,
         fontWeight: "700",
         fontSize: 13,
-        letterSpacing: 0.2,
     },
-    ghostButton: {
+    btnGhost: {
         borderWidth: 1,
         borderColor: color.lineStrong,
         paddingHorizontal: 16,
@@ -741,280 +709,180 @@ const styles = StyleSheet.create({
         justifyContent: "center",
         backgroundColor: color.paper,
     },
-    ghostButtonText: {
-        fontFamily: font.bodyBold,
-        color: color.charcoal,
-        fontWeight: "700",
-        fontSize: 13,
-    },
-    disabled: { opacity: 0.5 },
-    statusLine: { ...type.meta, color: color.brass, textAlign: "center", marginTop: 4 },
-    ritualRail: {
-        flexDirection: "row",
-        justifyContent: "center",
-        alignItems: "center",
-        flexWrap: "wrap",
-        gap: 6,
-        paddingVertical: 4,
-    },
-    ritualItem: { flexDirection: "row", alignItems: "center", gap: 6 },
-    ritualDot: { color: color.mist, marginHorizontal: 4 },
-    ritualN: { fontFamily: font.bodyBold, color: color.brass, fontSize: 11, fontWeight: "700" },
-    ritualLabel: { fontFamily: font.bodyMedium, color: color.charcoal, fontSize: 13, fontWeight: "500" },
-    panel: {
+    btnGhostText: { fontFamily: font.bodyBold, color: color.charcoal, fontWeight: "700", fontSize: 13 },
+    disabled: { opacity: 0.45 },
+    status: { fontFamily: font.body, fontSize: 12, color: color.brass, textAlign: "center" },
+    card: {
         gap: 12,
-        padding: 18,
+        padding: 16,
         backgroundColor: color.paper,
         borderWidth: 1,
         borderColor: color.line,
         borderRadius: 6,
     },
-    panelTitle: { ...type.title, fontSize: 22 },
-    panelHint: { ...type.meta, lineHeight: 18 },
-    chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    cardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
+    cardTitle: {
+        fontFamily: font.displayMedium,
+        fontSize: 20,
+        fontWeight: "600",
+        color: color.charcoal,
+        flex: 1,
+    },
+    meta: { fontFamily: font.bodyBold, fontSize: 11, fontWeight: "700", color: color.brass },
+    chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
     chip: {
-        paddingHorizontal: 12,
+        paddingHorizontal: 10,
         paddingVertical: 8,
         borderRadius: 4,
-        backgroundColor: "rgba(20,24,22,0.05)",
-        minHeight: 40,
-        justifyContent: "center",
+        backgroundColor: color.stone,
     },
-    chipActive: { backgroundColor: color.brassSoft, borderWidth: 1, borderColor: color.brass },
-    chipText: { fontFamily: font.bodyMedium, color: color.ink, fontWeight: "500", fontSize: 13 },
-    chipTextActive: { color: color.charcoal, fontWeight: "700" },
+    chipOn: { backgroundColor: color.brassSoft, borderWidth: 1, borderColor: color.brass },
+    chipText: { fontFamily: font.bodyMedium, fontSize: 12, color: color.ink },
+    chipTextOn: { fontWeight: "700", color: color.charcoal },
     input: {
         borderWidth: 1,
         borderColor: color.lineStrong,
         borderRadius: 4,
-        paddingHorizontal: 14,
-        paddingVertical: 12,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
         color: color.ink,
         backgroundColor: color.stone,
         fontFamily: font.body,
         fontSize: 15,
     },
-    portfolioStrip: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
-    portfolioChip: {
-        paddingHorizontal: 14,
+    emptyCard: { alignItems: "center", gap: 14, paddingVertical: 28 },
+    emptyGlyph: { width: 72, height: 72, alignItems: "center", justifyContent: "center" },
+    emptyRing: {
+        position: "absolute",
+        width: 64,
+        height: 64,
+        borderRadius: 32,
+        borderWidth: 1.5,
+        borderColor: color.brass,
+        opacity: 0.5,
+    },
+    emptyRingInner: { width: 40, height: 40, borderRadius: 20, opacity: 0.9 },
+    emptyTitle: {
+        fontFamily: font.displayMedium,
+        fontSize: 18,
+        fontWeight: "600",
+        color: color.charcoal,
+    },
+    strip: { gap: 8, paddingVertical: 2 },
+    stripItem: {
+        paddingHorizontal: 12,
         paddingVertical: 10,
         borderRadius: 4,
         backgroundColor: color.paper,
         borderWidth: 1,
         borderColor: color.line,
+        minWidth: 120,
         gap: 2,
-        minWidth: 140,
     },
-    portfolioChipActive: { borderColor: color.brass, backgroundColor: color.brassSoft },
-    portfolioName: { fontFamily: font.bodyBold, color: color.ink, fontSize: 13, fontWeight: "700" },
-    portfolioNameActive: { color: color.charcoal },
-    portfolioAmount: { fontFamily: font.body, color: color.brass, fontSize: 12, fontWeight: "600" },
-    stack: { gap: 14 },
-    scorecard: {
-        gap: 12,
-        padding: 20,
-        backgroundColor: color.paper,
-        borderWidth: 1,
-        borderColor: color.line,
-        borderRadius: 6,
-    },
-    scoreHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 12 },
-    badge: {
-        fontFamily: font.bodyBold,
-        color: color.brass,
-        fontSize: 10,
-        fontWeight: "700",
-        letterSpacing: 0.8,
-        textTransform: "uppercase",
-    },
-    scoreMetrics: { flexDirection: "row", gap: 10 },
-    scoreMetric: {
-        flex: 1,
-        padding: 12,
-        borderRadius: 4,
-        backgroundColor: color.stone,
-        gap: 4,
-    },
-    scoreValue: {
+    stripItemOn: { borderColor: color.brass, backgroundColor: color.brassSoft },
+    stripName: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.ink },
+    stripNameOn: { color: color.charcoal },
+    stripAmt: { fontFamily: font.body, fontSize: 11, color: color.brass },
+    stack: { gap: 12 },
+    metrics: { flexDirection: "row", gap: 8 },
+    metric: { flex: 1, padding: 10, borderRadius: 4, backgroundColor: color.stone, gap: 2 },
+    metricValue: {
         fontFamily: font.display,
+        fontSize: 22,
+        fontWeight: "700",
         color: color.charcoal,
-        fontSize: 24,
-        fontWeight: "700",
-        letterSpacing: -0.5,
+        letterSpacing: -0.4,
     },
-    scoreLabel: {
+    metricLabel: {
         fontFamily: font.bodyBold,
-        color: color.mist,
-        fontSize: 10,
+        fontSize: 9,
         fontWeight: "700",
+        color: color.mist,
         textTransform: "uppercase",
-        letterSpacing: 0.6,
+        letterSpacing: 0.5,
     },
     progressTrack: {
-        height: 4,
+        height: 3,
         borderRadius: 2,
         backgroundColor: "rgba(20,24,22,0.08)",
         overflow: "hidden",
     },
     progressFill: { height: "100%", backgroundColor: color.brass },
-    peerLine: { fontFamily: font.bodyMedium, color: color.mist, fontSize: 13, fontWeight: "500" },
-    sparkRow: { flexDirection: "row", alignItems: "flex-end", gap: 5, height: 40 },
-    sparkBarTrack: {
+    sparkRow: { flexDirection: "row", alignItems: "flex-end", gap: 4, height: 32 },
+    sparkTrack: {
         flex: 1,
-        height: 40,
+        height: 32,
         justifyContent: "flex-end",
-        backgroundColor: "rgba(20,24,22,0.05)",
+        backgroundColor: "rgba(20,24,22,0.04)",
         borderRadius: 2,
         overflow: "hidden",
     },
     sparkBar: { width: "100%", backgroundColor: color.charcoal, borderRadius: 2 },
-    sparkEmpty: { ...type.meta },
-    channelLine: { ...type.meta },
-    artifactCard: {
-        gap: 8,
-        padding: 14,
+    insight: {
+        gap: 4,
+        padding: 12,
         borderRadius: 4,
         backgroundColor: color.brassSoft,
         borderWidth: 1,
-        borderColor: "rgba(166,124,45,0.28)",
+        borderColor: "rgba(166,124,45,0.25)",
     },
-    artifactHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-    artifactStamp: { ...type.meta },
-    artifactSummary: {
-        fontFamily: font.displayMedium,
-        color: color.charcoal,
-        fontSize: 17,
-        fontWeight: "600",
-        lineHeight: 24,
-    },
-    artifactSection: { gap: 2 },
-    artifactSectionLabel: {
+    insightLabel: {
         fontFamily: font.bodyBold,
-        color: color.brass,
         fontSize: 10,
         fontWeight: "700",
+        color: color.brass,
         letterSpacing: 0.6,
         textTransform: "uppercase",
     },
-    artifactBody: { fontFamily: font.body, color: color.ink, fontSize: 13, lineHeight: 19 },
-    evidenceRow: { flexDirection: "row", gap: 8, alignItems: "center" },
-    evidenceText: { flex: 1, ...type.meta },
-    digestLabel: {
-        fontFamily: font.bodyBold,
-        color: color.brass,
-        fontSize: 10,
-        fontWeight: "700",
-        letterSpacing: 0.8,
-        textTransform: "uppercase",
-    },
-    checkIns: { gap: 4 },
-    checkInLine: { fontFamily: font.body, color: color.mist, fontSize: 12, lineHeight: 17 },
-    sourceTag: {
-        fontFamily: font.bodyBold,
-        color: color.brass,
-        fontWeight: "700",
-        textTransform: "uppercase",
-        fontSize: 10,
-    },
-    emailPanel: {
-        gap: 10,
-        padding: 20,
-        backgroundColor: color.paper,
-        borderWidth: 1,
-        borderColor: color.line,
-        borderRadius: 6,
-    },
+    insightBody: { fontFamily: font.body, fontSize: 13, lineHeight: 18, color: color.ink },
     shimmerTrack: {
         height: 2,
         borderRadius: 99,
         overflow: "hidden",
         backgroundColor: "rgba(166,124,45,0.12)",
     },
-    shimmerBar: {
-        width: "36%",
-        height: "100%",
-        borderRadius: 99,
-        backgroundColor: color.brass,
-    },
-    statusChipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, alignItems: "center" },
-    phaseChip: {
-        paddingHorizontal: 10,
-        paddingVertical: 5,
-        borderRadius: 3,
-        backgroundColor: "rgba(20,24,22,0.05)",
-    },
-    phaseChipActive: { backgroundColor: color.brassSoft },
-    phaseChipText: { fontFamily: font.bodyBold, color: color.mist, fontSize: 11, fontWeight: "700" },
-    phaseChipTextActive: { color: color.charcoal },
-    elapsed: { fontFamily: font.bodyBold, color: color.brass, fontSize: 11, fontWeight: "700", marginLeft: 4 },
-    toolChipRow: { gap: 6 },
+    shimmerBar: { width: "40%", height: "100%", backgroundColor: color.brass, borderRadius: 99 },
+    toolRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
     toolChip: {
         flexDirection: "row",
-        alignItems: "flex-start",
-        gap: 10,
-        padding: 10,
+        alignItems: "center",
+        gap: 6,
+        paddingHorizontal: 10,
+        paddingVertical: 8,
         borderRadius: 4,
         backgroundColor: color.stone,
+        maxWidth: "48%",
     },
-    toolChipRunning: {
-        backgroundColor: color.brassSoft,
-        borderWidth: 1,
-        borderColor: "rgba(166,124,45,0.25)",
-    },
-    toolCheck: { fontFamily: font.bodyBold, color: color.success, fontSize: 14, fontWeight: "700", width: 16 },
-    toolName: {
+    toolChipRun: { backgroundColor: color.brassSoft },
+    toolOk: { color: color.success, fontWeight: "700", fontSize: 12 },
+    toolName: { fontFamily: font.bodyBold, fontSize: 11, fontWeight: "700", color: color.charcoal, flexShrink: 1 },
+    gate: { gap: 10 },
+    gateBody: { fontFamily: font.body, fontSize: 14, lineHeight: 20, color: color.ink },
+    discard: {
         fontFamily: font.bodyBold,
-        color: color.charcoal,
-        fontSize: 11,
+        fontSize: 13,
         fontWeight: "700",
-        letterSpacing: 0.3,
-        textTransform: "uppercase",
+        color: color.mist,
+        textAlign: "center",
+        paddingVertical: 8,
     },
-    toolDetail: { fontFamily: font.body, color: color.mist, fontSize: 12, lineHeight: 16 },
-    thread: { gap: 8 },
-    threadToggleText: { fontFamily: font.bodyBold, color: color.brass, fontSize: 12, fontWeight: "700" },
-    emailBubble: { gap: 3, padding: 12, borderRadius: 4 },
-    emailInbound: { backgroundColor: color.stone },
-    emailOutbound: { backgroundColor: color.brassSoft },
-    emailMeta: { ...type.meta, fontSize: 10 },
-    emailSubject: { fontFamily: font.bodyBold, color: color.charcoal, fontSize: 12, fontWeight: "700" },
-    emailBody: { fontFamily: font.body, color: color.ink, fontSize: 13, lineHeight: 18 },
-    emailInput: { minHeight: 72, maxHeight: 120, textAlignVertical: "top" },
-    approvalCard: {
-        gap: 10,
-        padding: 14,
-        borderRadius: 4,
-        backgroundColor: color.brassSoft,
-        borderWidth: 1,
-        borderColor: "rgba(166,124,45,0.35)",
-    },
-    approvalHint: { ...type.meta, lineHeight: 17 },
-    approvalChoices: { gap: 8 },
-    choicePrimary: {
-        backgroundColor: color.charcoal,
-        paddingVertical: 14,
-        paddingHorizontal: 16,
-        borderRadius: 4,
-        alignItems: "center",
-    },
-    choicePrimaryText: {
-        fontFamily: font.bodyBold,
-        color: color.paper,
-        fontWeight: "700",
-        fontSize: 14,
-    },
-    choiceSecondary: {
-        paddingVertical: 12,
-        alignItems: "center",
+    composer: { gap: 10 },
+    composerInput: {
+        minHeight: 64,
+        maxHeight: 100,
         borderWidth: 1,
         borderColor: color.lineStrong,
         borderRadius: 4,
-        backgroundColor: color.paper,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        color: color.ink,
+        backgroundColor: color.stone,
+        fontFamily: font.body,
+        fontSize: 14,
+        textAlignVertical: "top",
     },
-    choiceSecondaryText: {
-        fontFamily: font.bodyBold,
-        color: color.charcoal,
-        fontWeight: "700",
-        fontSize: 13,
-    },
+    threadToggle: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.brass },
+    bubble: { gap: 2, padding: 10, borderRadius: 4, backgroundColor: color.stone },
+    bubbleMeta: { fontFamily: font.bodyBold, fontSize: 10, fontWeight: "700", color: color.mist },
+    bubbleBody: { fontFamily: font.body, fontSize: 12, lineHeight: 17, color: color.ink },
 });
