@@ -1,5 +1,6 @@
 import {
     ActivityIndicator,
+    Pressable,
     ScrollView,
     StyleSheet,
     Text,
@@ -10,6 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "convex/react";
 
 import { api } from "@/convex/_generated/api";
+import { TermHint } from "@/components/jua-kali/help";
 import { color, font, layout } from "@/components/jua-kali/theme";
 
 function formatKes(value: number) {
@@ -38,7 +40,26 @@ function typeLabel(type: string) {
     }
 }
 
-export function PublicLedger() {
+function typeHint(type: string) {
+    switch (type) {
+        case "pledge":
+            return "soft-pledge";
+        case "checkin":
+            return "kpi";
+        case "digest":
+            return "digest";
+        default:
+            return "ledger";
+    }
+}
+
+export function PublicLedger({
+    onOpenGlossary,
+    hideTitleChrome = false,
+}: {
+    onOpenGlossary?: (focusId?: string) => void;
+    hideTitleChrome?: boolean;
+} = {}) {
     const data = useQuery(api.invest.publicLedger, { limit: 40 });
     const insets = useSafeAreaInsets();
     const { width } = useWindowDimensions();
@@ -54,7 +75,7 @@ export function PublicLedger() {
     }
 
     return (
-        <View style={[styles.screen, { paddingTop: insets.top }]}>
+        <View style={[styles.screen, { paddingTop: hideTitleChrome ? 8 : insets.top }]}>
             <ScrollView
                 contentContainerStyle={[
                     styles.content,
@@ -69,28 +90,61 @@ export function PublicLedger() {
                 showsVerticalScrollIndicator={false}
             >
                 <View style={styles.hero}>
-                    <Text style={styles.title}>Ledger</Text>
+                    {!hideTitleChrome ? (
+                        <View style={styles.titleRow}>
+                            <Text style={styles.title}>Public ledger</Text>
+                            {onOpenGlossary ? <TermHint termId="ledger" onOpenGlossary={onOpenGlossary} /> : null}
+                        </View>
+                    ) : (
+                        <View style={styles.titleRow}>
+                            <Text style={styles.titleCompact}>Public proof</Text>
+                            {onOpenGlossary ? <TermHint termId="ledger" onOpenGlossary={onOpenGlossary} /> : null}
+                        </View>
+                    )}
                     <Text style={styles.sub}>
-                        {compact ? "Public proof of pledges & KPIs." : "Public proof — pledges, actions, KPIs, digests."}
+                        {compact
+                            ? "Read-only timeline of pledges, KPIs, and digests from My deals."
+                            : "Read-only public proof — capital pledges, KPI check-ins, and digests. Act on My deals; proof lands here."}
                     </Text>
                     <Text style={styles.total}>{formatKes(data.totals.pledgedKes)}</Text>
+                    <Text style={styles.totalHint}>Soft pledges recorded (demo — not escrow)</Text>
                     <View style={styles.stats}>
                         <Text style={styles.stat}>{data.totals.activeVentures} ventures</Text>
                         <Text style={styles.statDot}>·</Text>
-                        <Text style={styles.stat}>{data.totals.checkIns} KPIs</Text>
+                        <Pressable
+                            onPress={onOpenGlossary ? () => onOpenGlossary("kpi") : undefined}
+                            disabled={!onOpenGlossary}
+                        >
+                            <Text style={styles.stat}>{data.totals.checkIns} KPIs</Text>
+                        </Pressable>
                         <Text style={styles.statDot}>·</Text>
-                        <Text style={styles.stat}>{data.totals.digests} digests</Text>
+                        <Pressable
+                            onPress={onOpenGlossary ? () => onOpenGlossary("digest") : undefined}
+                            disabled={!onOpenGlossary}
+                        >
+                            <Text style={styles.stat}>{data.totals.digests} digests</Text>
+                        </Pressable>
                     </View>
                 </View>
 
                 <View style={styles.feed}>
                     {data.events.length === 0 ? (
-                        <Text style={styles.empty}>No events yet — approve an agent action from Home.</Text>
+                        <Text style={styles.empty}>
+                            No events yet — open My deals, send a note to the agent, and approve it. Proof appears here.
+                        </Text>
                     ) : (
                         data.events.map((event) => (
                             <View key={event.id} style={styles.row}>
                                 <View style={styles.rowTop}>
-                                    <Text style={styles.type}>{typeLabel(event.type)}</Text>
+                                    <View style={styles.typeRow}>
+                                        <Text style={styles.type}>{typeLabel(event.type)}</Text>
+                                        {onOpenGlossary ? (
+                                            <TermHint
+                                                termId={typeHint(event.type)}
+                                                onOpenGlossary={onOpenGlossary}
+                                            />
+                                        ) : null}
+                                    </View>
                                     <Text style={styles.when}>{formatWhen(event.createdAt)}</Text>
                                 </View>
                                 <Text style={styles.summary} numberOfLines={compact ? 2 : 3}>
@@ -118,6 +172,7 @@ const styles = StyleSheet.create({
     },
     content: { paddingTop: 8, gap: 16 },
     hero: { alignItems: "center", gap: 8 },
+    titleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
     title: {
         fontFamily: font.display,
         fontSize: 34,
@@ -125,12 +180,20 @@ const styles = StyleSheet.create({
         letterSpacing: -1,
         color: color.charcoal,
     },
+    titleCompact: {
+        fontFamily: font.displayMedium,
+        fontSize: 22,
+        fontWeight: "600",
+        letterSpacing: -0.4,
+        color: color.charcoal,
+    },
     sub: {
         fontFamily: font.body,
         fontSize: 13,
         color: color.mist,
         textAlign: "center",
-        maxWidth: 320,
+        maxWidth: 360,
+        lineHeight: 18,
     },
     total: {
         fontFamily: font.display,
@@ -138,6 +201,12 @@ const styles = StyleSheet.create({
         fontWeight: "700",
         color: color.charcoal,
         marginTop: 4,
+    },
+    totalHint: {
+        fontFamily: font.body,
+        fontSize: 11,
+        color: color.mist,
+        marginTop: -4,
     },
     stats: { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap", justifyContent: "center" },
     stat: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.mist },
@@ -155,6 +224,7 @@ const styles = StyleSheet.create({
         color: color.mist,
         textAlign: "center",
         paddingVertical: 24,
+        lineHeight: 19,
     },
     row: {
         gap: 4,
@@ -163,6 +233,7 @@ const styles = StyleSheet.create({
         borderTopColor: color.line,
     },
     rowTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+    typeRow: { flexDirection: "row", alignItems: "center", gap: 6 },
     type: {
         fontFamily: font.bodyBold,
         fontSize: 10,

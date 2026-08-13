@@ -11,57 +11,151 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeIn } from "react-native-reanimated";
-import * as SecureStore from "expo-secure-store";
-import { useMutation } from "convex/react";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import type { Id } from "@/convex/_generated/dataModel";
 
 import { api } from "@/convex/_generated/api";
+import {
+    clearDemoGates,
+    hasFreshParam,
+    markOriented,
+    readOnboarded,
+    shouldShowWelcomeBack,
+    stripFreshParam,
+    writeOnboarded,
+} from "@/components/jua-kali/session-persist";
+import { useProductMode, SOFT_RETURN_MS } from "@/lib/product-mode";
+import { SoftIdentityBar } from "@/components/jua-kali/soft-identity";
 import { color, font, layout } from "@/components/jua-kali/theme";
-
-const STORAGE_KEY = "juakali_investor_onboarded_v3";
 
 type KpiUnit = "meetings" | "revenue_kes" | "jobs";
 
-async function readOnboarded(): Promise<boolean> {
-    try {
-        if (Platform.OS === "web" && typeof localStorage !== "undefined") {
-            return localStorage.getItem(STORAGE_KEY) === "1";
-        }
-        return (await SecureStore.getItemAsync(STORAGE_KEY)) === "1";
-    } catch {
-        return false;
-    }
-}
-
-async function writeOnboarded(): Promise<void> {
-    try {
-        if (Platform.OS === "web" && typeof localStorage !== "undefined") {
-            localStorage.setItem(STORAGE_KEY, "1");
-            return;
-        }
-        await SecureStore.setItemAsync(STORAGE_KEY, "1");
-    } catch {
-        // ignore
-    }
-}
-
 export function useInvestorOnboardingGate() {
+    const product = useProductMode();
+    const { isAuthenticated } = useConvexAuth();
+    const prefs = useQuery(api.softAuth.getMyPrefs, isAuthenticated ? {} : "skip");
+    const setPrefs = useMutation(api.softAuth.setMyPrefs);
     const [ready, setReady] = useState(false);
-    const [show, setShow] = useState(false);
+    const [showLanding, setShowLanding] = useState(false);
+    const [showWelcomeBack, setShowWelcomeBack] = useState(false);
 
     useEffect(() => {
-        void readOnboarded().then((done) => {
-            setShow(!done);
+        void (async () => {
+            if (hasFreshParam()) {
+                await clearDemoGates();
+                stripFreshParam();
+                if (isAuthenticated) {
+                    await setPrefs({
+                        onboarded: false,
+                        coachDismissed: false,
+                        lastOrientedAt: null,
+                    }).catch(() => undefined);
+                }
+                setShowLanding(true);
+                setShowWelcomeBack(false);
+                setReady(true);
+                return;
+            }
+
+            // Authenticated: prefer server prefs when loaded
+            if (isAuthenticated) {
+                if (prefs === undefined) {
+                    setReady(false);
+                    return;
+                }
+                if (prefs === null || !prefs.onboarded) {
+                    const localDone = await readOnboarded();
+                    if (localDone) {
+                        await setPrefs({
+                            onboarded: true,
+                            lastOrientedAt: Date.now(),
+                        }).catch(() => undefined);
+                        setShowLanding(false);
+                        setShowWelcomeBack(false);
+                        setReady(true);
+                        return;
+                    }
+                    setShowLanding(true);
+                    setShowWelcomeBack(false);
+                    setReady(true);
+                    return;
+                }
+
+                let welcome = false;
+                if (product.teaching === "loud") {
+                    welcome = await shouldShowWelcomeBack("loud");
+                } else if (product.teaching === "soft-return") {
+                    const last = prefs.lastOrientedAt;
+                    welcome = last === null || Date.now() - last >= SOFT_RETURN_MS;
+                }
+                setShowLanding(false);
+                setShowWelcomeBack(welcome);
+                setReady(true);
+                return;
+            }
+
+            const onboarded = await readOnboarded();
+            if (!onboarded) {
+                setShowLanding(true);
+                setShowWelcomeBack(false);
+                setReady(true);
+                return;
+            }
+
+            const welcome = await shouldShowWelcomeBack(product.teaching);
+            setShowLanding(false);
+            setShowWelcomeBack(welcome);
             setReady(true);
-        });
-    }, []);
+        })();
+    }, [product.teaching, isAuthenticated, prefs, setPrefs]);
 
-    const complete = useCallback(async () => {
+    const completeLanding = useCallback(async () => {
         await writeOnboarded();
-        setShow(false);
-    }, []);
+        await markOriented(product.teaching);
+        if (isAuthenticated) {
+            await setPrefs({
+                onboarded: true,
+                lastOrientedAt: Date.now(),
+            }).catch(() => undefined);
+        }
+        setShowLanding(false);
+        setShowWelcomeBack(false);
+    }, [product.teaching, isAuthenticated, setPrefs]);
 
-    return { ready, show, complete };
+    const dismissWelcomeBack = useCallback(async () => {
+        await markOriented(product.teaching);
+        if (isAuthenticated) {
+            await setPrefs({ lastOrientedAt: Date.now() }).catch(() => undefined);
+        }
+        setShowWelcomeBack(false);
+    }, [product.teaching, isAuthenticated, setPrefs]);
+
+    /** Same effect as `?fresh=1` — back to pitch without a URL hack. */
+    const resetToIntro = useCallback(async () => {
+        await clearDemoGates();
+        if (isAuthenticated) {
+            await setPrefs({
+                onboarded: false,
+                coachDismissed: false,
+                lastOrientedAt: null,
+            }).catch(() => undefined);
+        }
+        setShowLanding(true);
+        setShowWelcomeBack(false);
+    }, [isAuthenticated, setPrefs]);
+
+    return {
+        ready,
+        /** @deprecated use showLanding */
+        show: showLanding,
+        showLanding,
+        showWelcomeBack,
+        complete: completeLanding,
+        completeLanding,
+        dismissWelcomeBack,
+        resetToIntro,
+        product,
+    };
 }
 
 const kpiPresets: Array<{ unit: KpiUnit; label: string; chip: string }> = [
@@ -80,6 +174,8 @@ export function InvestorLanding({
     const compact = width < 420;
     const startCommitment = useMutation(api.invest.startCommitment);
     const seedInvestDemo = useMutation(api.invest.seedInvestDemo);
+    const softAuth = useQuery(api.softAuth.softAuthConfig);
+    const requireAuth = Boolean(softAuth?.requireAuthToAct);
 
     const [mode, setMode] = useState<"pitch" | "form">("pitch");
     const [busy, setBusy] = useState(false);
@@ -166,6 +262,12 @@ export function InvestorLanding({
                     <Text style={styles.brand}>JuaKali</Text>
                     <Text style={styles.eyebrow}>Invest in public</Text>
 
+                    {requireAuth ? (
+                        <View style={styles.authBlock}>
+                            <SoftIdentityBar forceOpen />
+                        </View>
+                    ) : null}
+
                     {mode === "pitch" ? (
                         <>
                             <Text style={styles.headline}>
@@ -177,7 +279,7 @@ export function InvestorLanding({
                             <View style={styles.loopRow}>
                                 {[
                                     { label: "You", hint: "Pledge · note" },
-                                    { label: "Agent", hint: "KPI · digest" },
+                                    { label: "Agent", hint: "Inbox · KPI" },
                                     { label: "Ledger", hint: "Public proof" },
                                 ].map((node, i) => (
                                     <View key={node.label} style={styles.loopCell}>
@@ -185,7 +287,7 @@ export function InvestorLanding({
                                         <View style={[styles.loopNode, node.label === "Agent" && styles.loopNodeOn]}>
                                             <View style={[styles.mark, node.label === "Agent" && styles.markOn]} />
                                             <Text style={styles.loopLabel}>{node.label}</Text>
-                                            {!compact ? <Text style={styles.loopHint}>{node.hint}</Text> : null}
+                                            <Text style={styles.loopHint}>{node.hint}</Text>
                                         </View>
                                     </View>
                                 ))}
@@ -198,9 +300,19 @@ export function InvestorLanding({
                             >
                                 <Text style={styles.ctaText}>Start a commitment</Text>
                             </Pressable>
-                            <Pressable onPress={() => void handleExample()} disabled={busy}>
-                                <Text style={styles.secondary}>{busy ? "…" : "See an example"}</Text>
+                            <Pressable
+                                onPress={() => void handleExample()}
+                                disabled={busy}
+                                accessibilityRole="button"
+                                accessibilityHint="Seeds sample deals and opens My deals"
+                            >
+                                <Text style={styles.secondary}>
+                                    {busy ? "…" : "Try seeded deals"}
+                                </Text>
                             </Pressable>
+                            <Text style={styles.secondaryHint}>
+                                Opens My deals with sample pledges and KPIs.
+                            </Text>
                         </>
                     ) : (
                         <View style={styles.form}>
@@ -249,7 +361,7 @@ export function InvestorLanding({
                                 />
                             </View>
 
-                            <Text style={styles.fieldLabel}>Hard KPI</Text>
+                            <Text style={styles.fieldLabel}>Hard KPI (what you’ll track)</Text>
                             <View style={styles.chipRow}>
                                 {kpiPresets.map((p) => (
                                     <Pressable
@@ -272,7 +384,7 @@ export function InvestorLanding({
                                 style={styles.input}
                             />
 
-                            <Text style={styles.fieldLabel}>Soft pledge (KES)</Text>
+                            <Text style={styles.fieldLabel}>Soft pledge (KES — intent only)</Text>
                             <TextInput
                                 value={amountKes}
                                 onChangeText={setAmountKes}
@@ -315,6 +427,16 @@ const styles = StyleSheet.create({
         justifyContent: "center",
     },
     frame: { width: "100%", gap: 14, alignItems: "center" },
+    authBlock: { width: "100%", maxWidth: 400 },
+    secondaryHint: {
+        fontFamily: font.body,
+        fontSize: 12,
+        lineHeight: 16,
+        color: color.mist,
+        textAlign: "center",
+        maxWidth: 280,
+        marginTop: -6,
+    },
     brand: {
         fontFamily: font.display,
         fontSize: 40,

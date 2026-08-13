@@ -50,6 +50,10 @@ const fullSchema = {
     // Public-facing site URL used by Convex Auth for OAuth redirect callbacks.
     SITE_URL: v.string(),
 
+    // Soft identity vars (AUTH_RESEND_KEY, SOFT_AUTH_INBOX, REQUIRE_AUTH_TO_ACT, …)
+    // stay on process.env — do not add them here. Auth config loads ./env, and
+    // unset optional keys in this schema break Convex Auth push validation.
+
     // ---- User-managed examples (uncomment + adapt as you add features) -----
     // Required string -- backend won't boot without it once provisioning is
     // complete and you've set it via `bunx convex env set OPENAI_API_KEY ...`.

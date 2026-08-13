@@ -1,9 +1,24 @@
-import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+    ActivityIndicator,
+    Platform,
+    Pressable,
+    StyleSheet,
+    Text,
+    useWindowDimensions,
+    View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AdminDashboard } from "@/components/jua-kali/admin-dashboard";
 import { AgentChat } from "@/components/jua-kali/agent-chat";
+import { FidelityBadge } from "@/components/jua-kali/fidelity-badge";
+import {
+    GlossaryModal,
+    HelpMenuButton,
+    WelcomeBackBanner,
+    useCoachGate,
+} from "@/components/jua-kali/help";
 import { InvestorCockpit } from "@/components/jua-kali/investor-cockpit";
 import {
     InvestorLanding,
@@ -11,7 +26,12 @@ import {
 } from "@/components/jua-kali/investor-onboarding";
 import { Onboarding } from "@/components/jua-kali/onboarding";
 import { PublicLedger } from "@/components/jua-kali/public-ledger";
-import { color, font } from "@/components/jua-kali/theme";
+import { SoftIdentityBar } from "@/components/jua-kali/soft-identity";
+import { writeCoachDismissed } from "@/components/jua-kali/session-persist";
+import { color, font, layout } from "@/components/jua-kali/theme";
+import { useProductMode } from "@/lib/product-mode";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 
 type Screen = "home" | "ledger" | "lab";
@@ -22,6 +42,21 @@ const labTabs: Array<{ id: LabScreen; label: string }> = [
     { id: "funnel", label: "Funnel" },
     { id: "ops", label: "Ops" },
 ];
+
+function readTabParam(): Screen | null {
+    if (Platform.OS !== "web" || typeof window === "undefined") return null;
+    const tab = new URLSearchParams(window.location.search).get("tab");
+    if (tab === "home" || tab === "ledger" || tab === "lab") return tab;
+    return null;
+}
+
+function writeTabParam(tab: Screen) {
+    if (Platform.OS !== "web" || typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (tab === "home") url.searchParams.delete("tab");
+    else url.searchParams.set("tab", tab);
+    window.history.replaceState({}, "", url.toString());
+}
 
 /** Public demo hides Lab unless `?lab=1` (or native __DEV__). */
 function useLabUnlocked() {
@@ -40,16 +75,36 @@ function useLabUnlocked() {
 }
 
 export default function Index() {
-    const [screen, setScreen] = useState<Screen>("home");
+    const [screen, setScreenState] = useState<Screen>(() => readTabParam() ?? "home");
     const [labScreen, setLabScreen] = useState<LabScreen>("agent");
     const [focusCommitmentId, setFocusCommitmentId] = useState<Id<"commitments"> | undefined>(() => {
         if (Platform.OS !== "web" || typeof window === "undefined") return undefined;
         const c = new URLSearchParams(window.location.search).get("c");
         return c ? (c as Id<"commitments">) : undefined;
     });
+    const [glossaryOpen, setGlossaryOpen] = useState(false);
+    const [glossaryFocus, setGlossaryFocus] = useState<string | undefined>();
+    const [forceCoach, setForceCoach] = useState(false);
+
     const insets = useSafeAreaInsets();
+    const { width } = useWindowDimensions();
+    const useTopNav = Platform.OS === "web" && width >= 768;
+    const product = useProductMode();
+    const softAuth = useQuery(api.softAuth.softAuthConfig);
+    const requireAuthToAct = Boolean(softAuth?.requireAuthToAct) || product.requireAuthToAct;
     const onboarding = useInvestorOnboardingGate();
+    const coach = useCoachGate();
     const labUnlocked = useLabUnlocked();
+
+    const setScreen = useCallback((next: Screen) => {
+        setScreenState(next);
+        writeTabParam(next);
+    }, []);
+
+    const openGlossary = useCallback((focusId?: string) => {
+        setGlossaryFocus(focusId);
+        setGlossaryOpen(true);
+    }, []);
 
     const hasDealLink = useMemo(() => {
         if (focusCommitmentId) return true;
@@ -58,23 +113,27 @@ export default function Index() {
     }, [focusCommitmentId]);
 
     const primaryTabs = useMemo(() => {
-        const tabs: Array<{ id: Screen; label: string }> = [
-            { id: "home", label: "Home" },
-            { id: "ledger", label: "Ledger" },
+        const tabs: Array<{ id: Screen; label: string; hint: string }> = [
+            { id: "home", label: useTopNav ? "My deals" : "Deals", hint: "Act here" },
+            { id: "ledger", label: useTopNav ? "Public ledger" : "Ledger", hint: "Public proof" },
         ];
-        if (labUnlocked) tabs.push({ id: "lab", label: "Lab" });
+        if (labUnlocked) tabs.push({ id: "lab", label: "Lab", hint: "Internal" });
         return tabs;
-    }, [labUnlocked]);
+    }, [labUnlocked, useTopNav]);
 
     useEffect(() => {
         if (!labUnlocked && screen === "lab") setScreen("home");
-    }, [labUnlocked, screen]);
+    }, [labUnlocked, screen, setScreen]);
 
     useEffect(() => {
-        if (onboarding.show && hasDealLink) {
-            void onboarding.complete();
+        if (onboarding.showLanding && hasDealLink) {
+            void onboarding.completeLanding();
         }
-    }, [onboarding.show, onboarding.complete, hasDealLink]);
+    }, [onboarding.showLanding, onboarding.completeLanding, hasDealLink]);
+
+    // Auto coach on first entry this session; suppress while welcome-back is up (avoid double chrome).
+    const showCoach =
+        (forceCoach || (coach.show && !onboarding.showWelcomeBack)) && coach.ready;
 
     if (!onboarding.ready) {
         return (
@@ -84,24 +143,139 @@ export default function Index() {
         );
     }
 
-    if (onboarding.show && !hasDealLink) {
+    if (onboarding.showLanding && !hasDealLink) {
         return (
             <InvestorLanding
                 onEnter={(opts) => {
                     if (opts?.commitmentId) setFocusCommitmentId(opts.commitmentId);
-                    void onboarding.complete();
+                    void onboarding.completeLanding();
                 }}
             />
         );
     }
 
+    async function handleDismissWelcome() {
+        await onboarding.dismissWelcomeBack();
+        await writeCoachDismissed(product.coachSessionScoped);
+        setForceCoach(false);
+    }
+
+    const nav = (
+        <View style={[styles.navInner, useTopNav && styles.navInnerTop]}>
+            <View style={[styles.tabRow, useTopNav && styles.tabRowTop]}>
+                {primaryTabs.map((tab) => (
+                    <TabButton
+                        key={tab.id}
+                        label={tab.label}
+                        hint={useTopNav ? tab.hint : undefined}
+                        active={screen === tab.id}
+                        onPress={() => setScreen(tab.id)}
+                        top={useTopNav}
+                    />
+                ))}
+            </View>
+            {screen === "lab" && labUnlocked ? (
+                <View style={styles.labRow}>
+                    {labTabs.map((tab) => (
+                        <TabButton
+                            key={tab.id}
+                            label={tab.label}
+                            active={labScreen === tab.id}
+                            onPress={() => setLabScreen(tab.id)}
+                            compact
+                            top={useTopNav}
+                        />
+                    ))}
+                </View>
+            ) : null}
+        </View>
+    );
+
+    const helpCluster = (
+        <View style={styles.helpWrap}>
+            <HelpMenuButton
+                onHowItWorks={() => setForceCoach(true)}
+                onGlossary={() => openGlossary()}
+                onShowIntro={() => {
+                    void (async () => {
+                        setFocusCommitmentId(undefined);
+                        setScreen("home");
+                        setForceCoach(false);
+                        await onboarding.resetToIntro();
+                        coach.reset();
+                    })();
+                }}
+            />
+        </View>
+    );
+
     return (
         <View style={styles.container}>
+            {useTopNav ? (
+                <View style={[styles.topBar, { paddingTop: Math.max(insets.top, 10) }]}>
+                    <View style={styles.topBarInner}>
+                        <View style={styles.brandBlock}>
+                            <Text style={styles.topBrand}>JuaKali</Text>
+                            <Text style={styles.topSub}>You act on Deals · proof on Ledger</Text>
+                        </View>
+                        {nav}
+                        <View style={styles.topTrailing}>
+                            <SoftIdentityBar compact />
+                            <FidelityBadge
+                                mode={product}
+                                compact
+                                onPress={() => openGlossary("soft-pledge")}
+                            />
+                            {helpCluster}
+                        </View>
+                    </View>
+                </View>
+            ) : (
+                <View style={[styles.mobileHelpBar, { paddingTop: Math.max(insets.top, 8) }]}>
+                    <View style={styles.mobileLead}>
+                        <FidelityBadge
+                            mode={product}
+                            compact
+                            onPress={() => openGlossary("soft-pledge")}
+                        />
+                        <Text style={styles.mobileBridge}>Deals · act · Ledger · proof</Text>
+                        <SoftIdentityBar compact />
+                    </View>
+                    {helpCluster}
+                </View>
+            )}
+
+            <WelcomeBackBanner
+                visible={onboarding.showWelcomeBack}
+                onDismiss={() => void handleDismissWelcome()}
+                onHowItWorks={() => {
+                    void handleDismissWelcome().then(() => setForceCoach(true));
+                }}
+                onGlossary={() => {
+                    void handleDismissWelcome().then(() => openGlossary());
+                }}
+                onGoDeals={() => {
+                    setScreen("home");
+                    void handleDismissWelcome();
+                }}
+            />
+
             <View style={styles.content}>
                 {screen === "home" ? (
-                    <InvestorCockpit initialCommitmentId={focusCommitmentId} />
+                    <InvestorCockpit
+                        initialCommitmentId={focusCommitmentId}
+                        showCoach={showCoach}
+                        onDismissCoach={() => {
+                            setForceCoach(false);
+                            void coach.dismiss();
+                        }}
+                        onOpenGlossary={openGlossary}
+                        hideBrand={useTopNav}
+                        fidelityHint={product.fidelityHint}
+                        requireAuthToAct={requireAuthToAct}
+                    />
                 ) : screen === "ledger" ? (
-                    <PublicLedger />
+                    <PublicLedger onOpenGlossary={openGlossary} hideTitleChrome={useTopNav} />
                 ) : labScreen === "agent" ? (
                     <AgentChat />
                 ) : labScreen === "funnel" ? (
@@ -110,54 +284,59 @@ export default function Index() {
                     <AdminDashboard />
                 )}
             </View>
-            <View style={[styles.tabBar, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-                <View style={styles.tabRow}>
-                    {primaryTabs.map((tab) => (
-                        <TabButton
-                            key={tab.id}
-                            label={tab.label}
-                            active={screen === tab.id}
-                            onPress={() => setScreen(tab.id)}
-                        />
-                    ))}
+
+            {!useTopNav ? (
+                <View style={[styles.tabBar, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+                    {nav}
                 </View>
-                {screen === "lab" && labUnlocked ? (
-                    <View style={styles.labRow}>
-                        {labTabs.map((tab) => (
-                            <TabButton
-                                key={tab.id}
-                                label={tab.label}
-                                active={labScreen === tab.id}
-                                onPress={() => setLabScreen(tab.id)}
-                                compact
-                            />
-                        ))}
-                    </View>
-                ) : null}
-            </View>
+            ) : null}
+
+            <GlossaryModal
+                visible={glossaryOpen}
+                onClose={() => setGlossaryOpen(false)}
+                focusId={glossaryFocus}
+            />
         </View>
     );
 }
 
 function TabButton({
     label,
+    hint,
     active,
     onPress,
     compact,
+    top,
 }: {
     label: string;
+    hint?: string;
     active: boolean;
     onPress: () => void;
     compact?: boolean;
+    top?: boolean;
 }) {
     return (
         <Pressable
             onPress={onPress}
-            style={[styles.tab, compact && styles.tabCompact, active && styles.tabActive]}
+            style={[
+                styles.tab,
+                top && styles.tabTop,
+                compact && styles.tabCompact,
+                active && (top ? styles.tabActiveTop : styles.tabActive),
+            ]}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: active }}
         >
-            <Text style={[styles.tabText, compact && styles.tabTextCompact, active && styles.tabTextActive]}>
+            <Text
+                style={[
+                    styles.tabText,
+                    compact && styles.tabTextCompact,
+                    active && styles.tabTextActive,
+                ]}
+            >
                 {label}
             </Text>
+            {hint && active ? <Text style={styles.tabHint}>{hint}</Text> : null}
         </Pressable>
     );
 }
@@ -166,6 +345,51 @@ const styles = StyleSheet.create({
     boot: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: color.stone },
     container: { flex: 1, backgroundColor: color.stone },
     content: { flex: 1 },
+    topBar: {
+        borderBottomWidth: 1,
+        borderBottomColor: color.line,
+        backgroundColor: color.paper,
+        paddingBottom: 8,
+        paddingHorizontal: 16,
+        zIndex: 5,
+    },
+    topBarInner: {
+        maxWidth: layout.maxWidth,
+        width: "100%",
+        alignSelf: "center",
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 16,
+        minHeight: 56,
+    },
+    brandBlock: { gap: 2, minWidth: 140 },
+    topBrand: {
+        fontFamily: font.display,
+        fontSize: 22,
+        fontWeight: "700",
+        letterSpacing: -0.6,
+        color: color.charcoal,
+    },
+    topSub: { fontFamily: font.body, fontSize: 11, color: color.mist },
+    topTrailing: { flexDirection: "row", alignItems: "center", gap: 8 },
+    mobileHelpBar: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        paddingHorizontal: 14,
+        paddingBottom: 6,
+        gap: 12,
+        zIndex: 5,
+    },
+    mobileLead: { flex: 1, gap: 4 },
+    mobileBridge: {
+        fontFamily: font.bodyMedium,
+        fontSize: 11,
+        color: color.mist,
+    },
+    helpWrap: { position: "relative", zIndex: 30 },
+    navInner: { width: "100%" },
+    navInnerTop: { flex: 1 },
     tabBar: {
         borderTopWidth: 1,
         borderTopColor: color.line,
@@ -174,10 +398,15 @@ const styles = StyleSheet.create({
     tabRow: {
         flexDirection: "row",
         justifyContent: "center",
-        maxWidth: 880,
+        maxWidth: layout.maxWidth,
         width: "100%",
         alignSelf: "center",
         paddingHorizontal: 8,
+    },
+    tabRowTop: {
+        justifyContent: "flex-start",
+        paddingHorizontal: 0,
+        gap: 4,
     },
     labRow: {
         flexDirection: "row",
@@ -194,6 +423,14 @@ const styles = StyleSheet.create({
         minHeight: 48,
         justifyContent: "center",
     },
+    tabTop: {
+        flex: 0,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        minHeight: 44,
+        maxWidth: undefined,
+        borderRadius: 4,
+    },
     tabCompact: {
         flex: 0,
         paddingHorizontal: 14,
@@ -204,6 +441,9 @@ const styles = StyleSheet.create({
         borderTopWidth: 2,
         borderTopColor: color.brass,
     },
+    tabActiveTop: {
+        backgroundColor: color.brassSoft,
+    },
     tabText: {
         fontFamily: font.bodyBold,
         color: color.mist,
@@ -213,4 +453,10 @@ const styles = StyleSheet.create({
     },
     tabTextCompact: { fontSize: 11 },
     tabTextActive: { color: color.charcoal },
+    tabHint: {
+        fontFamily: font.body,
+        fontSize: 10,
+        color: color.brass,
+        marginTop: 1,
+    },
 });

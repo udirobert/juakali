@@ -7,6 +7,55 @@ const http = httpRouter();
 
 auth.addHttpRoutes(http);
 
+http.route({
+    path: "/soft-auth/inbox",
+    method: "POST",
+    handler: httpAction(async (ctx, request) => {
+         
+        const inboxOn = process.env.SOFT_AUTH_INBOX === "1";
+        const expected = process.env.SOFT_AUTH_INBOX_SECRET;
+         
+        if (!inboxOn) {
+            return new Response(JSON.stringify({ ok: false, error: "Inbox disabled" }), {
+                status: 403,
+                headers: { "Content-Type": "application/json" },
+            });
+        }
+        if (expected) {
+            const got = request.headers.get("x-soft-auth-secret") ?? "";
+            if (got !== expected) {
+                return new Response(JSON.stringify({ ok: false, error: "Unauthorized" }), {
+                    status: 401,
+                    headers: { "Content-Type": "application/json" },
+                });
+            }
+        }
+        const json: unknown = await request.json().catch(() => null);
+        if (!isRecord(json)) {
+            return new Response(JSON.stringify({ ok: false, error: "Invalid JSON" }), {
+                status: 400,
+                headers: { "Content-Type": "application/json" },
+            });
+        }
+        const email = typeof json.email === "string" ? json.email : "";
+        const url = typeof json.url === "string" ? json.url : "";
+        if (!email.includes("@") || !url.startsWith("http")) {
+            return new Response(JSON.stringify({ ok: false, error: "email and url required" }), {
+                status: 400,
+                headers: { "Content-Type": "application/json" },
+            });
+        }
+        await ctx.runMutation(internal.softAuth.storeLink, {
+            email: email.trim().toLowerCase(),
+            url,
+        });
+        return new Response(JSON.stringify({ ok: true }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+        });
+    }),
+});
+
 type Provider = "twilio" | "africas_talking" | "mock";
 type Payload = Record<string, string>;
 
@@ -151,9 +200,50 @@ http.route({
     path: "/webhooks/agentmail",
     method: "POST",
     handler: httpAction(async (ctx, request) => {
-        // Thin AgentMail scaffold: accept message.received payloads (and simple demo JSON).
-        // Signature verification (svix) should be added before production.
-        const json: unknown = await request.json().catch(() => null);
+        const rawBody = await request.text();
+        const svixId = request.headers.get("svix-id");
+        const svixTimestamp = request.headers.get("svix-timestamp");
+        const svixSignature = request.headers.get("svix-signature");
+
+        let json: unknown;
+         
+        const envSecret = process.env.AGENTMAIL_WEBHOOK_SECRET;
+         
+        const storedSecret = await ctx.runQuery(internal.agentMailStore.getWebhookSecret, {});
+        const mustVerify = Boolean(envSecret || storedSecret);
+
+        if (mustVerify) {
+            if (!svixId || !svixTimestamp || !svixSignature) {
+                return new Response(JSON.stringify({ ok: false, error: "Missing Svix headers" }), {
+                    status: 400,
+                    headers: { "Content-Type": "application/json" },
+                });
+            }
+            try {
+                json = await ctx.runAction(internal.agentMail.verifyAndParse, {
+                    rawBody,
+                    svixId,
+                    svixTimestamp,
+                    svixSignature,
+                });
+            } catch (err) {
+                console.error("[agentmail] webhook verify failed", err);
+                return new Response(JSON.stringify({ ok: false, error: "Invalid signature" }), {
+                    status: 400,
+                    headers: { "Content-Type": "application/json" },
+                });
+            }
+        } else {
+            try {
+                json = JSON.parse(rawBody) as unknown;
+            } catch {
+                return new Response(JSON.stringify({ ok: false, error: "Invalid JSON" }), {
+                    status: 400,
+                    headers: { "Content-Type": "application/json" },
+                });
+            }
+        }
+
         if (!isRecord(json)) {
             return new Response(JSON.stringify({ ok: false, error: "Invalid JSON" }), {
                 status: 400,
@@ -163,12 +253,29 @@ http.route({
 
         const eventType = typeof json.event_type === "string" ? json.event_type : "";
         const message = isRecord(json.message) ? json.message : json;
+
         const toList = Array.isArray(message.to) ? message.to : [];
+        const fromList = Array.isArray(message.from_)
+            ? message.from_
+            : Array.isArray(message.from)
+              ? message.from
+              : [];
+
+        const firstAddr = (list: unknown[]): string => {
+            const first = list[0];
+            if (typeof first === "string") return first;
+            if (isRecord(first) && typeof first.email === "string") return first.email;
+            if (isRecord(first) && typeof first.address === "string") return first.address;
+            return "";
+        };
+
         const toAddress =
-            (typeof toList[0] === "string" ? toList[0] : "") ||
+            firstAddr(toList) ||
             (typeof message.toAddress === "string" ? message.toAddress : "") ||
-            (typeof json.toAddress === "string" ? json.toAddress : "");
+            (typeof json.toAddress === "string" ? json.toAddress : "") ||
+            (typeof message.inbox_id === "string" ? message.inbox_id : "");
         const fromAddress =
+            firstAddr(fromList) ||
             (typeof message.from === "string" ? message.from : "") ||
             (typeof message.fromAddress === "string" ? message.fromAddress : "") ||
             (typeof json.fromAddress === "string" ? json.fromAddress : "");
@@ -178,6 +285,7 @@ http.route({
         const body =
             (typeof message.text === "string" ? message.text : "") ||
             (typeof message.extracted_text === "string" ? message.extracted_text : "") ||
+            (typeof message.extractedText === "string" ? message.extractedText : "") ||
             (typeof message.preview === "string" ? message.preview : "") ||
             (typeof message.body === "string" ? message.body : "") ||
             (typeof json.body === "string" ? json.body : "");

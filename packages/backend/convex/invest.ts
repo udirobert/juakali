@@ -4,6 +4,7 @@ import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { rateLimiter } from "./rateLimit";
 import { normalizeKey } from "./juaKaliHelpers";
+import { assertCanAct } from "./softAuth";
 
 type DbCtx = { db: QueryCtx["db"] };
 
@@ -306,6 +307,7 @@ export const startCommitment = mutation({
         message: v.string(),
     }),
     handler: async (ctx, args) => {
+        await assertCanAct(ctx);
         await rateLimiter.limit(ctx, "investMutate", { key: "startCommitment" });
         if (args.amountKes <= 0) throw new Error("amountKes must be positive");
         if (args.kpiTarget <= 0) throw new Error("kpiTarget must be positive");
@@ -734,6 +736,7 @@ export const pledgeCommitment = mutation({
         message: v.string(),
     }),
     handler: async (ctx, args) => {
+        await assertCanAct(ctx);
         await rateLimiter.limit(ctx, "investMutate", { key: "pledge" });
         if (args.amountKes <= 0) throw new Error("amountKes must be positive");
 
@@ -959,6 +962,7 @@ export const seedInvestDemo = mutation({
         message: v.string(),
     }),
     handler: async (ctx) => {
+        await assertCanAct(ctx);
         await rateLimiter.limit(ctx, "investMutate", { key: "seed" });
         const now = Date.now();
 
@@ -1402,6 +1406,7 @@ export const sendInvestorEmail = mutation({
         toolResults: v.array(v.object({ tool: v.string(), detail: v.string() })),
     }),
     handler: async (ctx, args) => {
+        await assertCanAct(ctx);
         await rateLimiter.limit(ctx, "investMutate", { key: "emailRitual" });
         return await processInvestorEmailNote(ctx, {
             commitmentId: args.commitmentId,
@@ -1449,6 +1454,38 @@ export const handleAgentMailInbound = mutation({
                     .query("ventures")
                     .withIndex("by_publicSlug", (q) => q.eq("publicSlug", local))
                     .first()) ?? null;
+        }
+        // Shared AgentMail inbox: resolve venture from subject "venture:<slug>" or "[slug]"
+        if (!venture && args.subject) {
+            const subj = args.subject;
+            const tagged =
+                subj.match(/venture:\s*([a-z0-9-]+)/i)?.[1] ??
+                subj.match(/\[([a-z0-9-]+)\]/i)?.[1] ??
+                null;
+            if (tagged) {
+                venture =
+                    (await ctx.db
+                        .query("ventures")
+                        .withIndex("by_publicSlug", (q) => q.eq("publicSlug", tagged.toLowerCase()))
+                        .first()) ?? null;
+            }
+        }
+        // Fallback: investor email → their latest commitment's venture
+        if (!venture) {
+            const investorByEmail = await ctx.db
+                .query("investors")
+                .withIndex("by_email", (q) => q.eq("email", from))
+                .first();
+            if (investorByEmail) {
+                const commitment = await ctx.db
+                    .query("commitments")
+                    .withIndex("by_investorId", (q) => q.eq("investorId", investorByEmail._id))
+                    .order("desc")
+                    .first();
+                if (commitment) {
+                    venture = await ctx.db.get(commitment.ventureId);
+                }
+            }
         }
         if (!venture) {
             return {

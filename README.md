@@ -4,27 +4,29 @@ Busy investors make soft **revenue-share** microcommitments into Kenya informal-
 
 Built for the [Gemini X Prize](https://www.geminixprize.com/). Voice/SMS/USSD matching remains Lab scaffolding from the earlier Rapid Agent Hackathon prototype.
 
-> Demo only: soft pledges — not securities, escrow, or live payments.
+> Demo only: soft pledges — not securities, escrow, or live payments. Agent inbox inbound (`juakali@agentmail.to`) is live.
 
 ## How it works
 
 1. Soft pledge into a venture (share of cashflow until a multiple cap).
-2. Email ritual — queue → approve → agent logs KPIs, digests, replies. Agent-native inbox ([AgentMail](https://docs.agentmail.to/welcome)); Gmail later.
+2. Email ritual — in-app queue → approve, **or** email `juakali@agentmail.to` (AgentMail inbound, Svix-verified). Agent logs KPIs, digests, replies. Gmail for the human investor later.
 3. Hard KPIs (meetings, revenue KES, jobs) with evidence tags.
 4. Investor home + public ledger (“invest in public”).
 
-Product UX, demo script, and decisions: [plans/invest-in-public-mvp.plan.md](plans/invest-in-public-mvp.plan.md). Historical matcher: [plans/jua-kali-apprenticeship-matcher.plan.md](plans/jua-kali-apprenticeship-matcher.plan.md).
+Product UX, demo script, and decisions: [plans/invest-in-public-mvp.plan.md](plans/invest-in-public-mvp.plan.md).  
+Product axes (identity × fidelity × teaching): [plans/product-axes.md](plans/product-axes.md).  
+Historical matcher: [plans/jua-kali-apprenticeship-matcher.plan.md](plans/jua-kali-apprenticeship-matcher.plan.md).
 
 ## Architecture
 
 ```
 Busy investor
-   ├── Home (default)     scorecards · email ritual · digest artifacts
+   ├── Home (default)     scorecards · in-app / AgentMail ritual · digests
    ├── Ledger             capital → actions → results
    └── Lab                Agent · Funnel · Ops
         │
    Gemini + tools → Convex (ventures, commitments, KPIs, digests, ledger)
-   In-app email today · AgentMail webhook `/webhooks/agentmail` · Gmail later
+   In-app queue→approve · AgentMail `juakali@agentmail.to` → `/webhooks/agentmail` · Gmail later
 ```
 
 ## Structure
@@ -50,6 +52,11 @@ cp .env.example .env
 | `CONVEX_DEPLOYMENT` / `EXPO_PUBLIC_CONVEX_*` | From `bunx convex dev` |
 | `EXPO_PUBLIC_AGENT_URL` | Agent service (default `http://localhost:8080`) |
 | `CONVEX_SITE_URL` | Backend for agent (default `http://localhost:3210`) |
+| `EXPO_PUBLIC_PRODUCT_PRESET` | `demo` (loud teaching; Netlify default) or `app` (quieter returning-investor) |
+| `EXPO_PUBLIC_REQUIRE_AUTH_TO_ACT` | UI hint; pair with Convex `REQUIRE_AUTH_TO_ACT=1` to enforce |
+
+Convex soft identity: `AUTH_RESEND_KEY`, `SOFT_AUTH_INBOX=1`, `REQUIRE_AUTH_TO_ACT=1`.  
+AgentMail (Convex secrets): `AGENTMAIL_API_KEY`, `AGENTMAIL_WEBHOOK_SECRET` — inbox `juakali@agentmail.to` → `…/webhooks/agentmail`.
 
 ```bash
 # Or: bun run dev
@@ -64,7 +71,8 @@ Open **Home** → **Seed** for sample pledges, KPIs, email, and ledger events.
 
 - **Frontend (Expo web):** Netlify builds from `main` via [`netlify.toml`](netlify.toml) (`bun run export:web` → `apps/default/dist`).
 - **Backend:** Convex prod (`zealous-scorpion-285`) — not Google Cloud. Agent (Lab chat) → Cloud Run later.
-- **Demo UX:** First visit = landing → **See a commitment** (seeds) → Home. Lab only with `?lab=1`.
+- **Demo UX:** Preset `demo` — first visit = landing → Home; new session = Welcome back. Lab only with `?lab=1`. Reset: Help → Show intro again, or `?fresh=1`. Force demo teaching: `?demo=1`.
+- **Modes:** Same IA always; compose identity × fidelity × teaching — see [plans/product-axes.md](plans/product-axes.md).
 - Details: [plans/invest-in-public-mvp.plan.md](plans/invest-in-public-mvp.plan.md).
 
 ## Deploy agent (Cloud Run)
@@ -89,6 +97,6 @@ Point your MCP client at that package with `JUAKALI_BACKEND_URL` set to your Con
 
 ## Stack
 
-Gemini 2.5 Flash · Cloud Run · MCP · Convex · Expo · AgentMail webhook scaffold · Twilio / Africa’s Talking (funnel)
+Gemini 2.5 Flash · Cloud Run · MCP · Convex · Expo · AgentMail (`juakali@agentmail.to`) · Twilio / Africa’s Talking (funnel)
 
 Pre-commit (Husky): gitleaks on staged changes + ESLint via lint-staged (`apps/default`, `packages/backend`). Requires [`gitleaks`](https://github.com/gitleaks/gitleaks#installing) on your PATH.

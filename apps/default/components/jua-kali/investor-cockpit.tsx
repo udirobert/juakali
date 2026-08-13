@@ -26,6 +26,8 @@ import type { Id } from "@/convex/_generated/dataModel";
 import type { FunctionReturnType } from "convex/server";
 
 import { api } from "@/convex/_generated/api";
+import { HowItWorksCard, TermHint } from "@/components/jua-kali/help";
+import { AuthRequiredGate } from "@/components/jua-kali/soft-identity";
 import { color, font, layout } from "@/components/jua-kali/theme";
 
 type Cockpit = FunctionReturnType<typeof api.invest.investorCockpit>;
@@ -51,6 +53,11 @@ function formatKes(value: number) {
 function formatDue(ts: number | null) {
     if (!ts) return "—";
     return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function formatDueLabel(ts: number | null) {
+    if (!ts) return "Next digest —";
+    return `Next digest · ${formatDue(ts)}`;
 }
 
 function Sparkline({ values }: { values: number[] }) {
@@ -125,8 +132,20 @@ function PressableScale({
 
 export function InvestorCockpit({
     initialCommitmentId,
+    showCoach = false,
+    onDismissCoach,
+    onOpenGlossary,
+    hideBrand = false,
+    fidelityHint,
+    requireAuthToAct = false,
 }: {
     initialCommitmentId?: Id<"commitments">;
+    showCoach?: boolean;
+    onDismissCoach?: () => void;
+    onOpenGlossary?: (focusId?: string) => void;
+    hideBrand?: boolean;
+    fidelityHint?: string;
+    requireAuthToAct?: boolean;
 } = {}) {
     const dealParams = useMemo(() => {
         const fromUrl = readDealParams();
@@ -140,6 +159,7 @@ export function InvestorCockpit({
         commitmentId: dealParams.commitmentId,
         ventureSlug: dealParams.ventureSlug,
     });
+    const agentMail = useQuery(api.agentMailPublic.publicStatus);
     const seedInvestDemo = useMutation(api.invest.seedInvestDemo);
     const pledgeCommitment = useMutation(api.invest.pledgeCommitment);
     const sendInvestorEmail = useMutation(api.invest.sendInvestorEmail);
@@ -295,7 +315,7 @@ export function InvestorCockpit({
     }
 
     return (
-        <View style={[styles.screen, { paddingTop: insets.top }]}>
+        <View style={[styles.screen, { paddingTop: hideBrand ? 8 : insets.top }]}>
             <ScrollView
                 contentContainerStyle={[
                     styles.content,
@@ -311,15 +331,60 @@ export function InvestorCockpit({
             >
                 <View style={styles.hero}>
                     <View style={styles.heroRow}>
-                        <Text style={styles.brand}>JuaKali</Text>
+                        {hideBrand ? (
+                            <Text style={styles.heroTitle}>Your deals</Text>
+                        ) : (
+                            <Text style={styles.brand}>JuaKali</Text>
+                        )}
                         <PressableScale onPress={() => setShowPledge((v) => !v)} style={styles.btnGhost}>
-                            <Text style={styles.btnGhostText}>{showPledge ? "Close" : "Pledge"}</Text>
+                            <Text style={styles.btnGhostText}>{showPledge ? "Close" : "New pledge"}</Text>
                         </PressableScale>
                     </View>
+                    <Text style={styles.bridge}>
+                        Soft pledges & weekly agent notes live here. Public proof is on the Ledger tab.
+                    </Text>
                     {statusMessage ? <Text style={styles.status}>{statusMessage}</Text> : null}
                 </View>
 
+                {onDismissCoach ? (
+                    <HowItWorksCard
+                        visible={showCoach}
+                        onDismiss={onDismissCoach}
+                        onOpenGlossary={onOpenGlossary ? () => onOpenGlossary() : undefined}
+                        compact={compact}
+                    />
+                ) : null}
+
+                <View style={styles.integrations}>
+                    <View style={styles.integrationsHead}>
+                        <Text style={styles.integrationsLabel}>Email & cadence</Text>
+                        {onOpenGlossary ? <TermHint termId="agentmail" onOpenGlossary={onOpenGlossary} /> : null}
+                        {onOpenGlossary ? <TermHint termId="cadence" onOpenGlossary={onOpenGlossary} /> : null}
+                    </View>
+                    <Text style={styles.integrationsBody}>
+                        {fidelityHint ??
+                            "Soft pledges (not escrow) · AgentMail inbox live for inbound notes · Gmail later."}
+                    </Text>
+                    {agentMail?.configured && agentMail.inboxEmail ? (
+                        <View style={styles.inboxRow}>
+                            <Text style={styles.inboxLabel}>Agent inbox</Text>
+                            <Text selectable style={styles.inboxAddress}>
+                                {agentMail.inboxEmail}
+                            </Text>
+                            <Text style={styles.fieldHint}>
+                                Email this address (optional subject: venture:slug) · or queue a note below and
+                                approve.
+                            </Text>
+                        </View>
+                    ) : (
+                        <Text style={styles.fieldHint}>
+                            In-app notes: queue → approve. Digest dates are weekly cadence, not calendar sync.
+                        </Text>
+                    )}
+                </View>
+
                 {showPledge ? (
+                    <AuthRequiredGate required={requireAuthToAct}>
                     <Animated.View entering={FadeInDown.duration(180)} style={styles.card}>
                         <View style={styles.chipRow}>
                             {data.availableVentures.map((venture) => (
@@ -336,13 +401,15 @@ export function InvestorCockpit({
                         </View>
                         {data.availableVentures.length === 0 ? (
                             <Text style={styles.status}>No ventures yet — start a commitment from the landing.</Text>
-                        ) : null}
+                        ) : (
+                            <Text style={styles.fieldHint}>Choose a venture, then set a soft pledge amount (intent only).</Text>
+                        )}
                         <TextInput
                             value={amountText}
                             onChangeText={setAmountText}
                             keyboardType="number-pad"
                             style={styles.input}
-                            placeholder="KES"
+                            placeholder="Amount in KES"
                             placeholderTextColor={color.mist}
                         />
                         <PressableScale
@@ -350,9 +417,15 @@ export function InvestorCockpit({
                             disabled={isPledging || !selectedVenture}
                             style={styles.btnPrimary}
                         >
-                            <Text style={styles.btnPrimaryText}>{isPledging ? "…" : "Soft pledge"}</Text>
+                            <Text style={styles.btnPrimaryText}>{isPledging ? "…" : "Record soft pledge"}</Text>
                         </PressableScale>
+                        {onOpenGlossary ? (
+                            <Pressable onPress={() => onOpenGlossary("soft-pledge")}>
+                                <Text style={styles.inlineLink}>What is a soft pledge?</Text>
+                            </Pressable>
+                        ) : null}
                     </Animated.View>
+                    </AuthRequiredGate>
                 ) : null}
 
                 {empty ? (
@@ -361,21 +434,24 @@ export function InvestorCockpit({
                             <View style={styles.emptyRing} />
                             <View style={[styles.emptyRing, styles.emptyRingInner]} />
                         </View>
-                        <Text style={styles.emptyTitle}>No commitment yet</Text>
-                        <Text style={styles.status}>Open a soft pledge for a named venture, or load an example.</Text>
+                        <Text style={styles.emptyTitle}>No deal yet</Text>
+                        <Text style={styles.status}>
+                            Record a soft pledge for a named venture, or load seeded deals to walk the loop.
+                        </Text>
                         <PressableScale
                             onPress={() => setShowPledge(true)}
                             style={styles.btnPrimary}
                             disabled={data.availableVentures.length === 0}
                         >
-                            <Text style={styles.btnPrimaryText}>Pledge</Text>
+                            <Text style={styles.btnPrimaryText}>New pledge</Text>
                         </PressableScale>
                         <PressableScale onPress={handleSeed} disabled={isSeeding} style={styles.btnGhost}>
-                            <Text style={styles.btnGhostText}>{isSeeding ? "…" : "See an example"}</Text>
+                            <Text style={styles.btnGhostText}>{isSeeding ? "…" : "Load seeded deals"}</Text>
                         </PressableScale>
                     </View>
                 ) : (
                     <>
+                        <Text style={styles.stripLabel}>Your deals</Text>
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.strip}>
                             {data.commitments.map((row) => {
                                 const on = selectedCommitment?.id === row.id;
@@ -396,7 +472,12 @@ export function InvestorCockpit({
 
                         {selectedCommitment ? (
                             <View style={styles.stack}>
-                                <Scorecard commitment={selectedCommitment} compact={compact} />
+                                <Scorecard
+                                    commitment={selectedCommitment}
+                                    compact={compact}
+                                    onOpenGlossary={onOpenGlossary}
+                                />
+                                <AuthRequiredGate required={requireAuthToAct}>
                                 <Ritual
                                     commitment={selectedCommitment}
                                     draft={emailDraft}
@@ -413,7 +494,9 @@ export function InvestorCockpit({
                                     onDiscard={handleDiscardQueue}
                                     sending={isSending}
                                     compact={compact}
+                                    onOpenGlossary={onOpenGlossary}
                                 />
+                                </AuthRequiredGate>
                             </View>
                         ) : null}
                     </>
@@ -423,7 +506,15 @@ export function InvestorCockpit({
     );
 }
 
-function Scorecard({ commitment, compact }: { commitment: Commitment; compact: boolean }) {
+function Scorecard({
+    commitment,
+    compact,
+    onOpenGlossary,
+}: {
+    commitment: Commitment;
+    compact: boolean;
+    onOpenGlossary?: (focusId?: string) => void;
+}) {
     const { venture } = commitment;
     const peer = venture.peerMedian;
     const progress = venture.kpiTarget > 0 ? Math.min(1, venture.kpiTotal / venture.kpiTarget) : 0;
@@ -434,13 +525,26 @@ function Scorecard({ commitment, compact }: { commitment: Commitment; compact: b
                 <Text style={styles.cardTitle} numberOfLines={1}>
                     {venture.name}
                 </Text>
-                <Text style={styles.meta}>Due {formatDue(commitment.nextDigestAt)}</Text>
+                <View style={styles.dueRow}>
+                    <Text style={styles.meta}>{formatDueLabel(commitment.nextDigestAt)}</Text>
+                    {onOpenGlossary ? <TermHint termId="cadence" onOpenGlossary={onOpenGlossary} /> : null}
+                </View>
             </View>
 
             <View style={styles.metrics}>
-                <Metric value={venture.kpiTotal} label={venture.kpiLabel} />
+                <Metric
+                    value={venture.kpiTotal}
+                    label={venture.kpiLabel}
+                    termId="kpi"
+                    onOpenGlossary={onOpenGlossary}
+                />
                 <Metric value={venture.kpiTarget} label="Target" />
-                <Metric value={peer ?? "—"} label="Peers" />
+                <Metric
+                    value={peer ?? "—"}
+                    label="Similar"
+                    termId="peers"
+                    onOpenGlossary={onOpenGlossary}
+                />
             </View>
 
             <View style={styles.progressTrack}>
@@ -450,21 +554,41 @@ function Scorecard({ commitment, compact }: { commitment: Commitment; compact: b
 
             {commitment.latestDigest ? (
                 <View style={styles.insight}>
-                    <Text style={styles.insightLabel}>Digest</Text>
+                    <View style={styles.insightHead}>
+                        <Text style={styles.insightLabel}>Latest digest</Text>
+                        {onOpenGlossary ? <TermHint termId="digest" onOpenGlossary={onOpenGlossary} /> : null}
+                    </View>
                     <Text style={styles.insightBody} numberOfLines={compact ? 2 : 3}>
                         {commitment.latestDigest.summary}
                     </Text>
                 </View>
-            ) : null}
+            ) : (
+                <Text style={styles.fieldHint}>No digest yet — approve a note below to generate one.</Text>
+            )}
         </View>
     );
 }
 
-function Metric({ value, label }: { value: number | string; label: string }) {
+function Metric({
+    value,
+    label,
+    termId,
+    onOpenGlossary,
+}: {
+    value: number | string;
+    label: string;
+    termId?: string;
+    onOpenGlossary?: (focusId?: string) => void;
+}) {
     return (
         <View style={styles.metric}>
             <Text style={styles.metricValue}>{value}</Text>
-            <Text style={styles.metricLabel}>{label}</Text>
+            <View style={styles.metricLabelRow}>
+                <Text style={styles.metricLabel} numberOfLines={1}>
+                    {label}
+                </Text>
+                {termId && onOpenGlossary ? <TermHint termId={termId} onOpenGlossary={onOpenGlossary} /> : null}
+            </View>
         </View>
     );
 }
@@ -485,6 +609,7 @@ function Ritual({
     onDiscard,
     sending,
     compact,
+    onOpenGlossary,
 }: {
     commitment: Commitment;
     draft: string;
@@ -501,23 +626,31 @@ function Ritual({
     onDiscard: () => void;
     sending: boolean;
     compact: boolean;
+    onOpenGlossary?: (focusId?: string) => void;
 }) {
     const emails = commitment.recentEmails;
     const phaseLabel =
         agentPhase === "queued"
-            ? "Awaiting you"
+            ? "Waiting for your approval"
             : agentPhase === "acting"
-              ? `Acting · ${actingSeconds}s`
+              ? `Working · ${actingSeconds}s`
               : agentPhase === "done"
-                ? "Done"
-                : "Ready";
+                ? "Done — check Ledger"
+                : "Ready for a note";
 
     return (
         <View style={styles.card}>
             <View style={styles.cardTop}>
-                <Text style={styles.cardTitle}>Agent</Text>
+                <View style={styles.titleWithHint}>
+                    <Text style={styles.cardTitle}>Agent note</Text>
+                    {onOpenGlossary ? <TermHint termId="queue-approve" onOpenGlossary={onOpenGlossary} /> : null}
+                </View>
                 <Text style={styles.meta}>{phaseLabel}</Text>
             </View>
+
+            <Text style={styles.fieldHint}>
+                Write what you want pushed this week, then approve — or email the agent inbox shown above.
+            </Text>
 
             <WaitingShimmer active={waiting} />
 
@@ -543,11 +676,12 @@ function Ritual({
 
             {pendingBody ? (
                 <Animated.View entering={FadeInDown.duration(160)} style={styles.gate}>
+                    <Text style={styles.gateEyebrow}>Queued — approve to run</Text>
                     <Text style={styles.gateBody} numberOfLines={compact ? 3 : 5}>
                         {pendingBody}
                     </Text>
                     <PressableScale onPress={onApprove} disabled={sending} style={styles.btnPrimary}>
-                        <Text style={styles.btnPrimaryText}>{sending ? "…" : "Approve"}</Text>
+                        <Text style={styles.btnPrimaryText}>{sending ? "…" : "Approve & run"}</Text>
                     </PressableScale>
                     <Pressable onPress={onDiscard}>
                         <Text style={styles.discard}>Discard</Text>
@@ -560,12 +694,12 @@ function Ritual({
                         onChangeText={onChangeDraft}
                         multiline
                         style={styles.composerInput}
-                        placeholder="Note to agent…"
+                        placeholder="Note to agent — e.g. push follow-ups, reply with what moved"
                         placeholderTextColor={color.mist}
                         maxLength={320}
                     />
                     <PressableScale onPress={onQueue} style={styles.btnPrimary}>
-                        <Text style={styles.btnPrimaryText}>Queue</Text>
+                        <Text style={styles.btnPrimaryText}>Send to agent</Text>
                     </PressableScale>
                 </View>
             )}
@@ -573,7 +707,7 @@ function Ritual({
             {emails.length > 0 ? (
                 <Pressable onPress={onToggleThread}>
                     <Text style={styles.threadToggle}>
-                        {showThread ? "Hide thread" : `Thread · ${emails.length}`}
+                        {showThread ? "Hide thread" : `Email thread · ${emails.length}`}
                     </Text>
                 </Pressable>
             ) : null}
@@ -610,6 +744,92 @@ const styles = StyleSheet.create({
         fontWeight: "700",
         letterSpacing: -1,
         color: color.charcoal,
+    },
+    heroTitle: {
+        fontFamily: font.displayMedium,
+        fontSize: 22,
+        fontWeight: "600",
+        letterSpacing: -0.4,
+        color: color.charcoal,
+    },
+    bridge: {
+        fontFamily: font.body,
+        fontSize: 12,
+        lineHeight: 17,
+        color: color.mist,
+    },
+    integrations: {
+        gap: 6,
+        padding: 12,
+        borderRadius: 6,
+        backgroundColor: color.paper,
+        borderWidth: 1,
+        borderColor: color.line,
+    },
+    integrationsHead: { flexDirection: "row", alignItems: "center", gap: 6 },
+    integrationsLabel: {
+        fontFamily: font.bodyBold,
+        fontSize: 10,
+        fontWeight: "700",
+        letterSpacing: 0.8,
+        textTransform: "uppercase",
+        color: color.brass,
+        marginRight: 2,
+    },
+    integrationsBody: {
+        fontFamily: font.body,
+        fontSize: 12,
+        lineHeight: 17,
+        color: color.mist,
+    },
+    inboxRow: { gap: 4, marginTop: 2 },
+    inboxLabel: {
+        fontFamily: font.bodyBold,
+        fontSize: 10,
+        fontWeight: "700",
+        letterSpacing: 0.6,
+        textTransform: "uppercase",
+        color: color.brass,
+    },
+    inboxAddress: {
+        fontFamily: font.bodyBold,
+        fontSize: 14,
+        fontWeight: "700",
+        color: color.charcoal,
+    },
+    fieldHint: {
+        fontFamily: font.body,
+        fontSize: 12,
+        lineHeight: 17,
+        color: color.mist,
+    },
+    inlineLink: {
+        fontFamily: font.bodyBold,
+        fontSize: 12,
+        fontWeight: "700",
+        color: color.brass,
+        textAlign: "center",
+        paddingVertical: 4,
+    },
+    stripLabel: {
+        fontFamily: font.bodyBold,
+        fontSize: 10,
+        fontWeight: "700",
+        letterSpacing: 0.8,
+        textTransform: "uppercase",
+        color: color.mist,
+    },
+    dueRow: { flexDirection: "row", alignItems: "center", gap: 4, flexShrink: 1 },
+    titleWithHint: { flexDirection: "row", alignItems: "center", gap: 6, flex: 1 },
+    insightHead: { flexDirection: "row", alignItems: "center", gap: 6 },
+    metricLabelRow: { flexDirection: "row", alignItems: "center", gap: 3 },
+    gateEyebrow: {
+        fontFamily: font.bodyBold,
+        fontSize: 10,
+        fontWeight: "700",
+        letterSpacing: 0.6,
+        textTransform: "uppercase",
+        color: color.brass,
     },
     heroActions: { flexDirection: "row", gap: 8, justifyContent: "center" },
     btnPrimary: {

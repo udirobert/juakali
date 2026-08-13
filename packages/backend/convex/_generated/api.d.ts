@@ -8,6 +8,9 @@
  * @module
  */
 
+import type * as agentMail from "../agentMail.js";
+import type * as agentMailPublic from "../agentMailPublic.js";
+import type * as agentMailStore from "../agentMailStore.js";
 import type * as auth from "../auth.js";
 import type * as crons from "../crons.js";
 import type * as env from "../env.js";
@@ -18,6 +21,8 @@ import type * as juaKaliHelpers from "../juaKaliHelpers.js";
 import type * as migrations from "../migrations.js";
 import type * as rateLimit from "../rateLimit.js";
 import type * as smsDelivery from "../smsDelivery.js";
+import type * as softAuth from "../softAuth.js";
+import type * as softEmail from "../softEmail.js";
 import type * as telephony from "../telephony.js";
 import type * as voiceProcessing from "../voiceProcessing.js";
 
@@ -28,6 +33,9 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  agentMail: typeof agentMail;
+  agentMailPublic: typeof agentMailPublic;
+  agentMailStore: typeof agentMailStore;
   auth: typeof auth;
   crons: typeof crons;
   env: typeof env;
@@ -38,6 +46,8 @@ declare const fullApi: ApiFromModules<{
   migrations: typeof migrations;
   rateLimit: typeof rateLimit;
   smsDelivery: typeof smsDelivery;
+  softAuth: typeof softAuth;
+  softEmail: typeof softEmail;
   telephony: typeof telephony;
   voiceProcessing: typeof voiceProcessing;
 }>;

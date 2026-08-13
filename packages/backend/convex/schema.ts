@@ -239,7 +239,43 @@ export default defineSchema({
         createdAt: v.number(),
     })
         .index("by_email", ["email"])
+        .index("by_userId", ["userId"])
         .index("by_isDefaultDemo", ["isDefaultDemo"]),
+
+    /** Auth-user orientation prefs (replaces browser flags when signed in). */
+    userPrefs: defineTable({
+        userId: v.id("users"),
+        onboarded: v.boolean(),
+        coachDismissed: v.boolean(),
+        lastOrientedAt: v.optional(v.number()),
+        updatedAt: v.number(),
+    }).index("by_userId", ["userId"]),
+
+    /**
+     * Demo/soft magic-link inbox when Resend is not configured.
+     * Disable peek in live (SOFT_AUTH_INBOX unset) once AUTH_RESEND_KEY is live.
+     */
+    softAuthLinks: defineTable({
+        email: v.string(),
+        url: v.string(),
+        createdAt: v.number(),
+    }).index("by_email", ["email"]),
+
+    /** Singleton-ish AgentMail wiring (key = "default"). */
+    agentMailConfig: defineTable({
+        key: v.string(),
+        inboxId: v.string(),
+        inboxEmail: v.string(),
+        webhookId: v.optional(v.string()),
+        updatedAt: v.number(),
+    }).index("by_key", ["key"]),
+
+    /** Server-only secrets (webhook signing). Never expose via public queries. */
+    agentMailSecrets: defineTable({
+        key: v.string(),
+        value: v.string(),
+        updatedAt: v.number(),
+    }).index("by_key", ["key"]),
 
     commitments: defineTable({
         investorId: v.id("investors"),
