@@ -100,3 +100,20 @@ Point your MCP client at that package with `JUAKALI_BACKEND_URL` set to your Con
 Gemini 2.5 Flash · Cloud Run · MCP · Convex · Expo · AgentMail (`juakali@agentmail.to`) · Twilio / Africa’s Talking (funnel)
 
 Pre-commit (Husky): gitleaks on staged changes + ESLint via lint-staged (`apps/default`, `packages/backend`). Requires [`gitleaks`](https://github.com/gitleaks/gitleaks#installing) on your PATH.
+## Shipaton 2026 readiness
+
+JuaKali targets [RevenueCat's Shipaton 2026](https://shipaton.com/) (global mobile
+hackathon, Aug–Sep 2026) — strong fit for the **Peace Prize**, **#BuildInPublic**, and
+**Design** awards. Two gaps must close before entry: a real **store binary** (native iOS +
+Android via EAS) and **monetization** (RevenueCat subscription for Investor/Pro).
+
+- Full assessment, gaps, and step-by-step path: [`plans/shipaton-2026-readiness.md`](plans/shipaton-2026-readiness.md).
+- **Native build setup:** EAS config in `apps/default/eas.json`; bundle/package ids in `apps/default/app.json`.
+- **Monetization:** RevenueCat tier + entitlement `subscriptions` table, `getMyEntitlements`,
+  `/webhooks/revenuecat` (Bearer-secret signed), `paywall.tsx` — all scaffolded. Runtime
+  `Purchases.configure({ apiKey })` (no config plugin needed; web untouched).
+
+Short version of the recommended order:
+1. EAS build → TestFlight / Play (store presence is the hard requirement).
+2. RevenueCat **Investor** tier (monthly) → HAMM + real revenue traction.
+3. If a submitter is a student, run the **Next Gen** track (video + source) in parallel.

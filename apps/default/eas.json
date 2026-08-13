@@ -1,0 +1,32 @@
+{
+    "cli": {
+        "version": ">= 16.0.0",
+        "appVersionSource": "local"
+    },
+    "build": {
+        "development": {
+            "distribution": "internal",
+            "developmentClient": true
+        },
+        "preview": {
+            "distribution": "internal",
+            "android": {
+                "buildType": "apk"
+            }
+        },
+        "production": {
+            "autoIncrement": true
+        }
+    },
+    "submit": {
+        "production": {
+            "ios": {
+                "appleId": "your@apple-account.email",
+                "ascAppId": "com.juakali.app"
+            },
+            "android": {
+                "track": "internal"
+            }
+        }
+    }
+}

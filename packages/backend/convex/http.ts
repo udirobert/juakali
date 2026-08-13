@@ -197,10 +197,85 @@ http.route({
 });
 
 http.route({
+    path: "/webhooks/revenuecat",
+    method: "POST",
+    handler: httpAction(async (ctx, request) => {
+        const expected = process.env.REVENUECAT_WEBHOOK_SECRET;
+        if (!expected) {
+            return new Response(JSON.stringify({ ok: false, error: "Not configured" }), {
+                status: 503,
+                headers: { "Content-Type": "application/json" },
+            });
+        }
+        const authHeader = request.headers.get("authorization") ?? "";
+        const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : authHeader;
+        if (token !== expected) {
+            return new Response(JSON.stringify({ ok: false, error: "Unauthorized" }), {
+                status: 401,
+                headers: { "Content-Type": "application/json" },
+            });
+        }
+        const body: unknown = await request.json().catch(() => null);
+        if (!isRecord(body)) {
+            return new Response(JSON.stringify({ ok: false, error: "Invalid JSON" }), {
+                status: 400,
+                headers: { "Content-Type": "application/json" },
+            });
+        }
+        // Newer RevenueCat webhooks nest the event under `event`; support both shapes.
+        const event = isRecord(body.event) ? body.event : body;
+        const appUserId =
+            typeof event["app_user_id"] === "string"
+                ? (event["app_user_id"] as string)
+                : typeof event["appUserId"] === "string"
+                  ? (event["appUserId"] as string)
+                  : "";
+        if (!appUserId) {
+            return new Response(JSON.stringify({ ok: false, error: "Missing app_user_id" }), {
+                status: 400,
+                headers: { "Content-Type": "application/json" },
+            });
+        }
+        const subscriber = isRecord(event.subscriber) ? event.subscriber : {};
+        const entitlementsObj = isRecord(subscriber.entitlements) ? subscriber.entitlements : {};
+
+        const now = Date.now();
+        const active: Array<string> = [];
+        let productId: string | null = null;
+        let expiresAt: number | null = null;
+        for (const [key, e] of Object.entries(entitlementsObj)) {
+            if (!isRecord(e)) continue;
+            const expiry = typeof e.expires_date === "string" ? Date.parse(e.expires_date) : NaN;
+            const isActive =
+                e.active === true || e.active === "true" || (Number.isFinite(expiry) && expiry > now);
+            if (isActive) {
+                active.push(key);
+                if (typeof e.product_identifier === "string") productId = e.product_identifier;
+                if (Number.isFinite(expiry)) expiresAt = expiry;
+            }
+        }
+        const status = active.length > 0 ? "active" : "expired";
+
+        await ctx.runMutation(internal.subscriptions.setEntitlements, {
+            revenueCatAppUserId: appUserId,
+            entitlements: active,
+            productId,
+            status,
+            expiresAt,
+        });
+        return new Response(JSON.stringify({ ok: true, entitlements: active }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+        });
+    }),
+});
+
+http.route({
     path: "/webhooks/agentmail",
     method: "POST",
     handler: httpAction(async (ctx, request) => {
         const rawBody = await request.text();
+
         const svixId = request.headers.get("svix-id");
         const svixTimestamp = request.headers.get("svix-timestamp");
         const svixSignature = request.headers.get("svix-signature");

@@ -23,6 +23,7 @@ import type * as rateLimit from "../rateLimit.js";
 import type * as smsDelivery from "../smsDelivery.js";
 import type * as softAuth from "../softAuth.js";
 import type * as softEmail from "../softEmail.js";
+import type * as subscriptions from "../subscriptions.js";
 import type * as telephony from "../telephony.js";
 import type * as voiceProcessing from "../voiceProcessing.js";
 
@@ -48,6 +49,7 @@ declare const fullApi: ApiFromModules<{
   smsDelivery: typeof smsDelivery;
   softAuth: typeof softAuth;
   softEmail: typeof softEmail;
+  subscriptions: typeof subscriptions;
   telephony: typeof telephony;
   voiceProcessing: typeof voiceProcessing;
 }>;

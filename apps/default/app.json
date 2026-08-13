@@ -13,9 +13,12 @@
         "userInterfaceStyle": "light",
         "newArchEnabled": true,
         "ios": {
-            "supportsTablet": true
+            "supportsTablet": true,
+            "bundleIdentifier": "com.juakali.app"
         },
         "android": {
+            "package": "com.juakali.app",
+            "versionCode": 1,
             "adaptiveIcon": {
                 "foregroundImage": "../../assets/images/adaptive-icon.png",
                 "backgroundColor": "#E6E4DF"

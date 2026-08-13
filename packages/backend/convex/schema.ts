@@ -349,4 +349,17 @@ export default defineSchema({
         .index("by_publicVisible_and_createdAt", ["publicVisible", "createdAt"])
         .index("by_ventureId", ["ventureId"])
         .index("by_createdAt", ["createdAt"]),
+
+    /** RevenueCat entitlements per investor (Shipaton 2026 monetization). */
+    subscriptions: defineTable({
+        investorId: v.id("investors"),
+        revenueCatAppUserId: v.string(),
+        entitlements: v.array(v.string()),
+        productId: v.union(v.string(), v.null()),
+        status: v.union(v.literal("active"), v.literal("expired")),
+        expiresAt: v.union(v.number(), v.null()),
+        updatedAt: v.number(),
+    })
+        .index("by_investorId", ["investorId"])
+        .index("by_revenueCatAppUserId", ["revenueCatAppUserId"]),
 });
