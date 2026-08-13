@@ -183,6 +183,7 @@ export function InvestorCockpit({
     const [isSending, setIsSending] = useState(false);
     const [showPledge, setShowPledge] = useState(false);
     const [showThread, setShowThread] = useState(false);
+    const [showIntegrations, setShowIntegrations] = useState(false);
     const [actingSeconds, setActingSeconds] = useState(0);
 
     useEffect(() => {
@@ -341,7 +342,7 @@ export function InvestorCockpit({
                         </PressableScale>
                     </View>
                     <Text style={styles.bridge}>
-                        Soft pledges & weekly agent notes live here. Public proof is on the Ledger tab.
+                        Deal = act · Ledger = public proof
                     </Text>
                     {statusMessage ? <Text style={styles.status}>{statusMessage}</Text> : null}
                 </View>
@@ -356,31 +357,30 @@ export function InvestorCockpit({
                 ) : null}
 
                 <View style={styles.integrations}>
-                    <View style={styles.integrationsHead}>
-                        <Text style={styles.integrationsLabel}>Email & cadence</Text>
-                        {onOpenGlossary ? <TermHint termId="agentmail" onOpenGlossary={onOpenGlossary} /> : null}
-                        {onOpenGlossary ? <TermHint termId="cadence" onOpenGlossary={onOpenGlossary} /> : null}
-                    </View>
-                    <Text style={styles.integrationsBody}>
-                        {fidelityHint ??
-                            "Soft pledges (not escrow) · AgentMail inbox live for inbound notes · Gmail later."}
-                    </Text>
-                    {agentMail?.configured && agentMail.inboxEmail ? (
-                        <View style={styles.inboxRow}>
-                            <Text style={styles.inboxLabel}>Agent inbox</Text>
-                            <Text selectable style={styles.inboxAddress}>
-                                {agentMail.inboxEmail}
-                            </Text>
-                            <Text style={styles.fieldHint}>
-                                Email this address (optional subject: venture:slug) · or queue a note below and
-                                approve.
-                            </Text>
+                    <Pressable onPress={() => setShowIntegrations((v) => !v)} hitSlop={8}>
+                        <View style={styles.integrationsHead}>
+                            <Text style={styles.integrationsLabel}>Email & cadence</Text>
+                            <Text style={styles.threadToggle}>{showIntegrations ? "Hide" : "More"}</Text>
                         </View>
-                    ) : (
-                        <Text style={styles.fieldHint}>
-                            In-app notes: queue → approve. Digest dates are weekly cadence, not calendar sync.
-                        </Text>
-                    )}
+                    </Pressable>
+                    <Text style={styles.integrationsBody}>
+                        {agentMail?.inboxEmail ?? "In-app notes: queue → approve"}
+                    </Text>
+                    {showIntegrations ? (
+                        <>
+                            <Text style={styles.fieldHint}>
+                                {fidelityHint ??
+                                    "Soft pledges (not escrow) · AgentMail inbox live for inbound notes · Gmail later."}
+                            </Text>
+                            {agentMail?.configured && agentMail.inboxEmail ? (
+                                <Text style={styles.fieldHint}>
+                                    Email it (subject: venture:slug) — or queue a note below and approve.
+                                </Text>
+                            ) : (
+                                <Text style={styles.fieldHint}>Weekly cadence, not calendar sync.</Text>
+                            )}
+                        </>
+                    ) : null}
                 </View>
 
                 {showPledge ? (
@@ -402,7 +402,7 @@ export function InvestorCockpit({
                         {data.availableVentures.length === 0 ? (
                             <Text style={styles.status}>No ventures yet — start a commitment from the landing.</Text>
                         ) : (
-                            <Text style={styles.fieldHint}>Choose a venture, then set a soft pledge amount (intent only).</Text>
+                            <Text style={styles.fieldHint}>Pick a venture · set a soft amount (intent only).</Text>
                         )}
                         <TextInput
                             value={amountText}
@@ -435,9 +435,7 @@ export function InvestorCockpit({
                             <View style={[styles.emptyRing, styles.emptyRingInner]} />
                         </View>
                         <Text style={styles.emptyTitle}>No deal yet</Text>
-                        <Text style={styles.status}>
-                            Record a soft pledge for a named venture, or load seeded deals to walk the loop.
-                        </Text>
+                        <Text style={styles.status}>Pledge a venture, or load seeded deals to explore.</Text>
                         <PressableScale
                             onPress={() => setShowPledge(true)}
                             style={styles.btnPrimary}
@@ -527,7 +525,6 @@ function Scorecard({
                 </Text>
                 <View style={styles.dueRow}>
                     <Text style={styles.meta}>{formatDueLabel(commitment.nextDigestAt)}</Text>
-                    {onOpenGlossary ? <TermHint termId="cadence" onOpenGlossary={onOpenGlossary} /> : null}
                 </View>
             </View>
 
@@ -539,12 +536,7 @@ function Scorecard({
                     onOpenGlossary={onOpenGlossary}
                 />
                 <Metric value={venture.kpiTarget} label="Target" />
-                <Metric
-                    value={peer ?? "—"}
-                    label="Similar"
-                    termId="peers"
-                    onOpenGlossary={onOpenGlossary}
-                />
+                <Metric value={peer ?? "—"} label="Similar" />
             </View>
 
             <View style={styles.progressTrack}>
@@ -556,7 +548,6 @@ function Scorecard({
                 <View style={styles.insight}>
                     <View style={styles.insightHead}>
                         <Text style={styles.insightLabel}>Latest digest</Text>
-                        {onOpenGlossary ? <TermHint termId="digest" onOpenGlossary={onOpenGlossary} /> : null}
                     </View>
                     <Text style={styles.insightBody} numberOfLines={compact ? 2 : 3}>
                         {commitment.latestDigest.summary}
@@ -648,9 +639,7 @@ function Ritual({
                 <Text style={styles.meta}>{phaseLabel}</Text>
             </View>
 
-            <Text style={styles.fieldHint}>
-                Write what you want pushed this week, then approve — or email the agent inbox shown above.
-            </Text>
+            <Text style={styles.fieldHint}>Write a note, then approve to run — or email the inbox above.</Text>
 
             <WaitingShimmer active={waiting} />
 

@@ -267,8 +267,6 @@ export function HowItWorksCard({
 export function WelcomeBackBanner({
     visible,
     onDismiss,
-    onHowItWorks,
-    onGlossary,
     onGoDeals,
 }: {
     visible: boolean;
@@ -277,6 +275,7 @@ export function WelcomeBackBanner({
     onGlossary?: () => void;
     onGoDeals?: () => void;
 }) {
+    const [open, setOpen] = useState(false);
     if (!visible) return null;
 
     return (
@@ -287,33 +286,24 @@ export function WelcomeBackBanner({
                     <Text style={styles.coachDismiss}>Got it</Text>
                 </Pressable>
             </View>
-            <Text style={styles.welcomeLead}>
-                You’re in the app — not the intro. Orientation: Deals = act · Ledger = public proof.
-            </Text>
-            <View style={styles.welcomeSteps}>
-                {HOW_IT_WORKS_STEPS.map((step) => (
-                    <Text key={step.n} style={styles.welcomeStep}>
-                        {step.n}. {step.title}
-                    </Text>
-                ))}
-            </View>
-            <View style={styles.welcomeActions}>
-                {onGoDeals ? (
-                    <Pressable onPress={onGoDeals} style={styles.welcomePrimary}>
-                        <Text style={styles.welcomePrimaryText}>Go to My deals</Text>
-                    </Pressable>
-                ) : null}
-                {onHowItWorks ? (
-                    <Pressable onPress={onHowItWorks}>
-                        <Text style={styles.coachLink}>How this works</Text>
-                    </Pressable>
-                ) : null}
-                {onGlossary ? (
-                    <Pressable onPress={onGlossary}>
-                        <Text style={styles.coachLink}>Terms</Text>
-                    </Pressable>
-                ) : null}
-            </View>
+            <Text style={styles.welcomeLead}>Deals = act · Ledger = public proof</Text>
+            <Pressable onPress={() => setOpen((v) => !v)}>
+                <Text style={styles.coachLink}>{open ? "Hide steps" : "How it works"}</Text>
+            </Pressable>
+            {open ? (
+                <View style={styles.welcomeSteps}>
+                    {HOW_IT_WORKS_STEPS.map((step) => (
+                        <Text key={step.n} style={styles.welcomeStep}>
+                            {step.n}. {step.title}
+                        </Text>
+                    ))}
+                </View>
+            ) : null}
+            {onGoDeals ? (
+                <Pressable onPress={onGoDeals} style={styles.welcomePrimary}>
+                    <Text style={styles.welcomePrimaryText}>Go to My deals</Text>
+                </Pressable>
+            ) : null}
         </View>
     );
 }
