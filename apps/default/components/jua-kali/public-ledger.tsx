@@ -93,12 +93,10 @@ export function PublicLedger({
                     {!hideTitleChrome ? (
                         <View style={styles.titleRow}>
                             <Text style={styles.title}>Public ledger</Text>
-                            {onOpenGlossary ? <TermHint termId="ledger" onOpenGlossary={onOpenGlossary} /> : null}
                         </View>
                     ) : (
                         <View style={styles.titleRow}>
                             <Text style={styles.titleCompact}>Public proof</Text>
-                            {onOpenGlossary ? <TermHint termId="ledger" onOpenGlossary={onOpenGlossary} /> : null}
                         </View>
                     )}
                     <Text style={styles.sub}>

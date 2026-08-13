@@ -310,9 +310,6 @@ export function InvestorLanding({
                                     {busy ? "…" : "Try seeded deals"}
                                 </Text>
                             </Pressable>
-                            <Text style={styles.secondaryHint}>
-                                Opens My deals with sample pledges and KPIs.
-                            </Text>
                         </>
                     ) : (
                         <View style={styles.form}>
@@ -428,15 +425,6 @@ const styles = StyleSheet.create({
     },
     frame: { width: "100%", gap: 14, alignItems: "center" },
     authBlock: { width: "100%", maxWidth: 400 },
-    secondaryHint: {
-        fontFamily: font.body,
-        fontSize: 12,
-        lineHeight: 16,
-        color: color.mist,
-        textAlign: "center",
-        maxWidth: 280,
-        marginTop: -6,
-    },
     brand: {
         fontFamily: font.display,
         fontSize: 40,
