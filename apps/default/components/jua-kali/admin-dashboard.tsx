@@ -137,7 +137,7 @@ export function AdminDashboard() {
                             Jua Kali apprenticeship matcher
                         </Text>
                         <Text style={styles.subtitle}>
-                            A phone-first operating surface for matching Kenyan master artisans with youth seeking practical skills.
+                            Matching Kenyan master artisans with youth seeking practical skills.
                         </Text>
                         <View style={styles.actionsRow}>
                             <OrganicButton label="Seed demo village" onPress={handleSeedDemo} disabled={isSeeding} tone="terracotta" />
@@ -174,9 +174,9 @@ export function AdminDashboard() {
                             <EndpointStrand key={endpoint.path} endpoint={endpoint} index={index} />
                         ))}
                     </OrganicSection>
-                    <OrganicSection title="Voice intake queue" subtitle="Recording callbacks become structured Master profiles after ASR + extraction.">
+                    <OrganicSection title="Voice intake queue" subtitle="Recording callbacks become structured Master profiles.">
                         {data.voiceIntakes.length === 0 ? (
-                            <EmptyPatch title="No voice callbacks yet" body="Use the recording webhook with RecordingUrl or transcript text to create the first intake." />
+                            <EmptyPatch title="No voice callbacks yet" body="Post a recording webhook to create the first intake." />
                         ) : (
                             data.voiceIntakes.map((intake, index) => <VoiceStrand key={intake.id} intake={intake} index={index} />)
                         )}
@@ -184,9 +184,9 @@ export function AdminDashboard() {
                 </View>
 
                 <View style={[styles.overlapFlow, isWide && styles.overlapFlowWide]}>
-                    <OrganicSection title="Masters" subtitle="Artisan profiles transcribed from voice and ready for matching.">
+                    <OrganicSection title="Masters" subtitle="Voice-transcribed artisans, ready to match.">
                         {data.masters.length === 0 ? (
-                            <EmptyPatch title="No Masters yet" body="Seed demo data or post a voice recording callback to populate this surface." />
+                            <EmptyPatch title="No Masters yet" body="Seed demo data to populate this surface." />
                         ) : (
                             data.masters.map((master, index) => <MasterPatch key={master.id} master={master} index={index} />)
                         )}
@@ -194,7 +194,7 @@ export function AdminDashboard() {
 
                     <OrganicSection title="Apprentices" subtitle="Youth entering discovery by SMS keyword or USSD menu.">
                         {data.apprentices.length === 0 ? (
-                            <EmptyPatch title="No Apprentices yet" body="Send CHUKUA by SMS or complete a USSD text path to create discovery records." />
+                            <EmptyPatch title="No Apprentices yet" body="Send CHUKUA by SMS, or complete a USSD path." />
                         ) : (
                             data.apprentices.map((apprentice, index) => <ApprenticeStrand key={apprentice.id} apprentice={apprentice} index={index} />)
                         )}
@@ -210,7 +210,7 @@ export function AdminDashboard() {
                         )}
                     </OrganicSection>
 
-                    <OrganicSection title="SMS outbox" subtitle="Provider-ready outbound messages from automated matching.">
+                    <OrganicSection title="SMS outbox" subtitle="Provider-ready outbound messages.">
                         {data.outboundMessages.length === 0 ? (
                             <EmptyPatch title="No outbound SMS yet" body="Replies and Master alerts will land here before delivery." />
                         ) : (

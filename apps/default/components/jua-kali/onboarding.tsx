@@ -269,7 +269,7 @@ function WelcomeStep({ height, onStart, onAdmin }: { height: number; onStart: ()
                 <Text style={styles.kicker}>Jua Kali · learn a trade</Text>
                 <Text style={[styles.bigTitle, { fontSize: titleSize, lineHeight: titleSize, marginLeft: tiny ? -14 : -22 }]}>Learn a real{"\n"}skill from a{"\n"}real fundi.</Text>
                 {!tiny ? (
-                    <Text numberOfLines={3} style={styles.lead}>Pick a craft, tell us where you are, and we&apos;ll match you with masters teaching near you — by SMS, USSD, or voice.</Text>
+                    <Text numberOfLines={3} style={styles.lead}>Pick a craft and your area — we&apos;ll match you with masters nearby.</Text>
                 ) : null}
             </View>
             <SocialProofBand />
@@ -529,7 +529,7 @@ function RevealStep({
                     result.matches.slice(0, 2).map((match, index) => <MatchCard key={match.id} match={match} index={index} />)
                 ) : (
                     <View style={styles.emptyReveal}>
-                        <Text style={styles.emptyRevealText}>We&apos;ll alert masters joining near {location}. Seed demo data from the admin view to preview a live match.</Text>
+                        <Text style={styles.emptyRevealText}>We&apos;ll alert you the moment a master joins near {location}.</Text>
                     </View>
                 )}
             </View>
