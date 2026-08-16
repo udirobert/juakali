@@ -11,10 +11,11 @@ import {
     View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, { FadeIn } from "react-native-reanimated";
+import Animated from "react-native-reanimated";
 
 import { SunMark } from "@/components/jua-kali/sun-mark";
 import { color, font, layout } from "@/components/jua-kali/theme";
+import { useUiMotion } from "@/components/jua-kali/hooks/use-ui-motion";
 
 const AGENT_URL = process.env.EXPO_PUBLIC_AGENT_URL ?? "http://localhost:8080";
 
@@ -38,6 +39,7 @@ export function AgentChat() {
     const [inputText, setInputText] = useState("");
     const [isSending, setIsSending] = useState(false);
     const listRef = useRef<FlatList>(null);
+    const { fade } = useUiMotion();
 
     const sendMessage = useCallback(
         async (text: string) => {
@@ -131,7 +133,7 @@ export function AgentChat() {
                         const agent = item.role === "agent";
                         return (
                             <Animated.View
-                                entering={FadeIn.duration(160)}
+                                entering={fade(160)}
                                 style={[styles.row, agent && styles.rowAgent]}
                             >
                                 <View style={[styles.bubble, agent ? styles.bubbleAgent : styles.bubbleUser]}>

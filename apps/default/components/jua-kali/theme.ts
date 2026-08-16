@@ -19,6 +19,35 @@ export const color = {
     success: "#2F5D3A",
     danger: "#8B3A2F",
 };
+export type ColorTokens = typeof color;
+
+/**
+ * Dark-groundwork: an additive inversion of the ledger palette so the shell
+ * can follow `useColorScheme` later without re-deriving tokens inline. Shipped
+ * quietly — not yet consumed by any style. Light ("Nairobi ledger") stays the
+ * default demo rag until native theming lands.
+ */
+export const colorDark: ColorTokens = {
+    stone: "#131613",
+    paper: "#181C19",
+    foam: "#0B0E0C",
+    charcoal: "#ECE9E2",
+    ink: "#DCD9D1",
+    brass: "#C4A15A",
+    brassLight: "#D9BD7A",
+    brassDeep: "#C4A15A",
+    brassSoft: "rgba(196, 161, 90, 0.18)",
+    mist: "#A9B0AA",
+    line: "rgba(236, 233, 226, 0.12)",
+    lineStrong: "rgba(236, 233, 226, 0.22)",
+    success: "#6FB57F",
+    danger: "#D9836F",
+};
+
+/** Pick the ledger rag by OS color scheme. Additive today: light is the default shell. */
+export function themeColors(scheme: "light" | "dark"): ColorTokens {
+    return scheme === "dark" ? colorDark : color;
+}
 
 /**
  * Radius scale — the app core already lives on {2, 4, 6, 8}; these tokens make

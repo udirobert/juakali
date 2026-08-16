@@ -15,7 +15,6 @@ import {
 import Svg, { Circle as SvgCircle, Path as SvgPath } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
-    FadeInDown,
     useAnimatedProps,
     useAnimatedStyle,
     useReducedMotion,
@@ -34,10 +33,11 @@ import { successHaptic, tapHaptic } from "@/components/jua-kali/haptics";
 import { AuthRequiredGate } from "@/components/jua-kali/soft-identity";
 import { SunMark } from "@/components/jua-kali/sun-mark";
 import { LivingSun } from "@/components/jua-kali/living-sun";
+import { useUiMotion } from "@/components/jua-kali/hooks/use-ui-motion";
 import { IconCheck, IconSend, IconShare, IconX } from "@/components/jua-kali/icons";
 import { Button, Card, Chip, Input } from "@/components/jua-kali/ui";
 import { ShareWisdomCard, WisdomItemCard } from "@/components/jua-kali/wisdom";
-import { color, elevation, font, layout, motion, tabularNums } from "@/components/jua-kali/theme";
+import { color, elevation, font, layout, tabularNums } from "@/components/jua-kali/theme";
 
 const AnimatedPath = Animated.createAnimatedComponent(SvgPath);
 
@@ -232,6 +232,7 @@ export function InvestorCockpit({
     const { width } = useWindowDimensions();
     const compact = width < 440;
     const padX = Math.max(14, Math.min(28, (width - layout.maxWidth) / 2 + 16));
+    const ui = useUiMotion();
 
     const [selectedCommitmentId, setSelectedCommitmentId] = useState<Id<"commitments"> | null>(
         dealParams.commitmentId ?? null
@@ -509,7 +510,7 @@ export function InvestorCockpit({
 
                 {showPledge ? (
                     <AuthRequiredGate required={requireAuthToAct}>
-                    <Animated.View entering={FadeInDown.duration(180)}>
+                    <Animated.View entering={ui.down(180)}>
                         <Card>
                             <View style={styles.chipRow}>
                                 {data.availableVentures.map((venture) => (
@@ -718,8 +719,9 @@ function ProposalCard({
     onApprove: () => void;
     onDismiss: () => void;
 }) {
+    const { down } = useUiMotion();
     return (
-        <Animated.View entering={FadeInDown.duration(180)}>
+        <Animated.View entering={down(180)}>
             <Card variant="trust" style={styles.proposal}>
                 <View style={styles.cardTop}>
                     <View style={styles.titleWithHint}>
@@ -768,7 +770,7 @@ function AgentArrival({
     latestDigest: Commitment["latestDigest"];
     dealCount: number;
 }) {
-    const reduceMotion = useReducedMotion();
+    const { enter } = useUiMotion();
 
     let voice: string;
     if (inbound) {
@@ -783,9 +785,6 @@ function AgentArrival({
     } else {
         voice = "Nothing on my desk yet — pledge a venture and I'll start following it.";
     }
-
-    const enter = (index: number) =>
-        reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(index * motion.stagger);
 
     return (
         <Card variant="trust" style={styles.arrival} accessibilityRole="text">
@@ -958,6 +957,7 @@ function Ritual({
     const emails = commitment.recentEmails;
     const [showThread, setShowThread] = useState(false);
     const [actingSeconds, setActingSeconds] = useState(0);
+    const { down } = useUiMotion();
 
     // The heavy per-step subscription lives here, inside the ritual card —
     // step commits re-render this card, not the whole cockpit.
@@ -1121,7 +1121,7 @@ function Ritual({
             ) : null}
 
             {showApproveGate ? (
-                <Animated.View entering={FadeInDown.duration(160)} style={styles.gate}>
+                <Animated.View entering={down(160)} style={styles.gate}>
                     <Text style={styles.gateEyebrow}>Ready to run</Text>
                     <Text style={styles.gateBody} numberOfLines={6}>
                         {pendingBody}
