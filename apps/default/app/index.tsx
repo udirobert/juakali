@@ -122,11 +122,11 @@ export default function Index() {
     }, []);
 
     const primaryTabs = useMemo(() => {
-        const tabs: Array<{ id: Screen; label: string; hint: string }> = [
-            { id: "home", label: useTopNav ? "My deals" : "Deals", hint: "Act here" },
-            { id: "ledger", label: useTopNav ? "Public ledger" : "Ledger", hint: "Public proof" },
+        const tabs: Array<{ id: Screen; label: string }> = [
+            { id: "home", label: useTopNav ? "My deals" : "Deals" },
+            { id: "ledger", label: useTopNav ? "Public ledger" : "Ledger" },
         ];
-        if (labUnlocked) tabs.push({ id: "lab", label: "Lab", hint: "Internal" });
+        if (labUnlocked) tabs.push({ id: "lab", label: "Lab" });
         return tabs;
     }, [labUnlocked, useTopNav]);
 
@@ -176,7 +176,6 @@ export default function Index() {
                     <TabButton
                         key={tab.id}
                         label={tab.label}
-                        hint={useTopNav ? tab.hint : undefined}
                         active={screen === tab.id}
                         onPress={() => setScreen(tab.id)}
                         top={useTopNav}
@@ -277,7 +276,6 @@ export default function Index() {
                         onOpenGlossary={openGlossary}
                         onOpenLedger={() => setScreen("ledger")}
                         hideBrand={useTopNav}
-                        fidelityHint={product.fidelityHint}
                         requireAuthToAct={requireAuthToAct}
                     />
                 ) : screen === "ledger" ? (
@@ -308,14 +306,12 @@ export default function Index() {
 
 function TabButton({
     label,
-    hint,
     active,
     onPress,
     compact,
     top,
 }: {
     label: string;
-    hint?: string;
     active: boolean;
     onPress: () => void;
     compact?: boolean;
@@ -342,7 +338,6 @@ function TabButton({
             >
                 {label}
             </Text>
-            {hint && active ? <Text style={styles.tabHint}>{hint}</Text> : null}
         </Pressable>
     );
 }
@@ -459,10 +454,4 @@ const styles = StyleSheet.create({
     },
     tabTextCompact: { fontSize: 11 },
     tabTextActive: { color: color.charcoal },
-    tabHint: {
-        fontFamily: font.body,
-        fontSize: 10,
-        color: color.brass,
-        marginTop: 1,
-    },
 });

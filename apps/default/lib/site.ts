@@ -5,7 +5,7 @@ export const SITE = {
     name: "JuaKali",
     title: "JuaKali · Invest in public",
     description:
-        "Soft-pledge into apprentice ventures. An agent drives weekly KPIs, digests, and a public ledger — non-securities, non-settling commitments.",
+        "Soft-pledge into apprentice ventures. Your agent Jua tracks weekly KPIs, files digests, and posts every step to a public ledger — non-securities, non-settling commitments.",
     locale: "en_KE",
     twitterHandle: "",
     themeColor: "#E6E4DF",

@@ -344,8 +344,9 @@ export function InvestorLanding({
                                 You’re busy. Your capital shouldn’t be.
                             </Text>
                             <Text style={styles.subhead}>
-                                An agent operates each venture weekly — KPIs, digests, follow-ups. Every
-                                action lands on a public ledger you can point at.
+                                Jua, your agent, mentors each venture weekly — tracking KPIs, writing
+                                digests, nudging follow-ups. Every step lands on a public ledger you
+                                can share.
                             </Text>
 
                             <LedgerArtifact />

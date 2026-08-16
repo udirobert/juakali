@@ -89,17 +89,17 @@ export const HOW_IT_WORKS_STEPS = [
     {
         n: "1",
         title: "Open a deal",
-        body: "Pick a venture on My deals — or start a soft pledge if you’re empty.",
+        body: "Pick a venture on My deals — or start a soft pledge if you're empty.",
     },
     {
         n: "2",
-        title: "Note Jua, the agent (in-app or email)",
-        body: "Queue → Approve in the app, or email juakali@agentmail.to. Tools only run after approval for in-app notes; inbound mail runs the same KPI/digest path.",
+        title: "Send a note to Jua",
+        body: "Queue it and approve, or email juakali@agentmail.to. Nothing runs until you approve.",
     },
     {
         n: "3",
         title: "Check public proof",
-        body: "Switch to Public ledger to see the same pledge, KPI, and digest events.",
+        body: "The same pledge, KPI, and digest events appear on the public ledger.",
     },
 ] as const;
 
@@ -223,41 +223,55 @@ export function HowItWorksCard({
     visible,
     onDismiss,
     onOpenGlossary,
-    compact,
 }: {
     visible: boolean;
     onDismiss: () => void;
     onOpenGlossary?: () => void;
+    /** Kept for API compatibility; card is now always one line until expanded. */
     compact?: boolean;
 }) {
+    const [open, setOpen] = useState(false);
     if (!visible) return null;
 
     return (
         <View style={styles.coach} accessibilityRole="summary">
             <View style={styles.coachHead}>
                 <Text style={styles.coachEyebrow}>How this works</Text>
-                <Pressable onPress={onDismiss} hitSlop={10} accessibilityRole="button">
-                    <Text style={styles.coachDismiss}>Dismiss</Text>
-                </Pressable>
+                <View style={styles.coachActions}>
+                    <Pressable
+                        onPress={() => setOpen((v) => !v)}
+                        hitSlop={10}
+                        accessibilityRole="button"
+                    >
+                        <Text style={styles.coachLink}>{open ? "Hide steps" : "See the 3 steps"}</Text>
+                    </Pressable>
+                    <Pressable onPress={onDismiss} hitSlop={10} accessibilityRole="button">
+                        <Text style={styles.coachDismiss}>Dismiss</Text>
+                    </Pressable>
+                </View>
             </View>
-            <View style={styles.coachSteps}>
-                {HOW_IT_WORKS_STEPS.map((step) => (
-                    <View key={step.n} style={[styles.coachStep, compact && styles.coachStepCompact]}>
-                        <Text style={styles.coachN}>{step.n}</Text>
-                        <View style={styles.coachCopy}>
-                            <Text style={styles.coachTitle}>{step.title}</Text>
-                            {!compact ? <Text style={styles.coachBody}>{step.body}</Text> : null}
-                        </View>
+            <Text style={styles.coachSummary}>
+                Open a deal · Send a note to Jua · Check public proof
+            </Text>
+            {open ? (
+                <>
+                    <View style={styles.coachSteps}>
+                        {HOW_IT_WORKS_STEPS.map((step) => (
+                            <View key={step.n} style={styles.coachStep}>
+                                <Text style={styles.coachN}>{step.n}</Text>
+                                <View style={styles.coachCopy}>
+                                    <Text style={styles.coachTitle}>{step.title}</Text>
+                                    <Text style={styles.coachBody}>{step.body}</Text>
+                                </View>
+                            </View>
+                        ))}
                     </View>
-                ))}
-            </View>
-            {compact ? (
-                <Text style={styles.coachBody}>Deal → approve note → Public ledger.</Text>
-            ) : null}
-            {onOpenGlossary ? (
-                <Pressable onPress={onOpenGlossary}>
-                    <Text style={styles.coachLink}>Browse terms</Text>
-                </Pressable>
+                    {onOpenGlossary ? (
+                        <Pressable onPress={onOpenGlossary}>
+                            <Text style={styles.coachLink}>Browse terms</Text>
+                        </Pressable>
+                    ) : null}
+                </>
             ) : null}
         </View>
     );
@@ -482,6 +496,13 @@ const styles = StyleSheet.create({
         borderRadius: 6,
     },
     coachHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+    coachActions: { flexDirection: "row", alignItems: "center", gap: 14 },
+    coachSummary: {
+        fontFamily: font.bodyMedium,
+        fontSize: 13,
+        color: color.ink,
+        marginTop: 2,
+    },
     coachEyebrow: {
         fontFamily: font.bodyBold,
         fontSize: 11,
@@ -493,7 +514,6 @@ const styles = StyleSheet.create({
     coachDismiss: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.mist },
     coachSteps: { gap: 10 },
     coachStep: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
-    coachStepCompact: { alignItems: "center" },
     coachN: {
         fontFamily: font.display,
         fontSize: 16,

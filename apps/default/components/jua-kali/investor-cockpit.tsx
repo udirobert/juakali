@@ -140,7 +140,6 @@ export function InvestorCockpit({
     onDismissCoach,
     onOpenGlossary,
     hideBrand = false,
-    fidelityHint,
     requireAuthToAct = false,
     onOpenLedger,
 }: {
@@ -149,7 +148,6 @@ export function InvestorCockpit({
     onDismissCoach?: () => void;
     onOpenGlossary?: (focusId?: string) => void;
     hideBrand?: boolean;
-    fidelityHint?: string;
     requireAuthToAct?: boolean;
     onOpenLedger?: () => void;
 } = {}) {
@@ -387,9 +385,9 @@ export function InvestorCockpit({
                             <Text style={styles.btnGhostText}>{showPledge ? "Close" : "New pledge"}</Text>
                         </PressableScale>
                     </View>
-                    <Text style={styles.bridge}>
-                        Deals = act · Ledger = public proof
-                    </Text>
+                    {hideBrand ? (
+                        <Text style={styles.bridge}>Deals = act · Ledger = public proof</Text>
+                    ) : null}
                     {statusMessage ? <Text style={styles.status}>{statusMessage}</Text> : null}
                 </View>
 
@@ -405,27 +403,18 @@ export function InvestorCockpit({
                 <View style={styles.integrations}>
                     <Pressable onPress={() => setShowIntegrations((v) => !v)} hitSlop={8}>
                         <View style={styles.integrationsHead}>
-                            <Text style={styles.integrationsLabel}>Email & cadence</Text>
+                            <Text style={styles.integrationsLabel}>Email</Text>
                             <Text style={styles.threadToggle}>{showIntegrations ? "Hide" : "More"}</Text>
                         </View>
                     </Pressable>
                     <Text style={styles.integrationsBody}>
                         {agentMail?.inboxEmail ?? "In-app notes: queue → approve"}
                     </Text>
-                    {showIntegrations ? (
-                        <>
-                            <Text style={styles.fieldHint}>
-                                {fidelityHint ??
-                                    "Soft pledges (not escrow) · AgentMail inbox live for inbound notes · Gmail later."}
-                            </Text>
-                            {agentMail?.configured && agentMail.inboxEmail ? (
-                                <Text style={styles.fieldHint}>
-                                    Email it (subject: venture:slug) — or queue a note below and approve.
-                                </Text>
-                            ) : (
-                                <Text style={styles.fieldHint}>Weekly cadence, not calendar sync.</Text>
-                            )}
-                        </>
+                    {showIntegrations && agentMail?.configured && agentMail.inboxEmail ? (
+                        <Text style={styles.fieldHint}>
+                            You can email {agentMail.inboxEmail} directly — Jua reads it and posts the
+                            same KPI / digest / ledger steps.
+                        </Text>
                     ) : null}
                 </View>
 
@@ -495,7 +484,6 @@ export function InvestorCockpit({
                     </View>
                 ) : (
                     <>
-                        <Text style={styles.stripLabel}>Your deals</Text>
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.strip}>
                             {data.commitments.map((row) => {
                                 const on = selectedCommitment?.id === row.id;
@@ -613,14 +601,10 @@ function Scorecard({
                 >
                     <Text style={styles.shareLink}>Share proof</Text>
                 </Pressable>
-                <Text style={styles.shareHint}>/deal/{venture.publicSlug}</Text>
             </View>
 
             {commitment.latestDigest ? (
-                <Text style={styles.fieldHint}>
-                    Latest digest filed below · next due{" "}
-                    {commitment.nextDigestAt ? formatDue(commitment.nextDigestAt) : "this week"}.
-                </Text>
+                <Text style={styles.fieldHint}>Latest digest below.</Text>
             ) : (
                 <Text style={styles.fieldHint}>No digest yet — approve a note below to generate one.</Text>
             )}
@@ -996,14 +980,6 @@ const styles = StyleSheet.create({
         textAlign: "center",
         paddingVertical: 4,
     },
-    stripLabel: {
-        fontFamily: font.bodyBold,
-        fontSize: 10,
-        fontWeight: "700",
-        letterSpacing: 0.8,
-        textTransform: "uppercase",
-        color: color.mist,
-    },
     dueRow: { flexDirection: "row", alignItems: "center", gap: 4, flexShrink: 1 },
     titleWithHint: { flexDirection: "row", alignItems: "center", gap: 6, flex: 1 },
     insightHead: { flexDirection: "row", alignItems: "center", gap: 6 },
@@ -1189,11 +1165,6 @@ const styles = StyleSheet.create({
         fontSize: 12,
         fontWeight: "700",
         color: color.brassDeep,
-    },
-    shareHint: {
-        fontFamily: font.body,
-        fontSize: 11,
-        color: color.mist,
     },
     sparkRow: { flexDirection: "row", alignItems: "flex-end", gap: 4, height: 32 },
     sparkTrack: {
