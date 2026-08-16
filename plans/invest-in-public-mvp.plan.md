@@ -61,13 +61,14 @@ Ship a demoable full thin loop for investor leads: soft revenue-share microcommi
 - **Teaching behind taps (progressive disclosure)**: the How-it-works coach collapses to one line ("Open a deal · Send a note to Jua · Check public proof") with a "See the 3 steps" reveal; step copy trimmed to a sentence each. The Email panel shows the inbox address by default, with one-line detail on expand; the fidelity caveat lives on the always-visible badge, not duplicated in the panel.
 
 ## Demo script (~3 min)
-1. **Home** → Seed if empty → show How this works + scorecard + agent inbox.
-2. Queue note → **Approve & run** → tool cards (KPI, digest, ledger, reply) — *or* email `juakali@agentmail.to`.
-3. **Ledger** → prove the same events are public.
+1. **Open the app** — Jua is already there: presence line ("last worked · runs this week · next digest"), an arrival utterance, and a **proactive suggestion** ("Amina hasn't reported in 3 days — I want to follow up"). No typing yet.
+2. **Approve the suggestion** → the four steps stream live (KPI → digest → ledger → reply) as separate commits; arrival card narrates the run.
+3. Or take the ritual path: queue a note → approve → same pipeline; or email `juakali@agentmail.to` and watch the inbound run stream.
+4. **Ledger** → the same events are public, filterable per venture, and shareable via `/deal/<slug>` cards.
 
 ## Product UX (busy investor)
 - **Default:** Investor home — not a five-tab console.
-- **Ritual:** In-app queue → approve, **or** AgentMail inbound → agent tools (KPI, digest, ledger, reply).
+- **Ritual:** In-app queue → approve, **or** AgentMail inbound → agent tools (KPI, digest, ledger, reply). Plus initiative: proactive proposals when KPIs go stale.
 - **Trust:** KPI vs target, peer median, evidence tags, next digest cadence; fidelity badge (soft capital).
 - **Email path:** `juakali@agentmail.to` + `/webhooks/agentmail` (Svix). In-app ritual still primary for demos. Gmail later.
 - **Visual:** Centred “Nairobi ledger” shell (stone / charcoal / brass + Fraunces / IBM Plex). Quiet motion only.
