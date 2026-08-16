@@ -20,4 +20,8 @@ crons.interval(
     { olderThanMs: 90_000 }
 );
 
+// Agent initiative: propose a check-in when a venture's KPIs go stale.
+// Proposals wait for approval — nothing runs until the investor says yes.
+crons.interval("propose proactive check-ins", { hours: 1 }, internal.agentRuns.proposeProactiveCheckIns, {});
+
 export default crons;

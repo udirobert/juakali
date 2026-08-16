@@ -56,6 +56,35 @@ export const runResultValidator = v.object({
     replyTo: v.string(),
 });
 
+export const runStatusValidator = v.union(
+    v.literal("proposed"),
+    v.literal("running"),
+    v.literal("completed"),
+    v.literal("failed"),
+    v.literal("dismissed")
+);
+
+export const runTriggerValidator = v.union(
+    v.literal("approved_note"),
+    v.literal("inbound_email"),
+    v.literal("proactive")
+);
+
+/** All-pending steps for a proposal (nothing runs until approval). */
+function proposalSteps(): Array<{
+    tool: string;
+    label: string;
+    status: "pending";
+    detail: null;
+}> {
+    return RUN_STEP_ORDER.map((step) => ({
+        tool: step.tool,
+        label: step.label,
+        status: "pending" as const,
+        detail: null,
+    }));
+}
+
 function initialSteps(): Array<{
     tool: string;
     label: string;
@@ -109,7 +138,20 @@ async function writeLedgerEvent(
 
 function evidenceTags(run: Doc<"agentRuns">): string[] {
     const primary = run.source === "email_paste" ? "email" : run.source;
-    return [primary, "agent"];
+    const tags = run.trigger === "proactive" ? ["proactive", primary] : [primary];
+    return Array.from(new Set([...tags, "agent"]));
+}
+
+/** First-person origin line for ledger/digest/reply copy. */
+function originPhrase(run: Doc<"agentRuns">): string {
+    switch (run.trigger) {
+        case "inbound_email":
+            return "your email";
+        case "proactive":
+            return "my check-in";
+        default:
+            return "your approved note";
+    }
 }
 
 function resolveKpi(run: Doc<"agentRuns">, kpiUnit: "meetings" | "revenue_kes" | "jobs") {
@@ -267,8 +309,8 @@ export const getAgentRun = query({
             id: v.id("agentRuns"),
             commitmentId: v.id("commitments"),
             ventureId: v.id("ventures"),
-            status: v.union(v.literal("running"), v.literal("completed"), v.literal("failed")),
-            trigger: v.union(v.literal("approved_note"), v.literal("inbound_email")),
+            status: runStatusValidator,
+            trigger: runTriggerValidator,
             noteBody: v.string(),
             subject: v.string(),
             fromAddress: v.string(),
@@ -309,8 +351,8 @@ export const getLatestRun = query({
     returns: v.union(
         v.object({
             id: v.id("agentRuns"),
-            status: v.union(v.literal("running"), v.literal("completed"), v.literal("failed")),
-            trigger: v.union(v.literal("approved_note"), v.literal("inbound_email")),
+            status: runStatusValidator,
+            trigger: runTriggerValidator,
             createdAt: v.number(),
         }),
         v.null()
@@ -369,7 +411,7 @@ export const stepRecordKpi = internalMutation({
                 type: "checkin",
                 ventureId: venture._id,
                 commitmentId: run.commitmentId,
-                summary: `${venture.name}: ${metric} = ${value} (from investor email)`,
+                summary: `${venture.name}: ${metric} = ${value} — Jua logged this from ${originPhrase(run)}`,
                 metric,
                 value,
                 evidence: evidenceTags(run),
@@ -416,12 +458,12 @@ export const stepWriteDigest = internalMutation({
 
             const now = Date.now();
             const cadence = commitment.digestCadence ?? "Weekly · Fri 08:00 EAT";
-            const digestSummary = `Acted on your email for ${venture.name}: logged ${args.kpiMetric}=${args.kpiValue}.`;
+            const digestSummary = `I acted on ${originPhrase(run)} for ${venture.name}: logged ${args.kpiMetric} = ${args.kpiValue}.`;
             const digestInsights =
                 venture.peerMedian != null
                     ? `Peer median this period is ~${venture.peerMedian}. Next digest ${cadence}.`
                     : `Next digest ${cadence}.`;
-            const nextAction = `Watch ${venture.name} through Friday — digest cadence: ${cadence}.`;
+            const nextAction = `I'll keep watching ${venture.name} through Friday — digest cadence: ${cadence}.`;
 
             const digestId = await ctx.db.insert("agentDigests", {
                 commitmentId: run.commitmentId,
@@ -437,7 +479,7 @@ export const stepWriteDigest = internalMutation({
                 type: "digest",
                 ventureId: venture._id,
                 commitmentId: run.commitmentId,
-                summary: `Investor digest for ${venture.name}: ${digestSummary}`,
+                summary: `Digest for ${venture.name}: ${digestSummary}`,
                 evidence: evidenceTags(run),
                 createdAt: now,
             });
@@ -486,7 +528,7 @@ export const stepPostLedger = internalMutation({
                 type: "action",
                 ventureId: venture._id,
                 commitmentId: run.commitmentId,
-                summary: `Agent run: approved note → KPI ${args.kpiMetric} +${args.kpiValue}, digest, and reply for ${venture.name}.`,
+                summary: `Jua ran ${originPhrase(run)} for ${venture.name}: KPI ${args.kpiMetric} +${args.kpiValue}, digest filed, ledger posted.`,
                 evidence: evidenceTags(run),
                 createdAt: now,
             });
@@ -532,12 +574,14 @@ export const stepSendReply = internalMutation({
             if (!venture || !commitment) throw new Error("Venture or commitment missing");
 
             const now = Date.now();
-            const replySummary = `Acted on your email for ${venture.name}: logged ${args.kpiMetric}=${args.kpiValue} (total now ${args.kpiAfter}).`;
+            const noteEcho = run.trigger === "proactive" ? null : `You said: “${run.noteBody.slice(0, 140)}”`;
+            const replySummary = `I acted on ${originPhrase(run)} for ${venture.name}: logged ${args.kpiMetric} = ${args.kpiValue} (total now ${args.kpiAfter}).`;
             const peerLine =
                 venture.peerMedian != null
                     ? `Peer median this period is ~${venture.peerMedian}.`
                     : null;
             const replyBody = [
+                noteEcho,
                 replySummary,
                 peerLine,
                 `Evidence tagged: ${run.source}. Posted to the public ledger.`,
@@ -629,5 +673,193 @@ export const recoverStaleRuns = internalMutation({
             failed++;
         }
         return { failed };
+    },
+});
+
+// --- Proactive proposals: Jua suggests work, nothing runs until approval ---
+
+/** How stale a venture's latest KPI may be before Jua proposes a check-in. */
+const PROPOSAL_STALE_MS = 24 * 60 * 60 * 1000; // 24h — demo-friendly cadence
+
+function proposalNote(ventureName: string, daysStale: number, metricLabel: string): string {
+    const age = daysStale <= 0 ? "just" : `${daysStale} day${daysStale === 1 ? "" : "s"} ago`;
+    return [
+        `${ventureName} hasn't reported in ${age} — the latest ${metricLabel} on file is getting stale.`,
+        "I want to follow up, log the result as a KPI check-in, write you a digest, and post it to the public ledger.",
+        "Approve and I'll get to work; dismiss if now is not the time.",
+    ].join("\n");
+}
+
+/**
+ * Insert a `proposed` run for one commitment (shared by the proactive cron
+ * and the demo seeder). Pure initiative — nothing runs until approval.
+ */
+export async function createProposalForCommitment(
+    ctx: MutationCtx,
+    commitment: Doc<"commitments">,
+    venture: Doc<"ventures">,
+    daysStale: number
+) {
+    const now = Date.now();
+    const noteBody = proposalNote(venture.name, daysStale, venture.kpiLabel || "KPI");
+    return await ctx.db.insert("agentRuns", {
+        commitmentId: commitment._id,
+        ventureId: venture._id,
+        investorId: commitment.investorId,
+        status: "proposed",
+        trigger: "proactive",
+        noteBody,
+        subject: `Check-in: ${venture.name}`,
+        metricOverride: null,
+        valueOverride: null,
+        fromAddress: "jua@agent.juakali.demo",
+        toAddress: venture.agentEmail ?? `${venture.publicSlug}@agent.juakali.demo`,
+        source: "agent",
+        steps: proposalSteps(),
+        result: null,
+        error: null,
+        createdAt: now,
+        updatedAt: now,
+    });
+}
+
+/**
+ * Cron: create at most ONE pending proposal per commitment when its venture's
+ * latest KPI check-in is older than PROPOSAL_STALE_MS. Pure initiative — no
+ * data is logged until the investor approves.
+ */
+export const proposeProactiveCheckIns = internalMutation({
+    args: {},
+    returns: v.object({ proposed: v.number(), skipped: v.number() }),
+    handler: async (ctx) => {
+        const commitments = await ctx.db.query("commitments").order("desc").take(60);
+        const now = Date.now();
+        let proposed = 0;
+        let skipped = 0;
+
+        for (const commitment of commitments) {
+            if (commitment.status === "written_off") {
+                skipped++;
+                continue;
+            }
+            // One open proposal per commitment (bounded scan; proposals are rare).
+            const recentRuns = await ctx.db
+                .query("agentRuns")
+                .withIndex("by_commitmentId", (q) => q.eq("commitmentId", commitment._id))
+                .order("desc")
+                .take(20);
+            if (recentRuns.some((run) => run.status === "proposed")) {
+                skipped++;
+                continue;
+            }
+
+            const venture = await ctx.db.get(commitment.ventureId);
+            if (!venture || venture.status !== "active") {
+                skipped++;
+                continue;
+            }
+            const lastCheckIn = await ctx.db
+                .query("kpiCheckIns")
+                .withIndex("by_ventureId", (q) => q.eq("ventureId", venture._id))
+                .order("desc")
+                .first();
+            const lastActivityAt = lastCheckIn?.createdAt ?? commitment.createdAt;
+            const staleMs = now - lastActivityAt;
+            if (staleMs < PROPOSAL_STALE_MS) {
+                skipped++;
+                continue;
+            }
+            // Don't re-propose within the same staleness window as the last run.
+            const lastRun = await ctx.db
+                .query("agentRuns")
+                .withIndex("by_commitmentId", (q) => q.eq("commitmentId", commitment._id))
+                .order("desc")
+                .first();
+            if (lastRun && lastRun.status !== "dismissed" && now - lastRun.createdAt < PROPOSAL_STALE_MS) {
+                skipped++;
+                continue;
+            }
+
+            await createProposalForCommitment(
+                ctx,
+                commitment,
+                venture,
+                Math.floor(staleMs / (24 * 60 * 60 * 1000))
+            );
+            proposed++;
+        }
+
+        return { proposed, skipped };
+    },
+});
+
+/** Open proposal for a commitment (at most one exists; null if none). */
+export const getOpenProposal = query({
+    args: { commitmentId: v.id("commitments") },
+    returns: v.union(
+        v.object({
+            id: v.id("agentRuns"),
+            noteBody: v.string(),
+            subject: v.string(),
+            steps: v.array(runStepValidator),
+            createdAt: v.number(),
+        }),
+        v.null()
+    ),
+    handler: async (ctx, args) => {
+        // Bounded scan + JS check instead of a DB filter (proposals are capped
+        // at 1 per commitment, so this stays short).
+        const recentRuns = await ctx.db
+            .query("agentRuns")
+            .withIndex("by_commitmentId", (q) => q.eq("commitmentId", args.commitmentId))
+            .order("desc")
+            .take(20);
+        const proposal = recentRuns.find((run) => run.status === "proposed");
+        if (!proposal) return null;
+        return {
+            id: proposal._id,
+            noteBody: proposal.noteBody,
+            subject: proposal.subject,
+            steps: proposal.steps,
+            createdAt: proposal.createdAt,
+        };
+    },
+});
+
+/** Approve a proposal → same durable pipeline as an approved note. */
+export const approveProposal = mutation({
+    args: { runId: v.id("agentRuns") },
+    returns: v.object({
+        runId: v.id("agentRuns"),
+        commitmentId: v.id("commitments"),
+        ventureId: v.id("ventures"),
+    }),
+    handler: async (ctx, args) => {
+        await assertCanAct(ctx);
+        await rateLimiter.limit(ctx, "investMutate", { key: "agentRun" });
+        const run = await ctx.db.get(args.runId);
+        if (!run) throw new Error("Proposal not found");
+        if (run.status !== "proposed") throw new Error("Proposal is no longer pending");
+
+        const now = Date.now();
+        const steps = run.steps.map((step, i) =>
+            i === 0 ? { ...step, status: "running" as const, detail: null } : step
+        );
+        await ctx.db.patch(run._id, { status: "running", steps, updatedAt: now });
+        await ctx.scheduler.runAfter(0, internal.agentRuns.stepRecordKpi, { runId: run._id });
+        return { runId: run._id, commitmentId: run.commitmentId, ventureId: run.ventureId };
+    },
+});
+
+/** Dismiss a proposal — Jua takes note and won't re-propose immediately. */
+export const dismissProposal = mutation({
+    args: { runId: v.id("agentRuns") },
+    returns: v.object({ ok: v.boolean() }),
+    handler: async (ctx, args) => {
+        await assertCanAct(ctx);
+        const run = await ctx.db.get(args.runId);
+        if (!run || run.status !== "proposed") return { ok: false };
+        await ctx.db.patch(run._id, { status: "dismissed", updatedAt: Date.now() });
+        return { ok: true };
     },
 });

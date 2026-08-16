@@ -5,7 +5,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { rateLimiter } from "./rateLimit";
 import { normalizeKey } from "./juaKaliHelpers";
 import { assertCanAct } from "./softAuth";
-import { createAgentRun } from "./agentRuns";
+import { createAgentRun, createProposalForCommitment } from "./agentRuns";
 
 type DbCtx = { db: QueryCtx["db"] };
 
@@ -655,9 +655,25 @@ export const investorCockpit = query({
                         createdAt: v.number(),
                     })
                 ),
+                /** Jua's proactive suggestion for this deal, awaiting approval. */
+                openProposal: v.union(
+                    v.object({
+                        id: v.id("agentRuns"),
+                        noteBody: v.string(),
+                        subject: v.string(),
+                        createdAt: v.number(),
+                    }),
+                    v.null()
+                ),
             })
         ),
         availableVentures: v.array(ventureSummaryValidator),
+        /** Agent presence — Jua is visibly alive between visits. */
+        agentPresence: v.object({
+            lastWorkedAt: v.union(v.number(), v.null()),
+            runsThisWeek: v.number(),
+            openProposals: v.number(),
+        }),
     }),
     handler: async (ctx, args) => {
         let investorId = args.investorId ?? null;
@@ -712,6 +728,12 @@ export const investorCockpit = query({
             : [];
 
         const commitments = [];
+        const now = Date.now();
+        const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
+        let lastWorkedAt: number | null = null;
+        let runsThisWeek = 0;
+        let openProposals = 0;
+
         for (const row of commitmentRows) {
             const ventureSummary = await buildVentureSummary(ctx, row.ventureId);
             if (!ventureSummary) continue;
@@ -728,6 +750,39 @@ export const investorCockpit = query({
                 .order("desc")
                 .take(8);
             emails.sort((a, b) => a.createdAt - b.createdAt);
+
+            // Jua's initiative: the pending proactive proposal for this deal,
+            // plus presence stats (bounded scan per commitment).
+            const proposalRuns = await ctx.db
+                .query("agentRuns")
+                .withIndex("by_commitmentId", (q) => q.eq("commitmentId", row._id))
+                .order("desc")
+                .take(20);
+            let openProposal: {
+                id: Id<"agentRuns">;
+                noteBody: string;
+                subject: string;
+                createdAt: number;
+            } | null = null;
+            for (const run of proposalRuns) {
+                if (run.status === "proposed") {
+                    openProposal ??= {
+                        id: run._id,
+                        noteBody: run.noteBody,
+                        subject: run.subject,
+                        createdAt: run.createdAt,
+                    };
+                    openProposals += 1;
+                }
+                if (run.status !== "dismissed") {
+                    // Presence = real work: proposals alone don't count as "worked".
+                    if (run.status !== "proposed" && (lastWorkedAt === null || run.updatedAt > lastWorkedAt)) {
+                        lastWorkedAt = run.updatedAt;
+                    }
+                    if (run.createdAt >= weekAgo && run.status !== "proposed") runsThisWeek += 1;
+                }
+            }
+
             commitments.push({
                 id: row._id,
                 amountKes: row.amountKes,
@@ -767,6 +822,7 @@ export const investorCockpit = query({
                     body: email.body,
                     createdAt: email.createdAt,
                 })),
+                openProposal,
             });
         }
 
@@ -783,6 +839,11 @@ export const investorCockpit = query({
             focusCommitmentId: focusCommitmentId ?? commitments[0]?.id ?? null,
             commitments,
             availableVentures,
+            agentPresence: {
+                lastWorkedAt,
+                runsThisWeek,
+                openProposals,
+            },
         };
     },
 });
@@ -1153,13 +1214,15 @@ export const seedInvestDemo = mutation({
                     amountKes: 15000,
                     shareBps: 1000,
                     thesis: "Back Amina’s outbound week — pay for airtime + CRM coaching; share 10% of sales cashflow until 2×.",
+                    // Backdated activity → Jua has an honest reason to follow up.
+                    backdateDays: 3,
                     checkIns: [
                         { metric: "meetings_booked", value: 4, note: "Two SME owners + one clinic admin", periodLabel: "Week 1" },
                         { metric: "meetings_booked", value: 6, note: "Pipeline filling; one verbal yes", periodLabel: "Week 2" },
                     ],
                     digest: {
-                        summary: "Amina booked 10 meetings across two weeks; one verbal commitment pending quote.",
-                        insights: "Airtime spend is the bottleneck. Recommend KES 2,000 top-up and a fixed Tuesday review call.",
+                        summary: "I watched Amina book 10 meetings across two weeks; one verbal commitment is pending a quote.",
+                        insights: "Airtime spend is the bottleneck. I recommend a KES 2,000 top-up and a fixed Tuesday review call.",
                     },
                 },
                 {
@@ -1167,18 +1230,22 @@ export const seedInvestDemo = mutation({
                     amountKes: 20000,
                     shareBps: 800,
                     thesis: "Fund Brian’s consumables + PPE; 8% of job revenue until 2×.",
+                    backdateDays: 0,
                     checkIns: [
                         { metric: "jobs_completed", value: 2, note: "Gate repair + grill install", periodLabel: "Week 1" },
                         { metric: "revenue_kes", value: 7800, note: "Collected via M-Pesa", periodLabel: "Week 1" },
                     ],
                     digest: {
-                        summary: "Two paid jobs completed; KES 7,800 collected. Consumables still thin.",
-                        insights: "Next week focus: quote discipline and photo evidence of each job for the public ledger.",
+                        summary: "Two paid jobs completed; I logged KES 7,800 collected. Consumables still thin.",
+                        insights: "Next week I'll push quote discipline and photo evidence of each job for the public ledger.",
                     },
                 },
             ];
 
             for (const pledge of pledges) {
+                // Backdated activity reads honestly ("last reported 3 days ago")
+                // and gives Jua a real reason to follow up on first visit.
+                const baseTs = now - (pledge.backdateDays ?? 0) * 24 * 60 * 60 * 1000;
                 const commitmentId = await ctx.db.insert("commitments", {
                     investorId: investorId!,
                     ventureId: pledge.ventureId,
@@ -1189,8 +1256,8 @@ export const seedInvestDemo = mutation({
                     thesis: pledge.thesis,
                     nextDigestAt: nextFridayEightEAT(now),
                     digestCadence: "Weekly · Fri 08:00 EAT",
-                    createdAt: now + createdCommitments,
-                    updatedAt: now + createdCommitments,
+                    createdAt: baseTs + createdCommitments,
+                    updatedAt: baseTs + createdCommitments,
                 });
                 commitmentIds.push(commitmentId);
                 createdCommitments += 1;
@@ -1204,7 +1271,7 @@ export const seedInvestDemo = mutation({
                     commitmentId,
                     summary: `Wanjiru Kamau pledged KES ${pledge.amountKes.toLocaleString()} into ${venture?.name ?? "venture"} (${(pledge.shareBps / 100).toFixed(1)}% until 2×)`,
                     amountKes: pledge.amountKes,
-                    createdAt: now + createdCommitments,
+                    createdAt: baseTs + createdCommitments,
                 });
 
                 for (const checkIn of pledge.checkIns) {
@@ -1216,7 +1283,7 @@ export const seedInvestDemo = mutation({
                         value: checkIn.value,
                         note: checkIn.note,
                         source: "agent",
-                        createdAt: now + createdCheckIns + 10,
+                        createdAt: baseTs + createdCheckIns + 10,
                     });
                     await writeLedgerEvent(ctx, {
                         type: "checkin",
@@ -1225,7 +1292,7 @@ export const seedInvestDemo = mutation({
                         summary: `${venture?.name}: ${checkIn.metric} = ${checkIn.value} — ${checkIn.note}`,
                         metric: checkIn.metric,
                         value: checkIn.value,
-                        createdAt: now + createdCheckIns + 11,
+                        createdAt: baseTs + createdCheckIns + 11,
                     });
                     createdCheckIns += 1;
                 }
@@ -1235,14 +1302,14 @@ export const seedInvestDemo = mutation({
                     ventureId: pledge.ventureId,
                     summary: pledge.digest.summary,
                     insights: pledge.digest.insights,
-                    createdAt: now + createdDigests + 20,
+                    createdAt: baseTs + createdDigests + 20,
                 });
                 await writeLedgerEvent(ctx, {
                     type: "digest",
                     ventureId: pledge.ventureId,
                     commitmentId,
-                    summary: `Investor digest for ${venture?.name}: ${pledge.digest.summary}`,
-                    createdAt: now + createdDigests + 21,
+                    summary: `Digest for ${venture?.name}: ${pledge.digest.summary}`,
+                    createdAt: baseTs + createdDigests + 21,
                 });
                 createdDigests += 1;
 
@@ -1255,7 +1322,7 @@ export const seedInvestDemo = mutation({
                     toAddress: agentAddress,
                     subject: `Re: ${venture?.name ?? "venture"} — quick push`,
                     body: `Please push follow-ups this week and summarize pipeline for me by Friday.`,
-                    createdAt: now + 30,
+                    createdAt: baseTs + 30,
                 });
                 await ctx.db.insert("agentEmails", {
                     commitmentId,
@@ -1266,8 +1333,16 @@ export const seedInvestDemo = mutation({
                     toAddress: investorEmail,
                     subject: `Digest: ${venture?.name ?? "venture"}`,
                     body: `${pledge.digest.summary}\n\n${pledge.digest.insights}\n\n— Jua · JuaKali agent (demo email ritual)`,
-                    createdAt: now + 31,
+                    createdAt: baseTs + 31,
                 });
+
+                // Jua takes initiative: a real open proposal on the stale venture.
+                if ((pledge.backdateDays ?? 0) > 0 && venture) {
+                    const commitmentDoc = await ctx.db.get(commitmentId);
+                    if (commitmentDoc) {
+                        await createProposalForCommitment(ctx, commitmentDoc, venture, pledge.backdateDays!);
+                    }
+                }
             }
 
             // Third venture visible but not yet pledged by default investor

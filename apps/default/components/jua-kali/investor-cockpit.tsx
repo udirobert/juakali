@@ -54,6 +54,22 @@ function formatKes(value: number) {
     return `KES ${value.toLocaleString()}`;
 }
 
+/** Human relative time — makes the agent's activity feel present, not archival. */
+function relativeTime(ts: number): string {
+    const mins = Math.floor((Date.now() - ts) / 60_000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days === 1) return "yesterday";
+    return `${days} days ago`;
+}
+
+function daysUntil(ts: number): number {
+    return Math.max(0, Math.ceil((ts - Date.now()) / (24 * 60 * 60 * 1000)));
+}
+
 function formatDue(ts: number | null) {
     if (!ts) return "—";
     return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -169,6 +185,8 @@ export function InvestorCockpit({
     const seedInvestDemo = useMutation(api.invest.seedInvestDemo);
     const pledgeCommitment = useMutation(api.invest.pledgeCommitment);
     const startAgentRun = useMutation(api.agentRuns.startAgentRun);
+    const approveProposal = useMutation(api.agentRuns.approveProposal);
+    const dismissProposal = useMutation(api.agentRuns.dismissProposal);
     const insets = useSafeAreaInsets();
     const { width } = useWindowDimensions();
     const compact = width < 440;
@@ -188,7 +206,6 @@ export function InvestorCockpit({
     const [isPledging, setIsPledging] = useState(false);
     const [showPledge, setShowPledge] = useState(false);
     const [showThread, setShowThread] = useState(false);
-    const [showIntegrations, setShowIntegrations] = useState(false);
     const [actingSeconds, setActingSeconds] = useState(0);
 
     /** Live subscription to the run we approved — steps update as each commits. */
@@ -347,6 +364,36 @@ export function InvestorCockpit({
         }
     }, [pendingBody, selectedCommitment, startAgentRun]);
 
+    /** Approve Jua's proactive suggestion — the same durable pipeline streams. */
+    const handleApproveProposal = useCallback(
+        async (runId: Id<"agentRuns">) => {
+            setAgentPhase("acting");
+            setStatusMessage(null);
+            setActiveRunId(null);
+            try {
+                const result = await approveProposal({ runId });
+                setActiveRunId(result.runId);
+                void AccessibilityInfo.announceForAccessibility("Approved. Jua is working.");
+            } catch (error) {
+                setAgentPhase("idle");
+                setStatusMessage(error instanceof Error ? error.message : "Could not approve.");
+            }
+        },
+        [approveProposal]
+    );
+
+    const handleDismissProposal = useCallback(
+        async (runId: Id<"agentRuns">) => {
+            try {
+                await dismissProposal({ runId });
+                setStatusMessage("Dismissed — Jua will ask again later.");
+            } catch {
+                // dismissed proposal already resolved
+            }
+        },
+        [dismissProposal]
+    );
+
     if (data === undefined) {
         return (
             <View style={[styles.loadingScreen, { paddingTop: insets.top }]}>
@@ -391,6 +438,38 @@ export function InvestorCockpit({
                     {statusMessage ? <Text style={styles.status}>{statusMessage}</Text> : null}
                 </View>
 
+                {!empty ? (
+                    <AgentPresence presence={data.agentPresence} nextDigestAt={selectedCommitment?.nextDigestAt ?? null} />
+                ) : null}
+
+                {(() => {
+                    const proposal = selectedCommitment?.openProposal ?? null;
+                    if (proposal) {
+                        return (
+                            <AuthRequiredGate required={requireAuthToAct}>
+                                <ProposalCard
+                                    ventureName={selectedCommitment!.venture.name}
+                                    proposal={proposal}
+                                    busy={agentPhase === "acting"}
+                                    onApprove={() => void handleApproveProposal(proposal.id)}
+                                    onDismiss={() => void handleDismissProposal(proposal.id)}
+                                />
+                            </AuthRequiredGate>
+                        );
+                    }
+                    if (!empty && selectedCommitment) {
+                        return (
+                            <AgentArrival
+                                liveRun={liveRun}
+                                runIsOurs={runIsOurs}
+                                latestDigest={selectedCommitment.latestDigest}
+                                dealCount={data.commitments.length}
+                            />
+                        );
+                    }
+                    return null;
+                })()}
+
                 {onDismissCoach ? (
                     <HowItWorksCard
                         visible={showCoach}
@@ -399,24 +478,6 @@ export function InvestorCockpit({
                         compact={compact}
                     />
                 ) : null}
-
-                <View style={styles.integrations}>
-                    <Pressable onPress={() => setShowIntegrations((v) => !v)} hitSlop={8}>
-                        <View style={styles.integrationsHead}>
-                            <Text style={styles.integrationsLabel}>Email</Text>
-                            <Text style={styles.threadToggle}>{showIntegrations ? "Hide" : "More"}</Text>
-                        </View>
-                    </Pressable>
-                    <Text style={styles.integrationsBody}>
-                        {agentMail?.inboxEmail ?? "In-app notes: queue → approve"}
-                    </Text>
-                    {showIntegrations && agentMail?.configured && agentMail.inboxEmail ? (
-                        <Text style={styles.fieldHint}>
-                            You can email {agentMail.inboxEmail} directly — Jua reads it and posts the
-                            same KPI / digest / ledger steps.
-                        </Text>
-                    ) : null}
-                </View>
 
                 {showPledge ? (
                     <AuthRequiredGate required={requireAuthToAct}>
@@ -469,8 +530,10 @@ export function InvestorCockpit({
                             <View style={styles.emptyRing} />
                             <View style={[styles.emptyRing, styles.emptyRingInner]} />
                         </View>
-                        <Text style={styles.emptyTitle}>No deal yet</Text>
-                        <Text style={styles.status}>Pledge a venture, or load seeded deals to explore.</Text>
+                        <Text style={styles.emptyTitle}>Nothing on my desk yet</Text>
+                        <Text style={styles.status}>
+                            Load seeded deals so Jua has something to follow — or pledge a venture.
+                        </Text>
                         <PressableScale
                             onPress={() => setShowPledge(true)}
                             style={styles.btnPrimary}
@@ -520,6 +583,7 @@ export function InvestorCockpit({
                                     waiting={waiting}
                                     actingSeconds={actingSeconds}
                                     showThread={showThread}
+                                    emailInbox={agentMail?.configured ? agentMail.inboxEmail ?? null : null}
                                     onToggleThread={() => setShowThread((v) => !v)}
                                     onQueue={handleQueueEmail}
                                     onApprove={() => void handleApproveEmail()}
@@ -544,6 +608,131 @@ export function InvestorCockpit({
     );
 }
 
+/**
+ * Presence line: Jua is visibly alive between visits — last worked, runs
+ * this week, next digest countdown. All derived from real run/ledger data.
+ */
+function AgentPresence({
+    presence,
+    nextDigestAt,
+}: {
+    presence: Cockpit["agentPresence"];
+    nextDigestAt: number | null;
+}) {
+    const parts: string[] = [];
+    if (presence.lastWorkedAt) parts.push(`last worked ${relativeTime(presence.lastWorkedAt)}`);
+    parts.push(presence.runsThisWeek === 1 ? "1 run this week" : `${presence.runsThisWeek} runs this week`);
+    if (nextDigestAt && nextDigestAt > Date.now()) {
+        const days = daysUntil(nextDigestAt);
+        parts.push(days <= 1 ? "next digest tomorrow" : `next digest in ${days} days`);
+    }
+
+    return (
+        <View style={styles.presence} accessibilityRole="text">
+            <SunMark size={14} />
+            <Text style={styles.presenceText}>
+                Jua · {parts.join(" · ")}
+            </Text>
+            {presence.openProposals > 0 ? (
+                <View style={styles.presenceBadge}>
+                    <Text style={styles.presenceBadgeText}>
+                        {presence.openProposals} suggestion{presence.openProposals === 1 ? "" : "s"}
+                    </Text>
+                </View>
+            ) : null}
+        </View>
+    );
+}
+
+/**
+ * Jua's proactive proposal — suggested work parked for approval. Approving
+ * runs the same durable pipeline; dismissing tells Jua to wait.
+ */
+function ProposalCard({
+    ventureName,
+    proposal,
+    busy,
+    onApprove,
+    onDismiss,
+}: {
+    ventureName: string;
+    proposal: NonNullable<Commitment["openProposal"]>;
+    busy: boolean;
+    onApprove: () => void;
+    onDismiss: () => void;
+}) {
+    return (
+        <Animated.View entering={FadeInDown.duration(180)} style={styles.proposal}>
+            <View style={styles.cardTop}>
+                <View style={styles.titleWithHint}>
+                    <SunMark size={16} />
+                    <Text style={styles.cardTitle}>Jua suggests</Text>
+                </View>
+                <Text style={styles.meta}>proposed {relativeTime(proposal.createdAt)}</Text>
+            </View>
+            <Text style={styles.proposalBody}>{proposal.noteBody}</Text>
+            <View style={styles.consequence}>
+                <Text style={styles.consequenceLabel}>If you approve, I will</Text>
+                {["Log a KPI check-in", "Write an investor digest", "Post to the public ledger", "Reply with evidence"].map(
+                    (line) => (
+                        <Text key={line} style={styles.consequenceLine}>
+                            · {line}
+                        </Text>
+                    )
+                )}
+            </View>
+            <PressableScale onPress={onApprove} disabled={busy} style={[styles.btnApprove, busy && styles.disabled]}>
+                <Text style={styles.btnApproveText}>{busy ? "Starting…" : `Approve check-in on ${ventureName}`}</Text>
+            </PressableScale>
+            <Pressable onPress={onDismiss} disabled={busy}>
+                <Text style={styles.discard}>Not now</Text>
+            </Pressable>
+        </Animated.View>
+    );
+}
+
+/**
+ * Arrival moment: the first thing on Home is Jua's latest utterance, not
+ * metrics. Narrates live inbound runs; otherwise recites the last digest.
+ */
+function AgentArrival({
+    liveRun,
+    runIsOurs,
+    latestDigest,
+    dealCount,
+}: {
+    liveRun: AgentRun | null;
+    runIsOurs: boolean;
+    latestDigest: Commitment["latestDigest"];
+    dealCount: number;
+}) {
+    const inboundActing = liveRun?.status === "running" && !runIsOurs;
+
+    let voice: string;
+    if (inboundActing) {
+        voice =
+            liveRun?.trigger === "inbound_email"
+                ? "I'm reading an email that just came in — live steps below."
+                : "I'm working on a run right now — live steps below.";
+    } else if (latestDigest) {
+        voice = latestDigest.summary;
+    } else if (dealCount > 0) {
+        voice = `I'm watching ${dealCount} deal${dealCount === 1 ? "" : "s"}. Send me a note or email me, and I'll take it from there.`;
+    } else {
+        voice = "Nothing on my desk yet — pledge a venture and I'll start following it.";
+    }
+
+    return (
+        <View style={styles.arrival}>
+            <SunMark size={18} />
+            <Text style={styles.arrivalVoice}>{voice}</Text>
+            {latestDigest && !inboundActing ? (
+                <Text style={styles.arrivalWhen}>{relativeTime(latestDigest.createdAt)}</Text>
+            ) : null}
+        </View>
+    );
+}
+
 function Scorecard({
     commitment,
     onOpenGlossary,
@@ -554,6 +743,18 @@ function Scorecard({
     const { venture } = commitment;
     const peer = venture.peerMedian;
     const progress = venture.kpiTarget > 0 ? Math.min(1, venture.kpiTotal / venture.kpiTarget) : 0;
+
+    // Numbers with a point of view — derived from real data, not decoration.
+    const commentary: string[] = [];
+    if (typeof peer === "number" && peer > 0 && venture.kpiTotal !== peer) {
+        const diff = Math.abs(venture.kpiTotal - peer);
+        commentary.push(`${diff} ${venture.kpiTotal > peer ? "above" : "below"} similar ventures`);
+    }
+    if (venture.kpiTarget > 0) {
+        commentary.push(`${Math.min(100, Math.round(progress * 100))}% of target`);
+    }
+    const lastCheckIn = commitment.recentCheckIns[0];
+    if (lastCheckIn) commentary.push(`last check-in ${relativeTime(lastCheckIn.createdAt)}`);
 
     return (
         <View style={styles.card}>
@@ -581,6 +782,9 @@ function Scorecard({
                 <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
             </View>
             <Sparkline values={venture.sparkline} />
+            {commentary.length > 0 ? (
+                <Text style={styles.commentary}>{commentary.join(" · ")}</Text>
+            ) : null}
 
             <View style={styles.shareRow}>
                 <Pressable
@@ -647,6 +851,7 @@ function Ritual({
     waiting,
     actingSeconds,
     showThread,
+    emailInbox,
     onToggleThread,
     onQueue,
     onApprove,
@@ -664,6 +869,7 @@ function Ritual({
     waiting: boolean;
     actingSeconds: number;
     showThread: boolean;
+    emailInbox: string | null;
     onToggleThread: () => void;
     onQueue: () => void;
     onApprove: () => void;
@@ -705,7 +911,7 @@ function Ritual({
             <Text style={styles.fieldHint}>
                 {inboundActing
                     ? "Jua is acting on an inbound email — live steps below."
-                    : "Write a note, then approve to run — or email the inbox above."}
+                    : "Write a note, then approve to run."}
             </Text>
 
             <WaitingShimmer active={waiting} />
@@ -751,6 +957,11 @@ function Ritual({
                     <PressableScale onPress={onQueue} style={styles.btnPrimary}>
                         <Text style={styles.btnPrimaryText}>Send to agent</Text>
                     </PressableScale>
+                    {emailInbox ? (
+                        <Text style={styles.emailAlt}>
+                            Or email {emailInbox} — Jua reads it and runs the same steps.
+                        </Text>
+                    ) : null}
                 </View>
             ) : null}
 
@@ -926,45 +1137,6 @@ const styles = StyleSheet.create({
         fontSize: 12,
         lineHeight: 17,
         color: color.mist,
-    },
-    integrations: {
-        gap: 6,
-        padding: 12,
-        borderRadius: 6,
-        backgroundColor: color.paper,
-        borderWidth: 1,
-        borderColor: color.line,
-    },
-    integrationsHead: { flexDirection: "row", alignItems: "center", gap: 6 },
-    integrationsLabel: {
-        fontFamily: font.bodyBold,
-        fontSize: 10,
-        fontWeight: "700",
-        letterSpacing: 0.8,
-        textTransform: "uppercase",
-        color: color.brassDeep,
-        marginRight: 2,
-    },
-    integrationsBody: {
-        fontFamily: font.body,
-        fontSize: 12,
-        lineHeight: 17,
-        color: color.mist,
-    },
-    inboxRow: { gap: 4, marginTop: 2 },
-    inboxLabel: {
-        fontFamily: font.bodyBold,
-        fontSize: 10,
-        fontWeight: "700",
-        letterSpacing: 0.6,
-        textTransform: "uppercase",
-        color: color.brassDeep,
-    },
-    inboxAddress: {
-        fontFamily: font.bodyBold,
-        fontSize: 14,
-        fontWeight: "700",
-        color: color.charcoal,
     },
     fieldHint: {
         fontFamily: font.body,
@@ -1154,6 +1326,80 @@ const styles = StyleSheet.create({
         overflow: "hidden",
     },
     progressFill: { height: "100%", backgroundColor: color.brass },
+    // Presence line
+    presence: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+        flexWrap: "wrap",
+    },
+    presenceText: {
+        fontFamily: font.body,
+        fontSize: 12,
+        color: color.mist,
+        flexShrink: 1,
+    },
+    presenceBadge: {
+        paddingHorizontal: 7,
+        paddingVertical: 2,
+        borderRadius: 4,
+        backgroundColor: color.brassSoft,
+        borderWidth: 1,
+        borderColor: "rgba(166,124,45,0.25)",
+    },
+    presenceBadgeText: {
+        fontFamily: font.bodyBold,
+        fontSize: 10,
+        fontWeight: "700",
+        letterSpacing: 0.4,
+        textTransform: "uppercase",
+        color: color.brassDeep,
+    },
+    // Arrival moment
+    arrival: {
+        flexDirection: "row",
+        alignItems: "flex-start",
+        gap: 10,
+        padding: 14,
+        backgroundColor: color.paper,
+        borderWidth: 1,
+        borderColor: color.brass,
+        borderRadius: 6,
+    },
+    arrivalVoice: {
+        fontFamily: font.bodyMedium,
+        fontSize: 14,
+        lineHeight: 20,
+        color: color.ink,
+        flex: 1,
+    },
+    arrivalWhen: {
+        fontFamily: font.body,
+        fontSize: 11,
+        color: color.mist,
+    },
+    // Proposal card
+    proposal: {
+        gap: 10,
+        padding: 16,
+        backgroundColor: color.paper,
+        borderWidth: 1,
+        borderColor: color.brass,
+        borderRadius: 6,
+    },
+    proposalBody: {
+        fontFamily: font.body,
+        fontSize: 14,
+        lineHeight: 20,
+        color: color.ink,
+    },
+    // Scorecard commentary
+    commentary: {
+        fontFamily: font.body,
+        fontSize: 12,
+        color: color.brassDeep,
+        marginTop: 4,
+    },
     shareRow: {
         flexDirection: "row",
         alignItems: "center",
@@ -1290,6 +1536,12 @@ const styles = StyleSheet.create({
         paddingVertical: 8,
     },
     composer: { gap: 10 },
+    emailAlt: {
+        fontFamily: font.body,
+        fontSize: 11,
+        lineHeight: 16,
+        color: color.mist,
+    },
     composerInput: {
         minHeight: 64,
         maxHeight: 100,

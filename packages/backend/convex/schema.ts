@@ -326,13 +326,24 @@ export default defineSchema({
     /**
      * Durable agent runs (approve & run). Each step commits separately so the
      * UI can stream truthful progress; inbound AgentMail writes completed runs.
+     * `proposed` runs are proactive: Jua suggests work and waits for approval.
      */
     agentRuns: defineTable({
         commitmentId: v.id("commitments"),
         ventureId: v.id("ventures"),
         investorId: v.id("investors"),
-        status: v.union(v.literal("running"), v.literal("completed"), v.literal("failed")),
-        trigger: v.union(v.literal("approved_note"), v.literal("inbound_email")),
+        status: v.union(
+            v.literal("proposed"),
+            v.literal("running"),
+            v.literal("completed"),
+            v.literal("failed"),
+            v.literal("dismissed")
+        ),
+        trigger: v.union(
+            v.literal("approved_note"),
+            v.literal("inbound_email"),
+            v.literal("proactive")
+        ),
         noteBody: v.string(),
         subject: v.string(),
         metricOverride: v.optional(v.union(v.string(), v.null())),
