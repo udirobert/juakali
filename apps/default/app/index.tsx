@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
     ActivityIndicator,
     Platform,
-    Pressable,
     StyleSheet,
     Text,
     useWindowDimensions,
@@ -28,6 +27,7 @@ import { Onboarding } from "@/components/jua-kali/onboarding";
 import { PublicLedger } from "@/components/jua-kali/public-ledger";
 import { SoftIdentityBar } from "@/components/jua-kali/soft-identity";
 import { VentureCockpit } from "@/components/jua-kali/venture-cockpit";
+import { NavTabs } from "@/components/jua-kali/shell/tabs";
 import { writeCoachDismissed } from "@/components/jua-kali/session-persist";
 import { color, font, layout } from "@/components/jua-kali/theme";
 import { useProductMode } from "@/lib/product-mode";
@@ -38,12 +38,6 @@ import type { Id } from "@/convex/_generated/dataModel";
 
 type Screen = "home" | "ledger" | "venture" | "lab";
 type LabScreen = "agent" | "funnel" | "ops";
-
-const labTabs: Array<{ id: LabScreen; label: string }> = [
-    { id: "agent", label: "Agent" },
-    { id: "funnel", label: "Funnel" },
-    { id: "ops", label: "Ops" },
-];
 
 function readTabParam(): Screen | null {
     if (Platform.OS !== "web" || typeof window === "undefined") return null;
@@ -189,33 +183,15 @@ export default function Index() {
     }
 
     const nav = (
-        <View style={[styles.navInner, useTopNav && styles.navInnerTop]}>
-            <View style={[styles.tabRow, useTopNav && styles.tabRowTop]}>
-                {primaryTabs.map((tab) => (
-                    <TabButton
-                        key={tab.id}
-                        label={tab.label}
-                        active={screen === tab.id}
-                        onPress={() => setScreen(tab.id)}
-                        top={useTopNav}
-                    />
-                ))}
-            </View>
-            {screen === "lab" && labUnlocked ? (
-                <View style={styles.labRow}>
-                    {labTabs.map((tab) => (
-                        <TabButton
-                            key={tab.id}
-                            label={tab.label}
-                            active={labScreen === tab.id}
-                            onPress={() => setLabScreen(tab.id)}
-                            compact
-                            top={useTopNav}
-                        />
-                    ))}
-                </View>
-            ) : null}
-        </View>
+        <NavTabs
+            primaryTabs={primaryTabs}
+            activePrimary={screen}
+            labActive={labScreen}
+            showLab={screen === "lab" && labUnlocked}
+            onSelectPrimary={(id) => setScreen(id)}
+            onSelectLab={(id) => setLabScreen(id)}
+            top={useTopNav}
+        />
     );
 
     const helpCluster = (
@@ -343,45 +319,6 @@ export default function Index() {
     );
 }
 
-function TabButton({
-    label,
-    active,
-    onPress,
-    compact,
-    top,
-}: {
-    label: string;
-    active: boolean;
-    onPress: () => void;
-    compact?: boolean;
-    top?: boolean;
-}) {
-    return (
-        <Pressable
-            onPress={onPress}
-            style={({ pressed }) => [
-                styles.tab,
-                top && styles.tabTop,
-                compact && styles.tabCompact,
-                active && (top ? styles.tabActiveTop : styles.tabActive),
-                pressed && styles.tabPressed,
-            ]}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: active }}
-        >
-            <Text
-                style={[
-                    styles.tabText,
-                    compact && styles.tabTextCompact,
-                    active && styles.tabTextActive,
-                ]}
-            >
-                {label}
-            </Text>
-        </Pressable>
-    );
-}
-
 const styles = StyleSheet.create({
     boot: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: color.stone },
     container: { flex: 1, backgroundColor: color.stone },
@@ -426,70 +363,9 @@ const styles = StyleSheet.create({
     },
     mobileLead: { flex: 1, gap: 4 },
     helpWrap: { position: "relative", zIndex: 30 },
-    navInner: { width: "100%" },
-    navInnerTop: { flex: 1 },
     tabBar: {
         borderTopWidth: 1,
         borderTopColor: color.line,
         backgroundColor: color.paper,
     },
-    tabRow: {
-        flexDirection: "row",
-        justifyContent: "center",
-        maxWidth: layout.maxWidth,
-        width: "100%",
-        alignSelf: "center",
-        paddingHorizontal: 8,
-    },
-    tabRowTop: {
-        justifyContent: "flex-start",
-        paddingHorizontal: 0,
-        gap: 4,
-    },
-    labRow: {
-        flexDirection: "row",
-        justifyContent: "center",
-        gap: 4,
-        paddingHorizontal: 12,
-        paddingTop: 2,
-    },
-    tab: {
-        flex: 1,
-        maxWidth: 160,
-        paddingVertical: 14,
-        alignItems: "center",
-        minHeight: 48,
-        justifyContent: "center",
-    },
-    tabTop: {
-        flex: 0,
-        paddingHorizontal: 16,
-        paddingVertical: 10,
-        minHeight: 44,
-        maxWidth: undefined,
-        borderRadius: 4,
-    },
-    tabCompact: {
-        flex: 0,
-        paddingHorizontal: 14,
-        paddingVertical: 8,
-        minHeight: 36,
-    },
-    tabActive: {
-        borderTopWidth: 2,
-        borderTopColor: color.brass,
-    },
-    tabActiveTop: {
-        backgroundColor: color.brassSoft,
-    },
-    tabPressed: { opacity: 0.6 },
-    tabText: {
-        fontFamily: font.bodyBold,
-        color: color.mist,
-        fontSize: 13,
-        fontWeight: "700",
-        letterSpacing: 0.3,
-    },
-    tabTextCompact: { fontSize: 11 },
-    tabTextActive: { color: color.charcoal },
 });
