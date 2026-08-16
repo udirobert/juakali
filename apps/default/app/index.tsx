@@ -45,8 +45,11 @@ const labTabs: Array<{ id: LabScreen; label: string }> = [
 
 function readTabParam(): Screen | null {
     if (Platform.OS !== "web" || typeof window === "undefined") return null;
-    const tab = new URLSearchParams(window.location.search).get("tab");
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab");
     if (tab === "home" || tab === "ledger" || tab === "lab") return tab;
+    // Share-card deep link: /?ledger=<slug> opens the ledger tab directly.
+    if (params.get("ledger")) return "ledger";
     return null;
 }
 
@@ -55,6 +58,8 @@ function writeTabParam(tab: Screen) {
     const url = new URL(window.location.href);
     if (tab === "home") url.searchParams.delete("tab");
     else url.searchParams.set("tab", tab);
+    // The ?ledger= deep link has served its purpose once tabs change.
+    url.searchParams.delete("ledger");
     window.history.replaceState({}, "", url.toString());
 }
 
@@ -111,6 +116,10 @@ export default function Index() {
         if (Platform.OS !== "web" || typeof window === "undefined") return false;
         return Boolean(new URLSearchParams(window.location.search).get("v"));
     }, [focusCommitmentId]);
+    const hasLedgerLink = useMemo(() => {
+        if (Platform.OS !== "web" || typeof window === "undefined") return false;
+        return Boolean(new URLSearchParams(window.location.search).get("ledger"));
+    }, []);
 
     const primaryTabs = useMemo(() => {
         const tabs: Array<{ id: Screen; label: string; hint: string }> = [
@@ -126,10 +135,10 @@ export default function Index() {
     }, [labUnlocked, screen, setScreen]);
 
     useEffect(() => {
-        if (onboarding.showLanding && hasDealLink) {
+        if (onboarding.showLanding && (hasDealLink || hasLedgerLink)) {
             void onboarding.completeLanding();
         }
-    }, [onboarding.showLanding, onboarding.completeLanding, hasDealLink]);
+    }, [onboarding.showLanding, onboarding.completeLanding, hasDealLink, hasLedgerLink]);
 
     // Auto coach on first entry this session; suppress while welcome-back is up (avoid double chrome).
     const showCoach =
@@ -216,7 +225,7 @@ export default function Index() {
                     <View style={styles.topBarInner}>
                         <View style={styles.brandBlock}>
                             <Text style={styles.topBrand}>JuaKali</Text>
-                            <Text style={styles.topSub}>You act on Deals · proof on Ledger</Text>
+                            <Text style={styles.topSub}>Deals = act · Ledger = public proof</Text>
                         </View>
                         {nav}
                         <View style={styles.topTrailing}>
@@ -238,7 +247,7 @@ export default function Index() {
                             compact
                             onPress={() => openGlossary("soft-pledge")}
                         />
-                        <Text style={styles.mobileBridge}>Deals · act · Ledger · proof</Text>
+                        <Text style={styles.mobileBridge}>Deals = act · Ledger = proof</Text>
                         <SoftIdentityBar compact />
                     </View>
                     {helpCluster}
@@ -254,10 +263,6 @@ export default function Index() {
                 onGlossary={() => {
                     void handleDismissWelcome().then(() => openGlossary());
                 }}
-                onGoDeals={() => {
-                    setScreen("home");
-                    void handleDismissWelcome();
-                }}
             />
 
             <View style={styles.content}>
@@ -270,6 +275,7 @@ export default function Index() {
                             void coach.dismiss();
                         }}
                         onOpenGlossary={openGlossary}
+                        onOpenLedger={() => setScreen("ledger")}
                         hideBrand={useTopNav}
                         fidelityHint={product.fidelityHint}
                         requireAuthToAct={requireAuthToAct}

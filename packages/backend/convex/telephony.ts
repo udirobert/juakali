@@ -5,9 +5,16 @@ import { v } from "convex/values";
 
 import { normalizeKey, normalizePhone, scoreMaster } from "./juaKaliHelpers";
 import { rateLimiter } from "./rateLimit";
-import { isAuthenticated } from "./auth";
 
-const channelValidator = v.union(v.literal("sms"), v.literal("ussd"), v.literal("voice"));
+/** Guard for admin mutations/queries. `isAuthenticated` from @convex-dev/auth
+ * is a query object (not callable); in-function we check the session identity. */
+async function assertAuthenticated(ctx: {
+    auth: { getUserIdentity(): Promise<unknown> };
+}) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthorized");
+}
+
 const messageProviderValidator = v.union(v.literal("twilio"), v.literal("africas_talking"), v.literal("mock"));
 const languageValidator = v.union(v.literal("sw"), v.literal("en"), v.literal("mixed"), v.literal("unknown"));
 
@@ -819,7 +826,7 @@ export const seedDemoData = mutation({
         message: v.string(),
     }),
     handler: async (ctx) => {
-        await isAuthenticated(ctx);
+        await assertAuthenticated(ctx);
         const now = Date.now();
         const existingMasters = await ctx.db.query("masters").order("desc").take(100);
         const existingSeedNames = new Set(existingMasters.filter((master) => master.source === "seed").map((master) => master.name));
@@ -1037,8 +1044,9 @@ export const dashboardData = query({
         }),
     }),
     handler: async (ctx) => {
-        await isAuthenticated(ctx);
-        await rateLimiter.limit(ctx, "dashboardQuery", { key: "dashboard" });
+        await assertAuthenticated(ctx);
+        // NB: rateLimiter.limit() writes state, so it can't run in a query;
+        // this stats read is guarded by the session check above instead.
         const masters = await ctx.db.query("masters").order("desc").take(100);
         const apprentices = await ctx.db.query("apprentices").order("desc").take(100);
         const voiceRows = await ctx.db.query("voiceIntakes").order("desc").take(12);

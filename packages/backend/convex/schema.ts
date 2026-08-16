@@ -158,7 +158,7 @@ export default defineSchema({
     // Idempotency guard: dedupes provider webhook retries (Twilio/AT resend on timeout).
     processedWebhooks: defineTable({
         key: v.string(),
-        channel: v.union(v.literal("sms"), v.literal("ussd"), v.literal("voice")),
+        channel: v.union(v.literal("sms"), v.literal("ussd"), v.literal("voice"), v.literal("agentmail")),
         reply: v.string(),
         createdAt: v.number(),
     }).index("by_key", ["key"]),
@@ -313,11 +313,69 @@ export default defineSchema({
         ventureId: v.id("ventures"),
         summary: v.string(),
         insights: v.string(),
+        /** What the investor should do next (digest artifact card). */
+        nextAction: v.optional(v.union(v.string(), v.null())),
+        /** Evidence source tags, e.g. ["email", "agent"]. */
+        evidence: v.optional(v.array(v.string())),
         createdAt: v.number(),
     })
         .index("by_commitmentId", ["commitmentId"])
         .index("by_ventureId", ["ventureId"])
         .index("by_createdAt", ["createdAt"]),
+
+    /**
+     * Durable agent runs (approve & run). Each step commits separately so the
+     * UI can stream truthful progress; inbound AgentMail writes completed runs.
+     */
+    agentRuns: defineTable({
+        commitmentId: v.id("commitments"),
+        ventureId: v.id("ventures"),
+        investorId: v.id("investors"),
+        status: v.union(v.literal("running"), v.literal("completed"), v.literal("failed")),
+        trigger: v.union(v.literal("approved_note"), v.literal("inbound_email")),
+        noteBody: v.string(),
+        subject: v.string(),
+        metricOverride: v.optional(v.union(v.string(), v.null())),
+        valueOverride: v.optional(v.union(v.number(), v.null())),
+        fromAddress: v.string(),
+        toAddress: v.string(),
+        source: kpiSource,
+        steps: v.array(
+            v.object({
+                tool: v.string(),
+                label: v.string(),
+                status: v.union(
+                    v.literal("pending"),
+                    v.literal("running"),
+                    v.literal("done"),
+                    v.literal("failed")
+                ),
+                detail: v.union(v.string(), v.null()),
+            })
+        ),
+        result: v.optional(
+            v.union(
+                v.object({
+                    checkInId: v.id("kpiCheckIns"),
+                    digestId: v.id("agentDigests"),
+                    replyId: v.id("agentEmails"),
+                    message: v.string(),
+                    kpiMetric: v.string(),
+                    kpiValue: v.number(),
+                    kpiBefore: v.number(),
+                    kpiAfter: v.number(),
+                    replyTo: v.string(),
+                }),
+                v.null()
+            )
+        ),
+        error: v.optional(v.union(v.string(), v.null())),
+        createdAt: v.number(),
+        updatedAt: v.number(),
+    })
+        .index("by_commitmentId", ["commitmentId"])
+        .index("by_ventureId", ["ventureId"])
+        .index("by_status", ["status"]),
 
     agentEmails: defineTable({
         commitmentId: v.id("commitments"),
@@ -343,6 +401,8 @@ export default defineSchema({
         amountKes: v.optional(v.union(v.number(), v.null())),
         metric: v.optional(v.union(v.string(), v.null())),
         value: v.optional(v.union(v.number(), v.null())),
+        /** Evidence source tags, e.g. ["email", "agent", "photo"]. */
+        evidence: v.optional(v.array(v.string())),
         createdAt: v.number(),
         publicVisible: v.boolean(),
     })

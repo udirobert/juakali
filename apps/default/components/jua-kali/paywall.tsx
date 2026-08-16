@@ -205,7 +205,7 @@ const styles = StyleSheet.create({
     cardTitle: { fontSize: 22 },
     cardPrice: { fontFamily: font.displayMedium, fontSize: 16, color: color.brass },
     featureRow: { flexDirection: "row", alignItems: "flex-start", gap: 8, marginTop: 8 },
-    bullet: { color: color.brass, fontFamily: font.bodyBold },
+    bullet: { color: color.brassDeep, fontFamily: font.bodyBold },
     feature: { flex: 1, fontFamily: font.body, fontSize: 14, color: color.ink, lineHeight: 20 },
     cta: {
         marginTop: 16,
@@ -218,6 +218,6 @@ const styles = StyleSheet.create({
     ctaText: { fontFamily: font.bodyBold, fontSize: 15, color: color.paper },
     footer: { gap: 10, marginTop: 26 },
     linkBtn: { alignItems: "center", paddingVertical: 4 },
-    link: { fontFamily: font.bodyBold, color: color.brass, fontSize: 14 },
+    link: { fontFamily: font.bodyBold, color: color.brassDeep, fontSize: 14 },
     notice: { fontFamily: font.body, fontSize: 13, color: color.ink, textAlign: "center" },
 });

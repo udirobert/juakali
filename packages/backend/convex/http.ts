@@ -2,6 +2,7 @@ import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { auth } from "./auth";
+import shareLedger from "./httpShareLedger";
 
 const http = httpRouter();
 
@@ -399,6 +400,13 @@ http.route({
     path: "/health",
     method: "GET",
     handler: httpAction(async () => textResponse("Jua Kali Matcher webhooks are ready")),
+});
+
+// Social-crawler share cards (per-deal OG meta). Netlify routes bots here.
+http.route({
+    path: "/share/ledger",
+    method: "GET",
+    handler: httpAction(shareLedger),
 });
 
 export default http;

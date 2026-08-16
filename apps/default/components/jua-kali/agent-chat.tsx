@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeIn } from "react-native-reanimated";
 
+import { SunMark } from "@/components/jua-kali/sun-mark";
 import { color, font, layout } from "@/components/jua-kali/theme";
 
 const AGENT_URL = process.env.EXPO_PUBLIC_AGENT_URL ?? "http://localhost:8080";
@@ -95,11 +96,18 @@ export function AgentChat() {
             keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
         >
             <View style={styles.header}>
-                <Text style={styles.title}>Agent</Text>
+                <SunMark size={24} />
+                <View style={styles.headerText}>
+                    <Text style={styles.title}>Jua</Text>
+                    <Text style={styles.subtitle}>Operating agent · warm, direct, fiduciary</Text>
+                </View>
             </View>
 
             {messages.length === 0 ? (
                 <View style={styles.empty}>
+                    <Text style={styles.emptyIntro}>
+                        Ask Jua to seed the demo, check KPIs, or draft an investor digest.
+                    </Text>
                     <View style={styles.chipRow}>
                         {chips.map((chip) => (
                             <Pressable
@@ -166,15 +174,33 @@ export function AgentChat() {
 
 const styles = StyleSheet.create({
     screen: { flex: 1, backgroundColor: color.stone, maxWidth: layout.maxWidth, width: "100%", alignSelf: "center" },
-    header: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4 },
+    header: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 10,
+        paddingHorizontal: 20,
+        paddingTop: 8,
+        paddingBottom: 6,
+    },
+    headerText: { gap: 1 },
     title: {
         fontFamily: font.display,
-        fontSize: 28,
+        fontSize: 24,
         fontWeight: "700",
-        letterSpacing: -0.8,
+        letterSpacing: -0.6,
         color: color.charcoal,
     },
-    empty: { flex: 1, justifyContent: "center", paddingHorizontal: 20 },
+    subtitle: { fontFamily: font.bodyMedium, fontSize: 11, color: color.mist },
+    empty: { flex: 1, justifyContent: "center", paddingHorizontal: 20, gap: 16 },
+    emptyIntro: {
+        fontFamily: font.body,
+        fontSize: 14,
+        lineHeight: 20,
+        color: color.ink,
+        textAlign: "center",
+        maxWidth: 320,
+        alignSelf: "center",
+    },
     chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
     chip: {
         paddingHorizontal: 14,

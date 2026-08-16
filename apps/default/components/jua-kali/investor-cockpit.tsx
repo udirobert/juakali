@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
     AccessibilityInfo,
     ActivityIndicator,
     Platform,
     Pressable,
     ScrollView,
+    Share,
     StyleSheet,
     Text,
     TextInput,
@@ -21,19 +22,22 @@ import Animated, {
     withSpring,
     withTiming,
 } from "react-native-reanimated";
-import { useMutation, useQuery } from "convex/react";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { FunctionReturnType } from "convex/server";
 
 import { api } from "@/convex/_generated/api";
+import { SITE_URL } from "@/lib/site";
 import { HowItWorksCard, TermHint } from "@/components/jua-kali/help";
 import { AuthRequiredGate } from "@/components/jua-kali/soft-identity";
+import { SunMark } from "@/components/jua-kali/sun-mark";
 import { color, font, layout } from "@/components/jua-kali/theme";
 
 type Cockpit = FunctionReturnType<typeof api.invest.investorCockpit>;
 type Commitment = Cockpit["commitments"][number];
-type ToolResult = { tool: string; detail: string; status: "running" | "done" };
-type AgentPhase = "idle" | "queued" | "acting" | "done";
+type AgentRun = NonNullable<FunctionReturnType<typeof api.agentRuns.getAgentRun>>;
+type RunStep = AgentRun["steps"][number];
+type AgentPhase = "idle" | "queued" | "acting" | "done" | "failed";
 
 function readDealParams(): { commitmentId?: Id<"commitments">; ventureSlug?: string } {
     if (Platform.OS !== "web" || typeof window === "undefined") return {};
@@ -138,6 +142,7 @@ export function InvestorCockpit({
     hideBrand = false,
     fidelityHint,
     requireAuthToAct = false,
+    onOpenLedger,
 }: {
     initialCommitmentId?: Id<"commitments">;
     showCoach?: boolean;
@@ -146,6 +151,7 @@ export function InvestorCockpit({
     hideBrand?: boolean;
     fidelityHint?: string;
     requireAuthToAct?: boolean;
+    onOpenLedger?: () => void;
 } = {}) {
     const dealParams = useMemo(() => {
         const fromUrl = readDealParams();
@@ -159,10 +165,12 @@ export function InvestorCockpit({
         commitmentId: dealParams.commitmentId,
         ventureSlug: dealParams.ventureSlug,
     });
+    const { isAuthenticated } = useConvexAuth();
+    const me = useQuery(api.softAuth.whoAmI);
     const agentMail = useQuery(api.agentMailPublic.publicStatus);
     const seedInvestDemo = useMutation(api.invest.seedInvestDemo);
     const pledgeCommitment = useMutation(api.invest.pledgeCommitment);
-    const sendInvestorEmail = useMutation(api.invest.sendInvestorEmail);
+    const startAgentRun = useMutation(api.agentRuns.startAgentRun);
     const insets = useSafeAreaInsets();
     const { width } = useWindowDimensions();
     const compact = width < 440;
@@ -176,15 +184,32 @@ export function InvestorCockpit({
     const [emailDraft, setEmailDraft] = useState("Push follow-ups this week. Reply with what moved.");
     const [pendingBody, setPendingBody] = useState<string | null>(null);
     const [agentPhase, setAgentPhase] = useState<AgentPhase>("idle");
-    const [toolResults, setToolResults] = useState<ToolResult[]>([]);
+    const [activeRunId, setActiveRunId] = useState<Id<"agentRuns"> | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [isSeeding, setIsSeeding] = useState(false);
     const [isPledging, setIsPledging] = useState(false);
-    const [isSending, setIsSending] = useState(false);
     const [showPledge, setShowPledge] = useState(false);
     const [showThread, setShowThread] = useState(false);
     const [showIntegrations, setShowIntegrations] = useState(false);
     const [actingSeconds, setActingSeconds] = useState(0);
+
+    /** Live subscription to the run we approved — steps update as each commits. */
+    const activeRun = useQuery(
+        api.agentRuns.getAgentRun,
+        activeRunId ? { runId: activeRunId } : "skip"
+    );
+
+    /** Live subscription to the commitment's latest run — catches inbound AgentMail runs too. */
+    const inboundRun = useQuery(
+        api.agentRuns.getLatestRun,
+        selectedCommitmentId ? { commitmentId: selectedCommitmentId } : "skip"
+    );
+    const inboundRunDetail = useQuery(
+        api.agentRuns.getAgentRun,
+        inboundRun && inboundRun.id !== activeRunId && inboundRun.status === "running"
+            ? { runId: inboundRun.id }
+            : "skip"
+    );
 
     useEffect(() => {
         if (!data?.focusCommitmentId) return;
@@ -197,24 +222,64 @@ export function InvestorCockpit({
         return data.commitments.find((row) => row.id === id) ?? data.commitments[0]!;
     }, [data, selectedCommitmentId]);
 
+    // If the selected commitment changes, drop any run state that belongs to the old one.
+    useEffect(() => {
+        if (!activeRunId || !selectedCommitment) return;
+        if (activeRun && activeRun.commitmentId !== selectedCommitment.id) {
+            setActiveRunId(null);
+            setAgentPhase("idle");
+        }
+    }, [activeRunId, activeRun, selectedCommitment]);
+
     const selectedVenture = useMemo(() => {
         if (!data) return null;
         const id = selectedVentureId ?? data.availableVentures[0]?.id ?? null;
         return data.availableVentures.find((venture) => venture.id === id) ?? null;
     }, [data, selectedVentureId]);
 
-    const waiting = agentPhase === "queued" || agentPhase === "acting";
     const empty = data !== undefined && data.commitments.length === 0;
 
+    // The run currently in flight: ours if any, else a live inbound email run.
+    const liveRun = activeRun ?? inboundRunDetail ?? null;
+    const runIsOurs = liveRun != null && activeRun != null && liveRun.id === activeRun.id;
+    const waiting = agentPhase === "queued" || (liveRun?.status === "running" && runIsOurs);
+
+    // Derive UI phase from real run state instead of simulating it.
+    // Completion/failure only updates our local phase for runs we own — an
+    // inbound email run finishing must not clobber a draft the user is typing.
     useEffect(() => {
-        if (agentPhase !== "acting") {
+        if (!liveRun) return;
+        if (liveRun.status === "running") {
+            if (runIsOurs) setAgentPhase("acting");
+        } else if (liveRun.status === "completed") {
+            if (runIsOurs) {
+                setAgentPhase("done");
+                setPendingBody(null);
+                setEmailDraft("");
+                setStatusMessage(liveRun.result?.message ?? "Agent run completed.");
+                void AccessibilityInfo.announceForAccessibility("Done. Digest and ledger updated.");
+            }
+        } else if (liveRun.status === "failed") {
+            if (runIsOurs) {
+                setAgentPhase("failed");
+                setStatusMessage(liveRun.error ?? "Agent run failed.");
+            }
+        }
+        // Phase only changes when the run's status (or ownership) changes;
+        // depending on the whole run object would re-fire on every step commit.
+    }, [liveRun?.status, runIsOurs]);
+
+    useEffect(() => {
+        if (liveRun?.status !== "running") {
             setActingSeconds(0);
             return;
         }
-        const started = Date.now();
-        const id = setInterval(() => setActingSeconds(Math.floor((Date.now() - started) / 1000)), 250);
+        const started = liveRun.createdAt;
+        const tick = () => setActingSeconds(Math.max(0, Math.floor((Date.now() - started) / 1000)));
+        tick();
+        const id = setInterval(tick, 250);
         return () => clearInterval(id);
-    }, [agentPhase]);
+    }, [liveRun?.status, liveRun?.createdAt]);
 
     async function handleSeed() {
         setIsSeeding(true);
@@ -251,9 +316,10 @@ export function InvestorCockpit({
     function handleQueueEmail() {
         const body = emailDraft.trim();
         if (!body || !selectedCommitment) return;
+        // Drop the previous run's chips so the approval gate reads clean.
+        setActiveRunId(null);
         setPendingBody(body);
         setAgentPhase("queued");
-        setToolResults([]);
         setStatusMessage(null);
         void AccessibilityInfo.announceForAccessibility("Queued. Awaiting approval.");
     }
@@ -263,49 +329,25 @@ export function InvestorCockpit({
         setAgentPhase("idle");
     }
 
-    async function handleApproveEmail() {
+    /**
+     * Approve & run — creates a durable agent run; the UI then streams real
+     * step state from Convex subscriptions (no simulated chips or delays).
+     */
+    const handleApproveEmail = useCallback(async () => {
         if (!pendingBody || !selectedCommitment) return;
-        setIsSending(true);
         setAgentPhase("acting");
-        setToolResults([
-            { tool: "KPI", detail: "Logging…", status: "running" },
-            { tool: "Digest", detail: "Writing…", status: "running" },
-            { tool: "Ledger", detail: "Publishing…", status: "running" },
-            { tool: "Reply", detail: "Sending…", status: "running" },
-        ]);
-
+        setStatusMessage(null);
         try {
-            const result = await sendInvestorEmail({
+            const result = await startAgentRun({
                 commitmentId: selectedCommitment.id,
-                body: pendingBody,
+                noteBody: pendingBody,
             });
-            await new Promise((resolve) => setTimeout(resolve, 380));
-            setToolResults(
-                result.toolResults.map((row) => ({
-                    tool: row.tool.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()).slice(0, 18),
-                    detail: row.detail,
-                    status: "done" as const,
-                }))
-            );
-            setPendingBody(null);
-            setEmailDraft("");
-            setAgentPhase("done");
-            setStatusMessage(result.message);
-            void AccessibilityInfo.announceForAccessibility("Done. Digest and ledger updated.");
+            setActiveRunId(result.runId);
         } catch (error) {
-            setToolResults((prev) =>
-                prev.map((row) => ({
-                    ...row,
-                    status: "done" as const,
-                    detail: error instanceof Error ? error.message : "Failed",
-                }))
-            );
-            setAgentPhase("idle");
-            setStatusMessage(error instanceof Error ? error.message : "Could not send.");
-        } finally {
-            setIsSending(false);
+            setAgentPhase("failed");
+            setStatusMessage(error instanceof Error ? error.message : "Could not start run.");
         }
-    }
+    }, [pendingBody, selectedCommitment, startAgentRun]);
 
     if (data === undefined) {
         return (
@@ -333,7 +375,11 @@ export function InvestorCockpit({
                 <View style={styles.hero}>
                     <View style={styles.heroRow}>
                         {hideBrand ? (
-                            <Text style={styles.heroTitle}>Your deals</Text>
+                            <Text style={styles.heroTitle}>
+                                {isAuthenticated && me?.name
+                                    ? `Your deals, ${me.name.split(/\s+/)[0]}`
+                                    : "Your deals"}
+                            </Text>
                         ) : (
                             <Text style={styles.brand}>JuaKali</Text>
                         )}
@@ -342,7 +388,7 @@ export function InvestorCockpit({
                         </PressableScale>
                     </View>
                     <Text style={styles.bridge}>
-                        Deal = act · Ledger = public proof
+                        Deals = act · Ledger = public proof
                     </Text>
                     {statusMessage ? <Text style={styles.status}>{statusMessage}</Text> : null}
                 </View>
@@ -472,7 +518,6 @@ export function InvestorCockpit({
                             <View style={styles.stack}>
                                 <Scorecard
                                     commitment={selectedCommitment}
-                                    compact={compact}
                                     onOpenGlossary={onOpenGlossary}
                                 />
                                 <AuthRequiredGate required={requireAuthToAct}>
@@ -482,19 +527,26 @@ export function InvestorCockpit({
                                     onChangeDraft={setEmailDraft}
                                     pendingBody={pendingBody}
                                     agentPhase={agentPhase}
-                                    toolResults={toolResults}
+                                    liveRun={liveRun}
+                                    runIsOurs={runIsOurs}
                                     waiting={waiting}
                                     actingSeconds={actingSeconds}
                                     showThread={showThread}
                                     onToggleThread={() => setShowThread((v) => !v)}
                                     onQueue={handleQueueEmail}
-                                    onApprove={handleApproveEmail}
+                                    onApprove={() => void handleApproveEmail()}
                                     onDiscard={handleDiscardQueue}
-                                    sending={isSending}
-                                    compact={compact}
+                                    onOpenLedger={onOpenLedger}
                                     onOpenGlossary={onOpenGlossary}
                                 />
                                 </AuthRequiredGate>
+                                {selectedCommitment.latestDigest ? (
+                                    <DigestArtifactCard
+                                        commitment={selectedCommitment}
+                                        onOpenLedger={onOpenLedger}
+                                        onOpenGlossary={onOpenGlossary}
+                                    />
+                                ) : null}
                             </View>
                         ) : null}
                     </>
@@ -506,11 +558,9 @@ export function InvestorCockpit({
 
 function Scorecard({
     commitment,
-    compact,
     onOpenGlossary,
 }: {
     commitment: Commitment;
-    compact: boolean;
     onOpenGlossary?: (focusId?: string) => void;
 }) {
     const { venture } = commitment;
@@ -544,15 +594,33 @@ function Scorecard({
             </View>
             <Sparkline values={venture.sparkline} />
 
+            <View style={styles.shareRow}>
+                <Pressable
+                    onPress={async () => {
+                        const url = `${SITE_URL}/deal/${venture.publicSlug}`;
+                        try {
+                            await Share.share({
+                                message: `${venture.name} — public ledger\n${url}`,
+                                url,
+                                title: `${venture.name} — public ledger`,
+                            });
+                        } catch {
+                            // dismissed — nothing to do
+                        }
+                    }}
+                    hitSlop={6}
+                    accessibilityRole="button"
+                >
+                    <Text style={styles.shareLink}>Share proof</Text>
+                </Pressable>
+                <Text style={styles.shareHint}>/deal/{venture.publicSlug}</Text>
+            </View>
+
             {commitment.latestDigest ? (
-                <View style={styles.insight}>
-                    <View style={styles.insightHead}>
-                        <Text style={styles.insightLabel}>Latest digest</Text>
-                    </View>
-                    <Text style={styles.insightBody} numberOfLines={compact ? 2 : 3}>
-                        {commitment.latestDigest.summary}
-                    </Text>
-                </View>
+                <Text style={styles.fieldHint}>
+                    Latest digest filed below · next due{" "}
+                    {commitment.nextDigestAt ? formatDue(commitment.nextDigestAt) : "this week"}.
+                </Text>
             ) : (
                 <Text style={styles.fieldHint}>No digest yet — approve a note below to generate one.</Text>
             )}
@@ -590,7 +658,8 @@ function Ritual({
     onChangeDraft,
     pendingBody,
     agentPhase,
-    toolResults,
+    liveRun,
+    runIsOurs,
     waiting,
     actingSeconds,
     showThread,
@@ -598,8 +667,7 @@ function Ritual({
     onQueue,
     onApprove,
     onDiscard,
-    sending,
-    compact,
+    onOpenLedger,
     onOpenGlossary,
 }: {
     commitment: Commitment;
@@ -607,7 +675,8 @@ function Ritual({
     onChangeDraft: (value: string) => void;
     pendingBody: string | null;
     agentPhase: AgentPhase;
-    toolResults: ToolResult[];
+    liveRun: AgentRun | null;
+    runIsOurs: boolean;
     waiting: boolean;
     actingSeconds: number;
     showThread: boolean;
@@ -615,68 +684,76 @@ function Ritual({
     onQueue: () => void;
     onApprove: () => void;
     onDiscard: () => void;
-    sending: boolean;
-    compact: boolean;
+    onOpenLedger?: () => void;
     onOpenGlossary?: (focusId?: string) => void;
 }) {
     const emails = commitment.recentEmails;
-    const phaseLabel =
-        agentPhase === "queued"
-            ? "Waiting for your approval"
-            : agentPhase === "acting"
-              ? `Working · ${actingSeconds}s`
-              : agentPhase === "done"
-                ? "Done — check Ledger"
+    const runLive = liveRun?.status === "running";
+    const inboundActing = !runIsOurs && runLive && agentPhase !== "queued";
+    const showApproveGate = pendingBody != null && agentPhase === "queued";
+    const showSteps = liveRun != null && (runIsOurs || inboundActing);
+
+    const phaseLabel = showApproveGate
+        ? "Waiting for your approval"
+        : runLive
+          ? `Working · ${actingSeconds}s`
+          : agentPhase === "acting"
+            ? "Working…"
+            : agentPhase === "done" && liveRun?.status === "completed"
+              ? "Done — posted to Ledger"
+              : agentPhase === "failed" || liveRun?.status === "failed"
+                ? "Run failed"
                 : "Ready for a note";
 
     return (
         <View style={styles.card}>
             <View style={styles.cardTop}>
                 <View style={styles.titleWithHint}>
-                    <Text style={styles.cardTitle}>Agent note</Text>
+                    <SunMark size={16} />
+                    <Text style={styles.cardTitle}>Note to Jua</Text>
                     {onOpenGlossary ? <TermHint termId="queue-approve" onOpenGlossary={onOpenGlossary} /> : null}
                 </View>
-                <Text style={styles.meta}>{phaseLabel}</Text>
+                <Text style={[styles.meta, liveRun?.status === "failed" && styles.metaDanger]}>
+                    {phaseLabel}
+                </Text>
             </View>
 
-            <Text style={styles.fieldHint}>Write a note, then approve to run — or email the inbox above.</Text>
+            <Text style={styles.fieldHint}>
+                {inboundActing
+                    ? "Jua is acting on an inbound email — live steps below."
+                    : "Write a note, then approve to run — or email the inbox above."}
+            </Text>
 
             <WaitingShimmer active={waiting} />
 
-            {toolResults.length > 0 ? (
-                <View style={styles.toolRow}>
-                    {toolResults.map((result, index) => (
-                        <View
-                            key={`${result.tool}-${index}`}
-                            style={[styles.toolChip, result.status === "running" && styles.toolChipRun]}
-                        >
-                            {result.status === "running" ? (
-                                <ActivityIndicator size="small" color={color.brass} />
-                            ) : (
-                                <Text style={styles.toolOk}>✓</Text>
-                            )}
-                            <Text style={styles.toolName} numberOfLines={1}>
-                                {result.tool}
-                            </Text>
-                        </View>
-                    ))}
-                </View>
+            {showSteps && liveRun ? (
+                <RunSteps run={liveRun} onOpenLedger={onOpenLedger} />
             ) : null}
 
-            {pendingBody ? (
+            {showApproveGate ? (
                 <Animated.View entering={FadeInDown.duration(160)} style={styles.gate}>
                     <Text style={styles.gateEyebrow}>Queued — approve to run</Text>
-                    <Text style={styles.gateBody} numberOfLines={compact ? 3 : 5}>
+                    <Text style={styles.gateBody} numberOfLines={6}>
                         {pendingBody}
                     </Text>
-                    <PressableScale onPress={onApprove} disabled={sending} style={styles.btnPrimary}>
-                        <Text style={styles.btnPrimaryText}>{sending ? "…" : "Approve & run"}</Text>
+                    <View style={styles.consequence}>
+                        <Text style={styles.consequenceLabel}>Approving will</Text>
+                        {["Log a KPI check-in", "Write an investor digest", "Post to the public ledger", "Reply with evidence"].map(
+                            (line) => (
+                                <Text key={line} style={styles.consequenceLine}>
+                                    · {line}
+                                </Text>
+                            )
+                        )}
+                    </View>
+                    <PressableScale onPress={onApprove} style={styles.btnApprove}>
+                        <Text style={styles.btnApproveText}>Approve & run</Text>
                     </PressableScale>
                     <Pressable onPress={onDiscard}>
                         <Text style={styles.discard}>Discard</Text>
                     </Pressable>
                 </Animated.View>
-            ) : (
+            ) : !runLive ? (
                 <View style={styles.composer}>
                     <TextInput
                         value={draft}
@@ -691,7 +768,7 @@ function Ritual({
                         <Text style={styles.btnPrimaryText}>Send to agent</Text>
                     </PressableScale>
                 </View>
-            )}
+            ) : null}
 
             {emails.length > 0 ? (
                 <Pressable onPress={onToggleThread}>
@@ -704,7 +781,7 @@ function Ritual({
                 ? emails.map((email) => (
                       <View key={email.id} style={styles.bubble}>
                           <Text style={styles.bubbleMeta}>
-                              {email.direction === "inbound" ? "You" : "Agent"}
+                              {email.direction === "inbound" ? "You" : "Jua"}
                           </Text>
                           <Text style={styles.bubbleBody} numberOfLines={4}>
                               {email.body}
@@ -712,6 +789,125 @@ function Ritual({
                       </View>
                   ))
                 : null}
+        </View>
+    );
+}
+
+/** Live step chips driven by the real agentRun — nothing is simulated. */
+function RunSteps({
+    run,
+    onOpenLedger,
+}: {
+    run: AgentRun;
+    onOpenLedger?: () => void;
+}) {
+    const failed = run.status === "failed";
+    const done = run.status === "completed";
+    return (
+        <View style={styles.toolRow} accessibilityLiveRegion="polite">
+            {run.steps.map((step: RunStep) => (
+                <View
+                    key={step.tool}
+                    style={[
+                        styles.toolChip,
+                        step.status === "running" && styles.toolChipRun,
+                        step.status === "failed" && styles.toolChipFail,
+                    ]}
+                >
+                    {step.status === "running" ? (
+                        <ActivityIndicator size="small" color={color.brass} />
+                    ) : step.status === "done" ? (
+                        <Text style={styles.toolOk}>✓</Text>
+                    ) : step.status === "failed" ? (
+                        <Text style={styles.toolFail}>✕</Text>
+                    ) : (
+                        <View style={styles.toolDot} />
+                    )}
+                    <Text style={styles.toolName} numberOfLines={1}>
+                        {step.label}
+                    </Text>
+                </View>
+            ))}
+            {done && run.result ? (
+                <View style={styles.runDone}>
+                    <Text style={styles.runDoneText} numberOfLines={2}>
+                        {run.result.message} · KPI {run.result.kpiBefore} → {run.result.kpiAfter}
+                    </Text>
+                    {onOpenLedger ? (
+                        <Pressable onPress={onOpenLedger} hitSlop={8}>
+                            <Text style={styles.runDoneLink}>View on Ledger</Text>
+                        </Pressable>
+                    ) : null}
+                </View>
+            ) : null}
+            {failed && run.error ? (
+                <Text style={styles.runError}>{run.error}</Text>
+            ) : null}
+        </View>
+    );
+}
+
+/** The core artifact: the agent's digest, rendered as a first-class card. */
+function DigestArtifactCard({
+    commitment,
+    onOpenLedger,
+    onOpenGlossary,
+}: {
+    commitment: Commitment;
+    onOpenLedger?: () => void;
+    onOpenGlossary?: (focusId?: string) => void;
+}) {
+    const digest = commitment.latestDigest;
+    if (!digest) return null;
+
+    const evidence = digest.evidence.length > 0 ? digest.evidence : ["agent"];
+
+    return (
+        <View style={styles.card}>
+            <View style={styles.cardTop}>
+                <View style={styles.titleWithHint}>
+                    <SunMark size={16} />
+                    <Text style={styles.digestTitle}>Digest</Text>
+                    {onOpenGlossary ? <TermHint termId="digest" onOpenGlossary={onOpenGlossary} /> : null}
+                </View>
+                <Text style={styles.digestWhen}>
+                    {new Date(digest.createdAt).toLocaleDateString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                    })}
+                </Text>
+            </View>
+
+            <Text style={styles.digestSummary}>{digest.summary}</Text>
+
+            <View style={styles.digestRule} />
+
+            <View style={styles.digestSection}>
+                <Text style={styles.digestSectionLabel}>Insight</Text>
+                <Text style={styles.digestSectionBody}>{digest.insights}</Text>
+            </View>
+            {digest.nextAction ? (
+                <View style={styles.digestSection}>
+                    <Text style={styles.digestSectionLabel}>Next</Text>
+                    <Text style={styles.digestSectionBody}>{digest.nextAction}</Text>
+                </View>
+            ) : null}
+
+            <View style={styles.digestFoot}>
+                <View style={styles.digestEvidenceRow}>
+                    <Text style={styles.digestEvidenceLabel}>Evidence</Text>
+                    {evidence.map((tag: string) => (
+                        <View key={tag} style={styles.evidenceChip}>
+                            <Text style={styles.evidenceChipText}>{tag}</Text>
+                        </View>
+                    ))}
+                </View>
+                {onOpenLedger ? (
+                    <Pressable onPress={onOpenLedger} hitSlop={8}>
+                        <Text style={styles.runDoneLink}>View on Ledger</Text>
+                    </Pressable>
+                ) : null}
+            </View>
         </View>
     );
 }
@@ -762,7 +958,7 @@ const styles = StyleSheet.create({
         fontWeight: "700",
         letterSpacing: 0.8,
         textTransform: "uppercase",
-        color: color.brass,
+        color: color.brassDeep,
         marginRight: 2,
     },
     integrationsBody: {
@@ -778,7 +974,7 @@ const styles = StyleSheet.create({
         fontWeight: "700",
         letterSpacing: 0.6,
         textTransform: "uppercase",
-        color: color.brass,
+        color: color.brassDeep,
     },
     inboxAddress: {
         fontFamily: font.bodyBold,
@@ -796,7 +992,7 @@ const styles = StyleSheet.create({
         fontFamily: font.bodyBold,
         fontSize: 12,
         fontWeight: "700",
-        color: color.brass,
+        color: color.brassDeep,
         textAlign: "center",
         paddingVertical: 4,
     },
@@ -818,7 +1014,7 @@ const styles = StyleSheet.create({
         fontWeight: "700",
         letterSpacing: 0.6,
         textTransform: "uppercase",
-        color: color.brass,
+        color: color.brassDeep,
     },
     heroActions: { flexDirection: "row", gap: 8, justifyContent: "center" },
     btnPrimary: {
@@ -848,7 +1044,7 @@ const styles = StyleSheet.create({
     },
     btnGhostText: { fontFamily: font.bodyBold, color: color.charcoal, fontWeight: "700", fontSize: 13 },
     disabled: { opacity: 0.45 },
-    status: { fontFamily: font.body, fontSize: 12, color: color.brass, textAlign: "center" },
+    status: { fontFamily: font.body, fontSize: 12, color: color.brassDeep, textAlign: "center" },
     card: {
         gap: 12,
         padding: 16,
@@ -866,6 +1062,43 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     meta: { fontFamily: font.bodyBold, fontSize: 11, fontWeight: "700", color: color.brass },
+    metaDanger: { color: color.danger },
+    // Brass is the trust/permission color — the consequential approve action is
+    // visually distinct from ordinary charcoal navigation buttons.
+    btnApprove: {
+        backgroundColor: color.brass,
+        paddingHorizontal: 18,
+        paddingVertical: 13,
+        borderRadius: 4,
+        minHeight: 46,
+        justifyContent: "center",
+        alignItems: "center",
+    },
+    btnApproveText: {
+        fontFamily: font.bodyBold,
+        color: color.paper,
+        fontWeight: "700",
+        fontSize: 14,
+        letterSpacing: 0.3,
+    },
+    consequence: {
+        gap: 3,
+        padding: 10,
+        borderRadius: 4,
+        backgroundColor: color.stone,
+        borderWidth: 1,
+        borderColor: color.line,
+    },
+    consequenceLabel: {
+        fontFamily: font.bodyBold,
+        fontSize: 9,
+        fontWeight: "700",
+        letterSpacing: 0.8,
+        textTransform: "uppercase",
+        color: color.mist,
+        marginBottom: 2,
+    },
+    consequenceLine: { fontFamily: font.body, fontSize: 12, lineHeight: 17, color: color.ink },
     chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
     chip: {
         paddingHorizontal: 10,
@@ -945,6 +1178,23 @@ const styles = StyleSheet.create({
         overflow: "hidden",
     },
     progressFill: { height: "100%", backgroundColor: color.brass },
+    shareRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 8,
+    },
+    shareLink: {
+        fontFamily: font.bodyBold,
+        fontSize: 12,
+        fontWeight: "700",
+        color: color.brassDeep,
+    },
+    shareHint: {
+        fontFamily: font.body,
+        fontSize: 11,
+        color: color.mist,
+    },
     sparkRow: { flexDirection: "row", alignItems: "flex-end", gap: 4, height: 32 },
     sparkTrack: {
         flex: 1,
@@ -967,7 +1217,7 @@ const styles = StyleSheet.create({
         fontFamily: font.bodyBold,
         fontSize: 10,
         fontWeight: "700",
-        color: color.brass,
+        color: color.brassDeep,
         letterSpacing: 0.6,
         textTransform: "uppercase",
     },
@@ -979,7 +1229,7 @@ const styles = StyleSheet.create({
         backgroundColor: "rgba(166,124,45,0.12)",
     },
     shimmerBar: { width: "40%", height: "100%", backgroundColor: color.brass, borderRadius: 99 },
-    toolRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+    toolRow: { gap: 6 },
     toolChip: {
         flexDirection: "row",
         alignItems: "center",
@@ -988,11 +1238,76 @@ const styles = StyleSheet.create({
         paddingVertical: 8,
         borderRadius: 4,
         backgroundColor: color.stone,
-        maxWidth: "48%",
     },
     toolChipRun: { backgroundColor: color.brassSoft },
+    toolChipFail: { backgroundColor: "rgba(139,58,47,0.08)" },
     toolOk: { color: color.success, fontWeight: "700", fontSize: 12 },
+    toolFail: { color: color.danger, fontWeight: "700", fontSize: 12 },
+    toolDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: color.lineStrong },
     toolName: { fontFamily: font.bodyBold, fontSize: 11, fontWeight: "700", color: color.charcoal, flexShrink: 1 },
+    runDone: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 8,
+        paddingHorizontal: 2,
+        paddingTop: 2,
+    },
+    runDoneText: { fontFamily: font.body, fontSize: 12, lineHeight: 17, color: color.ink, flex: 1 },
+    runDoneLink: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.brassDeep },
+    runError: { fontFamily: font.body, fontSize: 12, color: color.danger },
+    // Digest artifact card
+    digestTitle: {
+        fontFamily: font.displayMedium,
+        fontSize: 18,
+        fontWeight: "600",
+        color: color.charcoal,
+        flex: 1,
+    },
+    digestWhen: { fontFamily: font.bodyBold, fontSize: 11, fontWeight: "700", color: color.mist },
+    digestSummary: { fontFamily: font.body, fontSize: 14, lineHeight: 21, color: color.ink },
+    digestRule: { height: 1, backgroundColor: color.line },
+    digestSection: { gap: 3 },
+    digestSectionLabel: {
+        fontFamily: font.bodyBold,
+        fontSize: 9,
+        fontWeight: "700",
+        letterSpacing: 0.8,
+        textTransform: "uppercase",
+        color: color.brassDeep,
+    },
+    digestSectionBody: { fontFamily: font.body, fontSize: 13, lineHeight: 19, color: color.ink },
+    digestFoot: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 8,
+    },
+    digestEvidenceRow: { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap", flex: 1 },
+    digestEvidenceLabel: {
+        fontFamily: font.bodyBold,
+        fontSize: 9,
+        fontWeight: "700",
+        letterSpacing: 0.8,
+        textTransform: "uppercase",
+        color: color.mist,
+    },
+    evidenceChip: {
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 4,
+        backgroundColor: color.brassSoft,
+        borderWidth: 1,
+        borderColor: "rgba(166,124,45,0.25)",
+    },
+    evidenceChipText: {
+        fontFamily: font.bodyBold,
+        fontSize: 10,
+        fontWeight: "700",
+        letterSpacing: 0.4,
+        textTransform: "uppercase",
+        color: color.brassDeep,
+    },
     gate: { gap: 10 },
     gateBody: { fontFamily: font.body, fontSize: 14, lineHeight: 20, color: color.ink },
     discard: {

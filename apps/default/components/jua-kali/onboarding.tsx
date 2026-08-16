@@ -31,23 +31,25 @@ import { useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 
 import { api } from "@/convex/_generated/api";
+import { color, font } from "@/components/jua-kali/theme";
 
 type InterviewResult = FunctionReturnType<typeof api.telephony.runApprenticeInterview>;
 type MatchResult = InterviewResult["matches"][number];
 type WebShapeStyle = ViewStyle & { clipPath?: string; backdropFilter?: string };
 
 const palette = {
-    sage: "#9CAF88",
-    terracotta: "#E07A5F",
-    cream: "#F5F1E8",
-    olive: "#3B4D3B",
-    ink: "#243124",
-    moss: "#71845F",
-    sand: "#E7D8C5",
+    // Lab (funnel) screens share the one “Nairobi ledger” language:
+    sage: color.brassLight,
+    terracotta: color.brass,
+    cream: color.paper,
+    olive: color.charcoal,
+    ink: color.ink,
+    moss: color.mist,
+    sand: color.stone,
 };
 
-const headingFont = Platform.select({ web: "Equipment, Inter, Avenir Next, system-ui, sans-serif", default: "System" });
-const bodyFont = Platform.select({ web: "Inter, Avenir, system-ui, sans-serif", default: "System" });
+const headingFont = font.display;
+const bodyFont = font.body;
 
 const crafts = [
     { label: "Metalwork", hint: "Welding, gates, fabrication" },
@@ -229,7 +231,7 @@ function Mascot({ size = 96, talking = false }: { size?: number; talking?: boole
     return (
         <Animated.View style={[{ width: size, height: size * 1.08 }, bodyStyle]}>
             <LinearGradient
-                colors={[palette.sage, "#86A06F", palette.olive]}
+                colors={[palette.sage, color.brassDeep, palette.olive]}
                 start={{ x: 0.1, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={[styles.mascotBody, { width: size, height: size }]}
@@ -547,7 +549,7 @@ function MatchCard({ match, index }: { match: MatchResult; index: number }) {
     return (
         <Animated.View entering={FadeInUp.delay(index * 140).duration(420)} style={[styles.matchCard, index % 2 === 1 && styles.matchCardOffset]}>
             <LinearGradient
-                colors={index === 0 ? [palette.terracotta, "#C9633F"] : [palette.sage, palette.olive]}
+                colors={index === 0 ? [palette.terracotta, color.brassDeep] : [palette.sage, palette.olive]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={[styles.matchBadge, clipBlobStyle]}
@@ -594,7 +596,7 @@ function PrimaryButton({ label, onPress, disabled }: { label: string; onPress: (
             onPress={onPress}
             style={({ pressed }) => [styles.primaryButton, pressed && styles.primaryPressed, disabled && styles.primaryDisabled]}
         >
-            <LinearGradient colors={[palette.terracotta, "#C9633F"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+            <LinearGradient colors={[palette.terracotta, color.brassDeep]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
             <Text style={styles.primaryLabel}>{label}</Text>
         </Pressable>
     );
@@ -615,7 +617,7 @@ function ProgressTrack({ total, index }: { total: number; index: number }) {
 function OrganicBackdrop() {
     return (
         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-            <LinearGradient colors={[palette.cream, "#EFE2D1", "#DCE5D2"]} style={StyleSheet.absoluteFill} />
+            <LinearGradient colors={[palette.cream, color.stone]} style={StyleSheet.absoluteFill} />
             <View style={[styles.blob, styles.blobOne]} />
             <View style={[styles.blob, styles.blobTwo]} />
             <View style={[styles.blob, styles.blobThree]} />

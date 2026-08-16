@@ -7,6 +7,23 @@ import { internal } from "./_generated/api";
 
 const API = "https://api.agentmail.to";
 
+/** Mirror of agentMailStore.getConfig's return shape. Annotated locally to
+ * break the agentMail.ts ↔ _generated/api.d.ts inference cycle (TS7022). */
+type StoredConfig = {
+    inboxId: string;
+    inboxEmail: string;
+    webhookId: string | null;
+} | null;
+
+type StatusResult = {
+    apiKeyConfigured: boolean;
+    inboxId: string | null;
+    inboxEmail: string | null;
+    webhookId: string | null;
+    webhookSecretConfigured: boolean;
+    webhookUrl: string;
+};
+
 function apiKey(): string {
      
     const key = process.env.AGENTMAIL_API_KEY;
@@ -178,13 +195,13 @@ export const status = action({
         webhookSecretConfigured: v.boolean(),
         webhookUrl: v.string(),
     }),
-    handler: async (ctx) => {
+    handler: async (ctx): Promise<StatusResult> => {
          
         const apiKeyConfigured = Boolean(process.env.AGENTMAIL_API_KEY);
         const envSecret = Boolean(process.env.AGENTMAIL_WEBHOOK_SECRET);
          
-        const config = await ctx.runQuery(internal.agentMailStore.getConfig, {});
-        const storedSecret = await ctx.runQuery(internal.agentMailStore.hasWebhookSecret, {});
+        const config: StoredConfig = await ctx.runQuery(internal.agentMailStore.getConfig, {});
+        const storedSecret: boolean = await ctx.runQuery(internal.agentMailStore.hasWebhookSecret, {});
         return {
             apiKeyConfigured,
             inboxId: config?.inboxId ?? null,
@@ -204,9 +221,9 @@ export const sendTest = action({
         inboxId: v.optional(v.string()),
     },
     returns: v.object({ ok: v.boolean(), message: v.string() }),
-    handler: async (ctx, args) => {
-        const config = await ctx.runQuery(internal.agentMailStore.getConfig, {});
-        const inboxId = args.inboxId ?? config?.inboxId;
+    handler: async (ctx, args): Promise<{ ok: boolean; message: string }> => {
+        const config: StoredConfig = await ctx.runQuery(internal.agentMailStore.getConfig, {});
+        const inboxId: string | undefined = args.inboxId ?? config?.inboxId;
         if (!inboxId) {
             return { ok: false, message: "No inbox bound — run agentMail.setup with inboxId." };
         }

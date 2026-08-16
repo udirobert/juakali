@@ -5,6 +5,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { rateLimiter } from "./rateLimit";
 import { normalizeKey } from "./juaKaliHelpers";
 import { assertCanAct } from "./softAuth";
+import { createAgentRun } from "./agentRuns";
 
 type DbCtx = { db: QueryCtx["db"] };
 
@@ -115,6 +116,7 @@ async function writeLedgerEvent(
         amountKes?: number | null;
         metric?: string | null;
         value?: number | null;
+        evidence?: string[];
         publicVisible?: boolean;
         createdAt: number;
     }
@@ -127,6 +129,7 @@ async function writeLedgerEvent(
         amountKes: args.amountKes ?? null,
         metric: args.metric ?? null,
         value: args.value ?? null,
+        evidence: args.evidence,
         createdAt: args.createdAt,
         publicVisible: args.publicVisible ?? true,
     });
@@ -451,6 +454,8 @@ export const getDeal = query({
 export const publicLedger = query({
     args: {
         limit: v.optional(v.number()),
+        /** Optional: restrict events to one venture (shareable deep link). */
+        ventureSlug: v.optional(v.string()),
     },
     returns: v.object({
         events: v.array(
@@ -461,9 +466,18 @@ export const publicLedger = query({
                 amountKes: v.union(v.number(), v.null()),
                 metric: v.union(v.string(), v.null()),
                 value: v.union(v.number(), v.null()),
+                evidence: v.array(v.string()),
                 ventureName: v.union(v.string(), v.null()),
                 ventureSlug: v.union(v.string(), v.null()),
                 createdAt: v.number(),
+            })
+        ),
+        /** Ventures with at least one public event (filter chips). */
+        ventures: v.array(
+            v.object({
+                id: v.id("ventures"),
+                name: v.string(),
+                slug: v.string(),
             })
         ),
         totals: v.object({
@@ -475,7 +489,24 @@ export const publicLedger = query({
     }),
     handler: async (ctx, args) => {
         const limit = Math.min(Math.max(args.limit ?? 40, 1), 100);
-        const rows = await ctx.db.query("ledgerEvents").withIndex("by_createdAt").order("desc").take(limit * 2);
+        const slug = args.ventureSlug ? normalizeKey(args.ventureSlug) : null;
+        const filterVenture = slug
+            ? await ctx.db
+                  .query("ventures")
+                  .withIndex("by_publicSlug", (q) => q.eq("publicSlug", slug))
+                  .first()
+            : null;
+        if (slug && !filterVenture) {
+            return { events: [], ventures: [], totals: { pledgedKes: 0, checkIns: 0, activeVentures: 0, digests: 0 } };
+        }
+
+        const rows = filterVenture
+            ? await ctx.db
+                  .query("ledgerEvents")
+                  .withIndex("by_ventureId", (q) => q.eq("ventureId", filterVenture._id))
+                  .order("desc")
+                  .take(limit * 2)
+            : await ctx.db.query("ledgerEvents").withIndex("by_createdAt").order("desc").take(limit * 2);
         const events = [];
         for (const row of rows) {
             if (!row.publicVisible) continue;
@@ -487,6 +518,7 @@ export const publicLedger = query({
                 amountKes: row.amountKes ?? null,
                 metric: row.metric ?? null,
                 value: row.value ?? null,
+                evidence: row.evidence ?? [],
                 ventureName: venture?.name ?? null,
                 ventureSlug: venture?.publicSlug ?? null,
                 createdAt: row.createdAt,
@@ -494,21 +526,53 @@ export const publicLedger = query({
             if (events.length >= limit) break;
         }
 
+        // Ventures that appear on the public ledger (filter chips) — one scan.
+        const recentEvents = await ctx.db
+            .query("ledgerEvents")
+            .withIndex("by_createdAt")
+            .order("desc")
+            .take(400);
+        const ventureIdsInOrder: Array<Id<"ventures">> = [];
+        const seenVentures = new Set<string>();
+        for (const event of recentEvents) {
+            if (!event.publicVisible || !event.ventureId || seenVentures.has(event.ventureId)) continue;
+            seenVentures.add(event.ventureId);
+            ventureIdsInOrder.push(event.ventureId);
+        }
+        const ventures = [];
+        for (const ventureId of ventureIdsInOrder) {
+            const venture = await ctx.db.get(ventureId);
+            if (venture) ventures.push({ id: venture._id, name: venture.name, slug: venture.publicSlug });
+        }
+
         const commitments = await ctx.db.query("commitments").order("desc").take(200);
         const checkIns = await ctx.db.query("kpiCheckIns").order("desc").take(200);
-        const ventures = await ctx.db
+        const activeVentureCount = await ctx.db
             .query("ventures")
             .withIndex("by_status", (q) => q.eq("status", "active"))
             .take(100);
         const digests = await ctx.db.query("agentDigests").order("desc").take(200);
 
+        const scopedCommitments = filterVenture
+            ? commitments.filter((row) => row.ventureId === filterVenture._id)
+            : commitments;
+
         return {
             events,
+            ventures,
             totals: {
-                pledgedKes: commitments.reduce((sum, row) => sum + row.amountKes, 0),
-                checkIns: checkIns.length,
-                activeVentures: ventures.length,
-                digests: digests.length,
+                pledgedKes: scopedCommitments.reduce((sum, row) => sum + row.amountKes, 0),
+                checkIns: filterVenture
+                    ? checkIns.filter((row) => row.ventureId === filterVenture._id).length
+                    : checkIns.length,
+                activeVentures: filterVenture
+                    ? filterVenture.status === "active"
+                        ? 1
+                        : 0
+                    : activeVentureCount.length,
+                digests: filterVenture
+                    ? digests.filter((row) => row.ventureId === filterVenture._id).length
+                    : digests.length,
             },
         };
     },
@@ -563,6 +627,8 @@ export const investorCockpit = query({
                         id: v.id("agentDigests"),
                         summary: v.string(),
                         insights: v.string(),
+                        nextAction: v.union(v.string(), v.null()),
+                        evidence: v.array(v.string()),
                         createdAt: v.number(),
                     }),
                     v.null()
@@ -678,6 +744,8 @@ export const investorCockpit = query({
                           id: latest._id,
                           summary: latest.summary,
                           insights: latest.insights,
+                          nextAction: latest.nextAction ?? null,
+                          evidence: latest.evidence ?? [],
                           createdAt: latest.createdAt,
                       }
                     : null,
@@ -1197,7 +1265,7 @@ export const seedInvestDemo = mutation({
                     fromAddress: agentAddress,
                     toAddress: investorEmail,
                     subject: `Digest: ${venture?.name ?? "venture"}`,
-                    body: `${pledge.digest.summary}\n\n${pledge.digest.insights}\n\n— JuaKali agent (demo email ritual)`,
+                    body: `${pledge.digest.summary}\n\n${pledge.digest.insights}\n\n— Jua · JuaKali agent (demo email ritual)`,
                     createdAt: now + 31,
                 });
             }
@@ -1250,175 +1318,17 @@ async function resolveVentureId(
     return null;
 }
 
-async function processInvestorEmailNote(
-    ctx: MutationCtx,
-    args: {
-        commitmentId: Id<"commitments">;
-        body: string;
-        subject?: string;
-        metric?: string;
-        value?: number;
-        source?: "email_paste" | "agent" | "sms" | "manual";
-        fromAddressOverride?: string;
-        toAddressOverride?: string;
-    }
-) {
-    const body = args.body.trim();
-    if (body.length === 0) throw new Error("Email body is required");
-
-    const commitment = await ctx.db.get(args.commitmentId);
-    if (!commitment) throw new Error("Commitment not found");
-    const venture = await ctx.db.get(commitment.ventureId);
-    if (!venture) throw new Error("Venture not found");
-    const investor = await ctx.db.get(commitment.investorId);
-    if (!investor) throw new Error("Investor not found");
-
-    const now = Date.now();
-    const investorEmail = args.fromAddressOverride ?? investor.email ?? "investor@example.com";
-    const agentAddress =
-        args.toAddressOverride ?? venture.agentEmail ?? `${venture.publicSlug}@agent.juakali.demo`;
-    const subject = args.subject?.trim() || `Re: ${venture.name}`;
-    const source = args.source ?? "email_paste";
-
-    const inboundId = await ctx.db.insert("agentEmails", {
-        commitmentId: commitment._id,
-        ventureId: venture._id,
-        investorId: investor._id,
-        direction: "inbound",
-        fromAddress: investorEmail,
-        toAddress: agentAddress,
-        subject,
-        body,
-        createdAt: now,
-    });
-
-    const resolvedMetric =
-        args.metric?.trim() ||
-        (venture.kpiUnit === "meetings"
-            ? "meetings_booked"
-            : venture.kpiUnit === "jobs"
-              ? "jobs_completed"
-              : "revenue_kes");
-    const value =
-        args.value ??
-        (venture.kpiUnit === "revenue_kes" ? 3500 : venture.kpiUnit === "jobs" ? 1 : 2);
-
-    const checkInId = await ctx.db.insert("kpiCheckIns", {
-        ventureId: venture._id,
-        commitmentId: commitment._id,
-        periodLabel: `Email · ${new Date(now).toISOString().slice(0, 10)}`,
-        metric: resolvedMetric,
-        value,
-        note: body.slice(0, 160),
-        source,
-        createdAt: now + 1,
-    });
-
-    await writeLedgerEvent(ctx, {
-        type: "checkin",
-        ventureId: venture._id,
-        commitmentId: commitment._id,
-        summary: `${venture.name}: ${resolvedMetric} = ${value} (from investor email)`,
-        metric: resolvedMetric,
-        value,
-        createdAt: now + 1,
-    });
-
-    const digestSummary = `Acted on your email for ${venture.name}: logged ${resolvedMetric}=${value}.`;
-    const digestInsights =
-        venture.peerMedian != null
-            ? `Peer median this period is ~${venture.peerMedian}. Next digest ${commitment.digestCadence ?? "Weekly · Fri 08:00 EAT"}.`
-            : `Next digest ${commitment.digestCadence ?? "Weekly · Fri 08:00 EAT"}.`;
-
-    const digestId = await ctx.db.insert("agentDigests", {
-        commitmentId: commitment._id,
-        ventureId: venture._id,
-        summary: digestSummary,
-        insights: digestInsights,
-        createdAt: now + 2,
-    });
-
-    await writeLedgerEvent(ctx, {
-        type: "digest",
-        ventureId: venture._id,
-        commitmentId: commitment._id,
-        summary: `Investor digest for ${venture.name}: ${digestSummary}`,
-        createdAt: now + 2,
-    });
-
-    const replyBody = `${digestSummary}\n\n${digestInsights}\n\nEvidence tagged: email. Posted to the public ledger.\n\n— JuaKali agent`;
-
-    const outboundId = await ctx.db.insert("agentEmails", {
-        commitmentId: commitment._id,
-        ventureId: venture._id,
-        investorId: investor._id,
-        direction: "outbound",
-        fromAddress: agentAddress,
-        toAddress: investorEmail,
-        subject: `Re: ${subject.replace(/^Re:\s*/i, "")}`,
-        body: replyBody,
-        createdAt: now + 3,
-    });
-
-    await ctx.db.patch(commitment._id, {
-        nextDigestAt: nextFridayEightEAT(now),
-        digestCadence: commitment.digestCadence ?? "Weekly · Fri 08:00 EAT",
-        updatedAt: now + 3,
-    });
-
-    return {
-        inboundId,
-        outboundId,
-        checkInId,
-        digestId,
-        ventureName: venture.name,
-        message: `Agent replied and logged ${resolvedMetric}=${value} for ${venture.name}.`,
-        toolResults: [
-            { tool: "log_kpi_checkin", detail: `${resolvedMetric}=${value}` },
-            { tool: "create_investor_digest", detail: digestSummary },
-            { tool: "post_public_ledger", detail: "checkin + digest events" },
-            { tool: "send_reply", detail: `to ${investorEmail}` },
-        ],
-    };
-}
-
 function extractEmailAddress(raw: string): string {
     const angle = raw.match(/<([^>]+)>/);
     if (angle?.[1]) return angle[1].trim().toLowerCase();
     return raw.trim().toLowerCase();
 }
 
-export const sendInvestorEmail = mutation({
-    args: {
-        commitmentId: v.id("commitments"),
-        body: v.string(),
-        subject: v.optional(v.string()),
-        metric: v.optional(v.string()),
-        value: v.optional(v.number()),
-    },
-    returns: v.object({
-        inboundId: v.id("agentEmails"),
-        outboundId: v.id("agentEmails"),
-        checkInId: v.union(v.id("kpiCheckIns"), v.null()),
-        digestId: v.id("agentDigests"),
-        ventureName: v.string(),
-        message: v.string(),
-        toolResults: v.array(v.object({ tool: v.string(), detail: v.string() })),
-    }),
-    handler: async (ctx, args) => {
-        await assertCanAct(ctx);
-        await rateLimiter.limit(ctx, "investMutate", { key: "emailRitual" });
-        return await processInvestorEmailNote(ctx, {
-            commitmentId: args.commitmentId,
-            body: args.body,
-            subject: args.subject,
-            metric: args.metric,
-            value: args.value,
-            source: "email_paste",
-        });
-    },
-});
-
+/**
+ * Inbound AgentMail → durable run. Same pipeline as approve & run, so the
+ * cockpit streams truthful progress for email-triggered agent work too.
+ * Idempotent on Svix `eventId` (provider retries).
+ */
 export const handleAgentMailInbound = mutation({
     args: {
         toAddress: v.string(),
@@ -1431,15 +1341,38 @@ export const handleAgentMailInbound = mutation({
         ok: v.boolean(),
         message: v.string(),
         commitmentId: v.union(v.id("commitments"), v.null()),
-        toolResults: v.array(v.object({ tool: v.string(), detail: v.string() })),
+        runId: v.union(v.id("agentRuns"), v.null()),
     }),
     handler: async (ctx, args) => {
         await rateLimiter.limit(ctx, "investMutate", { key: "agentmail" });
+
+        // Dedupe provider webhook retries.
+        if (args.eventId) {
+            const seen = await ctx.db
+                .query("processedWebhooks")
+                .withIndex("by_key", (q) => q.eq("key", `agentmail:${args.eventId}`))
+                .first();
+            if (seen) {
+                return {
+                    ok: true,
+                    message: "Duplicate webhook ignored",
+                    commitmentId: null,
+                    runId: null,
+                };
+            }
+            await ctx.db.insert("processedWebhooks", {
+                key: `agentmail:${args.eventId}`,
+                channel: "agentmail",
+                reply: "",
+                createdAt: Date.now(),
+            });
+        }
+
         const to = extractEmailAddress(args.toAddress);
         const from = extractEmailAddress(args.fromAddress);
         const body = (args.body || "").trim();
         if (!body) {
-            return { ok: false, message: "Empty body", commitmentId: null, toolResults: [] };
+            return { ok: false, message: "Empty body", commitmentId: null, runId: null };
         }
 
         let venture =
@@ -1492,7 +1425,7 @@ export const handleAgentMailInbound = mutation({
                 ok: false,
                 message: `No venture for inbox ${to}`,
                 commitmentId: null,
-                toolResults: [],
+                runId: null,
             };
         }
 
@@ -1513,7 +1446,7 @@ export const handleAgentMailInbound = mutation({
                     ok: false,
                     message: "No investor to attach commitment",
                     commitmentId: null,
-                    toolResults: [],
+                    runId: null,
                 };
             }
             const now = Date.now();
@@ -1534,13 +1467,14 @@ export const handleAgentMailInbound = mutation({
         }
 
         if (!commitment) {
-            return { ok: false, message: "Could not resolve commitment", commitmentId: null, toolResults: [] };
+            return { ok: false, message: "Could not resolve commitment", commitmentId: null, runId: null };
         }
 
-        const result = await processInvestorEmailNote(ctx, {
+        const run = await createAgentRun(ctx, {
             commitmentId: commitment._id,
-            body,
+            noteBody: body,
             subject: args.subject,
+            trigger: "inbound_email",
             source: "email_paste",
             fromAddressOverride: from,
             toAddressOverride: to,
@@ -1548,9 +1482,9 @@ export const handleAgentMailInbound = mutation({
 
         return {
             ok: true,
-            message: result.message + (args.eventId ? ` (event ${args.eventId})` : ""),
+            message: `Agent run started for ${venture.name}${args.eventId ? ` (event ${args.eventId})` : ""}.`,
             commitmentId: commitment._id,
-            toolResults: result.toolResults,
+            runId: run.runId,
         };
     },
 });

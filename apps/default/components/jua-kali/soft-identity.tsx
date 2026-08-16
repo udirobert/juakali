@@ -4,24 +4,41 @@ import { useAuthActions } from "@convex-dev/auth/react";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 
 import { api } from "@/convex/_generated/api";
+import { useOAuthSignIn } from "@/hooks/use-oauth-sign-in";
+import { useProductMode } from "@/lib/product-mode";
 import { color, font } from "@/components/jua-kali/theme";
+
+function firstName(name: string | null | undefined, email: string | null | undefined) {
+    const fromName = name?.trim().split(/\s+/)[0];
+    if (fromName) return fromName;
+    const fromEmail = email?.trim().split("@")[0];
+    return fromEmail || null;
+}
 
 export function SoftIdentityBar({
     compact,
     forceOpen,
     onClose,
+    heading,
+    initialEmail,
 }: {
     compact?: boolean;
     forceOpen?: boolean;
     onClose?: () => void;
+    /** Optional framing for inline capture flows (e.g. after opening a commitment). */
+    heading?: string;
+    /** Prefill the email field (e.g. captured during onboarding). */
+    initialEmail?: string;
 }) {
     const { isAuthenticated, isLoading } = useConvexAuth();
     const { signIn, signOut } = useAuthActions();
+    const { signInWith, isLoading: oauthLoading } = useOAuthSignIn();
     const me = useQuery(api.softAuth.whoAmI);
     const config = useQuery(api.softAuth.softAuthConfig);
+    const product = useProductMode();
     const ensureInvestor = useMutation(api.softAuth.ensureMyInvestor);
 
-    const [email, setEmail] = useState("");
+    const [email, setEmail] = useState(initialEmail ?? "");
     const [busy, setBusy] = useState(false);
     const [sent, setSent] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -64,8 +81,17 @@ export function SoftIdentityBar({
         }
     }, [email, signIn]);
 
+    const googleSignIn = useCallback(async () => {
+        setError(null);
+        try {
+            await signInWith("google");
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Google sign-in unavailable.");
+        }
+    }, [signInWith]);
+
     const openPeek = useCallback(async () => {
-        if (!peek || !("url" in peek)) return;
+        if (!peek || !("url" in peek) || !peek.url) return;
         if (Platform.OS === "web" && typeof window !== "undefined") {
             window.location.href = peek.url;
             return;
@@ -76,10 +102,12 @@ export function SoftIdentityBar({
     if (isLoading) return null;
 
     if (isAuthenticated) {
+        const name = firstName(me?.name, me?.email);
         return (
             <View style={[styles.bar, compact && styles.barCompact]}>
+                <View style={styles.presenceDot} />
                 <Text style={styles.signed} numberOfLines={1}>
-                    {me?.email ?? me?.name ?? "Signed in"}
+                    {name ? `${name} · signed in` : me?.email ?? "Signed in"}
                 </Text>
                 <Pressable
                     onPress={() => void signOut()}
@@ -108,7 +136,7 @@ export function SoftIdentityBar({
     return (
         <View style={styles.panel}>
             <View style={styles.panelHead}>
-                <Text style={styles.title}>Soft identity</Text>
+                <Text style={styles.title}>{heading ?? "Sign in"}</Text>
                 {onClose || !forceOpen ? (
                     <Pressable
                         onPress={() => {
@@ -122,13 +150,26 @@ export function SoftIdentityBar({
                 ) : null}
             </View>
             <Text style={styles.hint}>
-                Email magic link — keeps your deals with you.{" "}
+                Email magic link — your deals stay with you across sessions.{" "}
                 {config?.resendConfigured
                     ? "Check your inbox after sending."
                     : config?.inboxPeek
                       ? "Demo inbox: the link appears here after send."
-                      : "Configure AUTH_RESEND_KEY or SOFT_AUTH_INBOX=1 on Convex."}
+                      : product.preset === "demo"
+                        ? "Demo build: configure a mail provider to receive links."
+                        : ""}
             </Text>
+            {Platform.OS === "web" ? (
+                <Pressable
+                    onPress={() => void googleSignIn()}
+                    disabled={oauthLoading}
+                    style={[styles.googleBtn, oauthLoading && styles.disabled]}
+                >
+                    <Text style={styles.googleText}>
+                        {oauthLoading ? "Opening…" : "Continue with Google"}
+                    </Text>
+                </Pressable>
+            ) : null}
             <TextInput
                 value={email}
                 onChangeText={setEmail}
@@ -162,10 +203,12 @@ export function AuthRequiredGate({
     required,
     children,
     message,
+    initialEmail,
 }: {
     required: boolean;
     children: ReactNode;
     message?: string;
+    initialEmail?: string;
 }) {
     const { isAuthenticated, isLoading } = useConvexAuth();
     if (!required || isLoading || isAuthenticated) {
@@ -176,9 +219,9 @@ export function AuthRequiredGate({
             <Text style={styles.gateTitle}>Sign in to continue</Text>
             <Text style={styles.gateBody}>
                 {message ??
-                    "This build requires soft identity before pledging or approving agent notes."}
+                    "This build asks you to sign in before pledging or approving agent notes — so your deals stay with you."}
             </Text>
-            <SoftIdentityBar forceOpen />
+            <SoftIdentityBar forceOpen initialEmail={initialEmail} />
         </View>
     );
 }
@@ -196,6 +239,7 @@ const styles = StyleSheet.create({
         backgroundColor: color.paper,
     },
     barCompact: { paddingVertical: 6, paddingHorizontal: 8 },
+    presenceDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: color.success },
     signed: { flex: 1, fontFamily: font.bodyMedium, fontSize: 12, color: color.ink },
     cta: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.charcoal },
     link: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.brass },
@@ -214,9 +258,18 @@ const styles = StyleSheet.create({
         fontWeight: "700",
         letterSpacing: 0.8,
         textTransform: "uppercase",
-        color: color.brass,
+        color: color.brassDeep,
     },
     hint: { fontFamily: font.body, fontSize: 12, lineHeight: 17, color: color.mist },
+    googleBtn: {
+        borderWidth: 1,
+        borderColor: color.lineStrong,
+        borderRadius: 4,
+        paddingVertical: 11,
+        alignItems: "center",
+        backgroundColor: color.stone,
+    },
+    googleText: { fontFamily: font.bodyBold, fontSize: 13, fontWeight: "700", color: color.charcoal },
     input: {
         borderWidth: 1,
         borderColor: color.lineStrong,

@@ -57,7 +57,7 @@ export const GLOSSARY: GlossaryTerm[] = [
         id: "queue-approve",
         label: "Send → Approve",
         short: "You draft; nothing runs until you approve.",
-        body: "Write a note to the agent, then approve the queued message — or email juakali@agentmail.to. In-app tools (KPI, digest, ledger, reply) only run after approval; inbound mail uses the same path.",
+        body: "Write a note to Jua, the agent, then approve the queued message — or email juakali@agentmail.to. In-app tools (KPI, digest, ledger, reply) only run after approval; inbound mail uses the same path.",
     },
     {
         id: "peers",
@@ -79,9 +79,9 @@ export const GLOSSARY: GlossaryTerm[] = [
     },
     {
         id: "soft-identity",
-        label: "Soft identity",
+        label: "Sign in",
         short: "Email magic link — deals follow you across sessions.",
-        body: "Sign in with a magic link (soft-email). Optional on demo builds; required when REQUIRE_AUTH_TO_ACT is on. Links your auth user to an investors profile.",
+        body: "Sign in with a magic link (or Google on web). Optional on demo builds; required when the deployment enforces identity before acting. Links your account to an investor profile so your deals persist.",
     },
 ];
 
@@ -93,7 +93,7 @@ export const HOW_IT_WORKS_STEPS = [
     },
     {
         n: "2",
-        title: "Note the agent (in-app or email)",
+        title: "Note Jua, the agent (in-app or email)",
         body: "Queue → Approve in the app, or email juakali@agentmail.to. Tools only run after approval for in-app notes; inbound mail runs the same KPI/digest path.",
     },
     {
@@ -263,47 +263,40 @@ export function HowItWorksCard({
     );
 }
 
-/** Shown on a new browser session when the user already completed landing. */
+/** One-line re-orientation on a new browser session (already onboarded). */
 export function WelcomeBackBanner({
     visible,
     onDismiss,
-    onGoDeals,
+    onHowItWorks,
+    onGlossary,
 }: {
     visible: boolean;
     onDismiss: () => void;
     onHowItWorks?: () => void;
     onGlossary?: () => void;
-    onGoDeals?: () => void;
 }) {
-    const [open, setOpen] = useState(false);
     if (!visible) return null;
 
     return (
         <View style={styles.welcome} accessibilityRole="summary">
-            <View style={styles.welcomeHead}>
-                <Text style={styles.coachEyebrow}>Welcome back</Text>
-                <Pressable onPress={onDismiss} hitSlop={10} accessibilityRole="button">
-                    <Text style={styles.coachDismiss}>Got it</Text>
+            <Text style={styles.welcomeLead}>
+                Welcome back — deals are where you act · the ledger is public proof.
+            </Text>
+            <View style={styles.welcomeActions}>
+                {onHowItWorks ? (
+                    <Pressable onPress={onHowItWorks} hitSlop={8}>
+                        <Text style={styles.coachLink}>How it works</Text>
+                    </Pressable>
+                ) : null}
+                {onGlossary ? (
+                    <Pressable onPress={onGlossary} hitSlop={8}>
+                        <Text style={styles.coachLink}>Terms</Text>
+                    </Pressable>
+                ) : null}
+                <Pressable onPress={onDismiss} hitSlop={8} accessibilityRole="button">
+                    <Text style={styles.coachDismiss}>Dismiss</Text>
                 </Pressable>
             </View>
-            <Text style={styles.welcomeLead}>Deals = act · Ledger = public proof</Text>
-            <Pressable onPress={() => setOpen((v) => !v)}>
-                <Text style={styles.coachLink}>{open ? "Hide steps" : "How it works"}</Text>
-            </Pressable>
-            {open ? (
-                <View style={styles.welcomeSteps}>
-                    {HOW_IT_WORKS_STEPS.map((step) => (
-                        <Text key={step.n} style={styles.welcomeStep}>
-                            {step.n}. {step.title}
-                        </Text>
-                    ))}
-                </View>
-            ) : null}
-            {onGoDeals ? (
-                <Pressable onPress={onGoDeals} style={styles.welcomePrimary}>
-                    <Text style={styles.welcomePrimaryText}>Go to My deals</Text>
-                </Pressable>
-            ) : null}
         </View>
     );
 }
@@ -495,7 +488,7 @@ const styles = StyleSheet.create({
         fontWeight: "700",
         letterSpacing: 1.2,
         textTransform: "uppercase",
-        color: color.brass,
+        color: color.brassDeep,
     },
     coachDismiss: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.mist },
     coachSteps: { gap: 10 },
@@ -505,7 +498,7 @@ const styles = StyleSheet.create({
         fontFamily: font.display,
         fontSize: 16,
         fontWeight: "700",
-        color: color.brass,
+        color: color.brassDeep,
         width: 18,
     },
     coachCopy: { flex: 1, gap: 2 },
@@ -515,44 +508,33 @@ const styles = StyleSheet.create({
         fontFamily: font.bodyBold,
         fontSize: 12,
         fontWeight: "700",
-        color: color.brass,
+        color: color.brassDeep,
         paddingTop: 2,
     },
     welcome: {
-        gap: 10,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
         marginHorizontal: 14,
-        marginBottom: 8,
-        padding: 14,
+        marginBottom: 6,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
         backgroundColor: color.paper,
         borderWidth: 1,
-        borderColor: color.brass,
+        borderColor: color.line,
         borderRadius: 6,
         maxWidth: layout.maxWidth,
         alignSelf: "stretch",
     },
-    welcomeHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-    welcomeLead: { fontFamily: font.body, fontSize: 13, lineHeight: 18, color: color.ink },
-    welcomeSteps: { gap: 4 },
-    welcomeStep: { fontFamily: font.bodyMedium, fontSize: 12, color: color.mist },
-    welcomeActions: {
-        flexDirection: "row",
-        flexWrap: "wrap",
-        alignItems: "center",
-        gap: 14,
-        marginTop: 2,
-    },
-    welcomePrimary: {
-        backgroundColor: color.charcoal,
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        borderRadius: 4,
-    },
-    welcomePrimaryText: {
-        fontFamily: font.bodyBold,
+    welcomeLead: {
+        flex: 1,
+        fontFamily: font.bodyMedium,
         fontSize: 12,
-        fontWeight: "700",
-        color: color.paper,
+        lineHeight: 16,
+        color: color.ink,
     },
+    welcomeActions: { flexDirection: "row", alignItems: "center", gap: 12 },
     sheetRoot: { flex: 1, justifyContent: "flex-end", alignItems: "center" },
     sheetDim: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(20,24,22,0.4)" },
     sheet: {

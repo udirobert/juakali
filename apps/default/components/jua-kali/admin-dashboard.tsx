@@ -26,6 +26,7 @@ import type { FunctionReturnType } from "convex/server";
 import type { ViewStyle } from "react-native";
 
 import { api } from "@/convex/_generated/api";
+import { color } from "@/components/jua-kali/theme";
 
 type DashboardData = FunctionReturnType<typeof api.telephony.dashboardData>;
 type MasterSummary = DashboardData["masters"][number];
@@ -37,13 +38,14 @@ type CountItem = DashboardData["analytics"]["mastersByCraft"][number];
 type WebShapeStyle = ViewStyle & { clipPath?: string; backdropFilter?: string };
 
 const palette = {
-    sage: "#9CAF88",
-    terracotta: "#E07A5F",
-    cream: "#F5F1E8",
-    olive: "#3B4D3B",
-    ink: "#243124",
-    moss: "#71845F",
-    sand: "#E7D8C5",
+    // Lab (ops) screens share the one “Nairobi ledger” language:
+    sage: color.brassLight,
+    terracotta: color.brass,
+    cream: color.paper,
+    olive: color.charcoal,
+    ink: color.ink,
+    moss: color.mist,
+    sand: color.stone,
 };
 
 const endpoints = [
@@ -147,7 +149,7 @@ export function AdminDashboard() {
                     </View>
 
                     <LinearGradient
-                        colors={["rgba(156,175,136,0.95)", "rgba(224,122,95,0.82)", "rgba(59,77,59,0.92)"]}
+                        colors={["rgba(196,161,90,0.95)", "rgba(166,124,45,0.85)", "rgba(20,24,22,0.92)"]}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 1 }}
                         style={[styles.heroFigure, heroMaskStyle]}
@@ -232,7 +234,7 @@ export function AdminDashboard() {
 function OrganicBackground() {
     return (
         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-            <LinearGradient colors={[palette.cream, "#EFE2D1", "#DCE5D2"]} style={StyleSheet.absoluteFill} />
+            <LinearGradient colors={[palette.cream, color.stone]} style={StyleSheet.absoluteFill} />
             <View style={[styles.backgroundBlob, styles.backgroundBlobOne]} />
             <View style={[styles.backgroundBlob, styles.backgroundBlobTwo]} />
             <View style={[styles.backgroundBlob, styles.backgroundBlobThree]} />

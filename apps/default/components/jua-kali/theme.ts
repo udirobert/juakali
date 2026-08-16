@@ -7,8 +7,11 @@ export const color = {
     charcoal: "#141816",
     ink: "#1C2420",
     brass: "#A67C2D",
+    brassLight: "#C4A15A",
+    brassDeep: "#7C5E22",
     brassSoft: "rgba(166, 124, 45, 0.14)",
-    mist: "#7A827C",
+    /** Meta text — darkened to ~5.5:1 on paper for WCAG AA at small sizes. */
+    mist: "#5E6660",
     line: "rgba(20, 24, 22, 0.1)",
     lineStrong: "rgba(20, 24, 22, 0.18)",
     success: "#2F5D3A",
@@ -63,7 +66,7 @@ export const type = {
         fontWeight: "700" as TextStyle["fontWeight"],
         letterSpacing: 1.6,
         textTransform: "uppercase" as const,
-        color: color.brass,
+        color: color.brassDeep,
     },
     body: {
         fontFamily: font.body,

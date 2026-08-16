@@ -26,6 +26,7 @@ import {
 } from "@/components/jua-kali/session-persist";
 import { useProductMode, SOFT_RETURN_MS } from "@/lib/product-mode";
 import { SoftIdentityBar } from "@/components/jua-kali/soft-identity";
+import { SunMark } from "@/components/jua-kali/sun-mark";
 import { color, font, layout } from "@/components/jua-kali/theme";
 
 type KpiUnit = "meetings" | "revenue_kes" | "jobs";
@@ -164,6 +165,57 @@ const kpiPresets: Array<{ unit: KpiUnit; label: string; chip: string }> = [
     { unit: "revenue_kes", label: "Revenue (KES)", chip: "Revenue" },
 ];
 
+function ledgerTypeLabel(type: string) {
+    if (type === "pledge") return "Capital";
+    if (type === "checkin") return "KPI";
+    if (type === "digest") return "Digest";
+    return "Action";
+}
+
+function ledgerWhen(ts: number) {
+    return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+type LedgerArtifactEvent = {
+    id: string;
+    type: string;
+    summary: string;
+    createdAt: number;
+};
+
+/** The pitch artifact: the public ledger itself, live. */
+function LedgerArtifact() {
+    const ledger = useQuery(api.invest.publicLedger, { limit: 3 });
+    const events = (ledger?.events ?? []) as LedgerArtifactEvent[];
+
+    return (
+        <View style={styles.artifact}>
+            <View style={styles.artifactHead}>
+                <Text style={styles.artifactTitle}>Public ledger</Text>
+                <Text style={styles.artifactLive}>{ledger ? "Live" : "Loading…"}</Text>
+            </View>
+            {events.length === 0 ? (
+                <Text style={styles.artifactEmpty}>
+                    Pledges, KPIs, and digests land here — watch a deal to see them appear.
+                </Text>
+            ) : (
+                events.map((event, i) => (
+                    <View
+                        key={event.id}
+                        style={[styles.artifactRow, i > 0 && styles.artifactRowBorder]}
+                    >
+                        <Text style={styles.artifactType}>{ledgerTypeLabel(event.type)}</Text>
+                        <Text style={styles.artifactSummary} numberOfLines={1}>
+                            {event.summary}
+                        </Text>
+                        <Text style={styles.artifactWhen}>{ledgerWhen(event.createdAt)}</Text>
+                    </View>
+                ))
+            )}
+        </View>
+    );
+}
+
 export function InvestorLanding({
     onEnter,
 }: {
@@ -172,20 +224,23 @@ export function InvestorLanding({
     const insets = useSafeAreaInsets();
     const { width } = useWindowDimensions();
     const compact = width < 420;
+    const { isAuthenticated } = useConvexAuth();
     const startCommitment = useMutation(api.invest.startCommitment);
     const seedInvestDemo = useMutation(api.invest.seedInvestDemo);
     const softAuth = useQuery(api.softAuth.softAuthConfig);
     const requireAuth = Boolean(softAuth?.requireAuthToAct);
 
-    const [mode, setMode] = useState<"pitch" | "form">("pitch");
+    const [mode, setMode] = useState<"pitch" | "form" | "save">("pitch");
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    /** Commitment created in the "save your pledge" step. */
+    const [saveCommitmentId, setSaveCommitmentId] = useState<Id<"commitments"> | null>(null);
+    const [saveName, setSaveName] = useState<string | null>(null);
 
     const [investorName, setInvestorName] = useState("");
     const [investorEmail, setInvestorEmail] = useState("");
     const [ventureName, setVentureName] = useState("");
     const [craftText, setCraftText] = useState("");
-    const [locationText, setLocationText] = useState("");
     const [kpiUnit, setKpiUnit] = useState<KpiUnit>("meetings");
     const [kpiTarget, setKpiTarget] = useState("20");
     const [amountKes, setAmountKes] = useState("10000");
@@ -219,7 +274,7 @@ export function InvestorLanding({
                 investorEmail: investorEmail.trim() || undefined,
                 ventureName: ventureName.trim(),
                 craftText: craftText.trim() || "General",
-                locationText: locationText.trim() || "Kenya",
+                locationText: "Kenya",
                 kpiLabel: preset.label,
                 kpiUnit,
                 kpiTarget: target,
@@ -230,6 +285,14 @@ export function InvestorLanding({
                 url.searchParams.set("c", result.commitmentId);
                 window.history.replaceState({}, "", url.toString());
             }
+            // Capture identity at the moment of intent: save the pledge via
+            // magic link / Google before entering the app.
+            if (!isAuthenticated) {
+                setSaveCommitmentId(result.commitmentId);
+                setSaveName(investorName.trim().split(/\s+/)[0] ?? null);
+                setMode("save");
+                return;
+            }
             onEnter({ commitmentId: result.commitmentId });
         } catch (e) {
             setError(e instanceof Error ? e.message : "Could not start commitment.");
@@ -237,6 +300,12 @@ export function InvestorLanding({
             setBusy(false);
         }
     }
+
+    // Once the save step authenticates, continue into the app with the deal focused.
+    useEffect(() => {
+        if (mode !== "save" || !isAuthenticated || !saveCommitmentId) return;
+        onEnter({ commitmentId: saveCommitmentId });
+    }, [mode, isAuthenticated, saveCommitmentId, onEnter]);
 
     async function handleExample() {
         setBusy(true);
@@ -259,6 +328,7 @@ export function InvestorLanding({
                 showsVerticalScrollIndicator={false}
             >
                 <Animated.View entering={FadeIn.duration(240)} style={styles.frame}>
+                    <SunMark size={compact ? 34 : 42} />
                     <Text style={styles.brand}>JuaKali</Text>
                     <Text style={styles.eyebrow}>Invest in public</Text>
 
@@ -270,50 +340,38 @@ export function InvestorLanding({
 
                     {mode === "pitch" ? (
                         <>
-                            <Text style={styles.headline}>
-                                {compact
-                                    ? "You’re busy. Ventures aren’t."
-                                    : "You’re busy. The venture still needs a weekly operator."}
+                            <Text style={[styles.headline, compact && styles.headlineCompact]}>
+                                You’re busy. Your capital shouldn’t be.
+                            </Text>
+                            <Text style={styles.subhead}>
+                                An agent operates each venture weekly — KPIs, digests, follow-ups. Every
+                                action lands on a public ledger you can point at.
                             </Text>
 
-                            <View style={styles.loopRow}>
-                                {[
-                                    { label: "You", hint: "Pledge · note" },
-                                    { label: "Agent", hint: "Inbox · KPI" },
-                                    { label: "Ledger", hint: "Public proof" },
-                                ].map((node, i) => (
-                                    <View key={node.label} style={styles.loopCell}>
-                                        {i > 0 ? <View style={styles.loopLine} /> : null}
-                                        <View style={[styles.loopNode, node.label === "Agent" && styles.loopNodeOn]}>
-                                            <View style={[styles.mark, node.label === "Agent" && styles.markOn]} />
-                                            <Text style={styles.loopLabel}>{node.label}</Text>
-                                            <Text style={styles.loopHint}>{node.hint}</Text>
-                                        </View>
-                                    </View>
-                                ))}
-                            </View>
+                            <LedgerArtifact />
 
-                            <Pressable
-                                onPress={() => setMode("form")}
-                                style={styles.cta}
-                                accessibilityRole="button"
-                            >
-                                <Text style={styles.ctaText}>Start a commitment</Text>
-                            </Pressable>
                             <Pressable
                                 onPress={() => void handleExample()}
                                 disabled={busy}
+                                style={[styles.cta, busy && styles.disabled]}
                                 accessibilityRole="button"
-                                accessibilityHint="Seeds sample deals and opens My deals"
+                                accessibilityHint="Loads example deals and opens My deals"
                             >
-                                <Text style={styles.secondary}>
-                                    {busy ? "…" : "Try seeded deals"}
-                                </Text>
+                                <Text style={styles.ctaText}>{busy ? "Opening…" : "Watch a deal come alive"}</Text>
+                            </Pressable>
+                            <Pressable
+                                onPress={() => setMode("form")}
+                                accessibilityRole="button"
+                            >
+                                <Text style={styles.secondary}>or start your own commitment →</Text>
                             </Pressable>
                         </>
-                    ) : (
+                    ) : null}
+
+                    {mode === "form" ? (
                         <View style={styles.form}>
-                            <Text style={styles.formTitle}>Your commitment</Text>
+                            <Text style={styles.formTitle}>Start a commitment</Text>
+                            <Text style={styles.formSub}>Three things. The agent handles the rest.</Text>
 
                             <Text style={styles.fieldLabel}>You</Text>
                             <TextInput
@@ -333,7 +391,7 @@ export function InvestorLanding({
                                 style={styles.input}
                             />
 
-                            <Text style={styles.fieldLabel}>Business</Text>
+                            <Text style={styles.fieldLabel}>The venture</Text>
                             <TextInput
                                 value={ventureName}
                                 onChangeText={setVentureName}
@@ -341,24 +399,15 @@ export function InvestorLanding({
                                 placeholderTextColor={color.mist}
                                 style={styles.input}
                             />
-                            <View style={styles.row2}>
-                                <TextInput
-                                    value={craftText}
-                                    onChangeText={setCraftText}
-                                    placeholder="Craft"
-                                    placeholderTextColor={color.mist}
-                                    style={[styles.input, styles.half]}
-                                />
-                                <TextInput
-                                    value={locationText}
-                                    onChangeText={setLocationText}
-                                    placeholder="Location"
-                                    placeholderTextColor={color.mist}
-                                    style={[styles.input, styles.half]}
-                                />
-                            </View>
+                            <TextInput
+                                value={craftText}
+                                onChangeText={setCraftText}
+                                placeholder="Craft (optional — e.g. metalwork, tailoring)"
+                                placeholderTextColor={color.mist}
+                                style={styles.input}
+                            />
 
-                            <Text style={styles.fieldLabel}>Hard KPI (what you’ll track)</Text>
+                            <Text style={styles.fieldLabel}>The deal</Text>
                             <View style={styles.chipRow}>
                                 {kpiPresets.map((p) => (
                                     <Pressable
@@ -372,24 +421,24 @@ export function InvestorLanding({
                                     </Pressable>
                                 ))}
                             </View>
-                            <TextInput
-                                value={kpiTarget}
-                                onChangeText={setKpiTarget}
-                                placeholder="Target"
-                                placeholderTextColor={color.mist}
-                                keyboardType="number-pad"
-                                style={styles.input}
-                            />
-
-                            <Text style={styles.fieldLabel}>Soft pledge (KES — intent only)</Text>
-                            <TextInput
-                                value={amountKes}
-                                onChangeText={setAmountKes}
-                                placeholder="10000"
-                                placeholderTextColor={color.mist}
-                                keyboardType="number-pad"
-                                style={styles.input}
-                            />
+                            <View style={styles.row2}>
+                                <TextInput
+                                    value={kpiTarget}
+                                    onChangeText={setKpiTarget}
+                                    placeholder="KPI target"
+                                    placeholderTextColor={color.mist}
+                                    keyboardType="number-pad"
+                                    style={[styles.input, styles.half]}
+                                />
+                                <TextInput
+                                    value={amountKes}
+                                    onChangeText={setAmountKes}
+                                    placeholder="Soft pledge (KES)"
+                                    placeholderTextColor={color.mist}
+                                    keyboardType="number-pad"
+                                    style={[styles.input, styles.half]}
+                                />
+                            </View>
 
                             {error ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -401,10 +450,32 @@ export function InvestorLanding({
                                 <Text style={styles.ctaText}>{busy ? "Opening…" : "Open commitment"}</Text>
                             </Pressable>
                             <Pressable onPress={() => setMode("pitch")} disabled={busy}>
-                                <Text style={styles.secondary}>Back</Text>
+                                <Text style={styles.secondary}>← Back</Text>
                             </Pressable>
                         </View>
-                    )}
+                    ) : null}
+
+                    {mode === "save" ? (
+                        <View style={styles.form}>
+                            <Text style={styles.formTitle}>
+                                {saveName ? `Save your pledge, ${saveName}` : "Save your pledge"}
+                            </Text>
+                            <Text style={styles.formSub}>
+                                Your commitment is recorded. Add your email and this deal follows you —
+                                across sessions and devices.
+                            </Text>
+                            <SoftIdentityBar
+                                forceOpen
+                                heading="Keep this deal"
+                                initialEmail={investorEmail}
+                            />
+                            <Pressable
+                                onPress={() => onEnter({ commitmentId: saveCommitmentId ?? undefined })}
+                            >
+                                <Text style={styles.secondary}>Skip for now — open My deals</Text>
+                            </Pressable>
+                        </View>
+                    ) : null}
 
                     <Text style={styles.footnote}>Soft pledge — not a securities offering or live payment.</Text>
                 </Animated.View>
@@ -438,39 +509,95 @@ const styles = StyleSheet.create({
         fontWeight: "700",
         letterSpacing: 1.4,
         textTransform: "uppercase",
-        color: color.brass,
+        color: color.brassDeep,
         marginTop: -8,
     },
     headline: {
-        fontFamily: font.displayMedium,
-        fontSize: 22,
-        fontWeight: "600",
+        fontFamily: font.display,
+        fontSize: 30,
+        fontWeight: "700",
         color: color.charcoal,
         textAlign: "center",
-        letterSpacing: -0.3,
-        maxWidth: 340,
-        lineHeight: 28,
+        letterSpacing: -0.6,
+        maxWidth: 380,
+        lineHeight: 34,
         marginTop: 4,
     },
-    loopRow: { flexDirection: "row", width: "100%", alignItems: "center", marginTop: 8 },
-    loopCell: { flex: 1, flexDirection: "row", alignItems: "center" },
-    loopLine: { width: 10, height: 1, backgroundColor: color.lineStrong },
-    loopNode: {
-        flex: 1,
-        alignItems: "center",
-        gap: 6,
-        paddingVertical: 14,
-        paddingHorizontal: 4,
+    headlineCompact: { fontSize: 24, lineHeight: 28, maxWidth: 300 },
+    subhead: {
+        fontFamily: font.body,
+        fontSize: 13,
+        lineHeight: 19,
+        color: color.ink,
+        textAlign: "center",
+        maxWidth: 360,
+    },
+    // Live ledger artifact — the pitch is the product itself
+    artifact: {
+        width: "100%",
+        maxWidth: 420,
+        gap: 0,
+        padding: 14,
+        marginTop: 4,
         backgroundColor: color.paper,
         borderWidth: 1,
-        borderColor: color.line,
+        borderColor: color.lineStrong,
         borderRadius: 6,
     },
-    loopNodeOn: { borderColor: color.brass, backgroundColor: color.brassSoft },
-    mark: { width: 9, height: 9, borderRadius: 5, backgroundColor: color.charcoal },
-    markOn: { backgroundColor: color.brass },
-    loopLabel: { fontFamily: font.bodyBold, fontSize: 13, fontWeight: "700", color: color.charcoal },
-    loopHint: { fontFamily: font.body, fontSize: 10, color: color.mist, textAlign: "center" },
+    artifactHead: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        paddingBottom: 8,
+        borderBottomWidth: 1,
+        borderBottomColor: color.line,
+    },
+    artifactTitle: {
+        fontFamily: font.displayMedium,
+        fontSize: 16,
+        fontWeight: "600",
+        color: color.charcoal,
+    },
+    artifactLive: {
+        fontFamily: font.bodyBold,
+        fontSize: 9,
+        fontWeight: "700",
+        letterSpacing: 0.8,
+        textTransform: "uppercase",
+        color: color.success,
+    },
+    artifactEmpty: {
+        fontFamily: font.body,
+        fontSize: 12,
+        lineHeight: 17,
+        color: color.mist,
+        textAlign: "center",
+        paddingVertical: 16,
+    },
+    artifactRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+        paddingVertical: 9,
+    },
+    artifactRowBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: color.line },
+    artifactType: {
+        fontFamily: font.bodyBold,
+        fontSize: 9,
+        fontWeight: "700",
+        letterSpacing: 0.6,
+        textTransform: "uppercase",
+        color: color.brassDeep,
+        width: 52,
+    },
+    artifactSummary: {
+        flex: 1,
+        fontFamily: font.body,
+        fontSize: 12,
+        lineHeight: 17,
+        color: color.ink,
+    },
+    artifactWhen: { fontFamily: font.bodyMedium, fontSize: 11, color: color.mist },
     cta: {
         width: "100%",
         maxWidth: 360,
@@ -503,6 +630,13 @@ const styles = StyleSheet.create({
         fontWeight: "600",
         color: color.charcoal,
         textAlign: "center",
+        marginBottom: 2,
+    },
+    formSub: {
+        fontFamily: font.body,
+        fontSize: 12,
+        color: color.mist,
+        textAlign: "center",
         marginBottom: 6,
     },
     fieldLabel: {
@@ -511,7 +645,7 @@ const styles = StyleSheet.create({
         fontWeight: "700",
         letterSpacing: 0.6,
         textTransform: "uppercase",
-        color: color.brass,
+        color: color.brassDeep,
         marginTop: 6,
     },
     input: {

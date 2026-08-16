@@ -12,4 +12,12 @@ crons.interval("queue confirmation prompts", { hours: 1 }, internal.telephony.qu
 // Process all queued voice intakes: transcribe recordings and extract master profiles.
 crons.interval("process voice intakes", { minutes: 5 }, internal.voiceProcessing.processQueuedVoiceIntakes, {});
 
+// Recover agent runs stuck "running" (dropped schedule) so the cockpit never hangs.
+crons.interval(
+    "recover stale agent runs",
+    { minutes: 5 },
+    internal.agentRuns.recoverStaleRuns,
+    { olderThanMs: 90_000 }
+);
+
 export default crons;

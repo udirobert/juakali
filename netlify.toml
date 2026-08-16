@@ -18,6 +18,14 @@
   # Lab chat optional until Cloud Run is live
   # EXPO_PUBLIC_AGENT_URL = "https://your-agent.run.app"
 
+# Per-deal share cards: /deal/<slug> proxies to a Convex HTTP route that serves
+# live Open Graph meta, then meta-refreshes humans into the SPA (?ledger=<slug>).
+# Must come before the catch-all below.
+[[redirects]]
+  from = "/deal/*"
+  to = "https://zealous-scorpion-285.convex.site/share/ledger?slug=:splat"
+  status = 200
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

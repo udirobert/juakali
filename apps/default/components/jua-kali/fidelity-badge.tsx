@@ -52,7 +52,7 @@ const styles = StyleSheet.create({
         fontWeight: "700",
         letterSpacing: 0.6,
         textTransform: "uppercase",
-        color: color.brass,
+        color: color.brassDeep,
     },
     hint: {
         fontFamily: font.body,

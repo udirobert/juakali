@@ -32,12 +32,23 @@ Ship a demoable full thin loop for investor leads: soft revenue-share microcommi
 - Investor is the client; apprentice venture is the investee.
 - Demo instrument: revenue-share framing with soft `pledged` amounts (no payments/escrow). Fidelity badge always visible while not `live`.
 - Busy-investor UX: one quiet home, visible email ritual, few trustworthy numbers — not five equal tabs.
-- Email: **dual path** — in-app queue→approve, **or** email `juakali@agentmail.to` (AgentMail). Same `processInvestorEmailNote` path. Webhook Svix-verified. Optional subject `venture:<slug>`. Gmail OAuth for the human investor later. No LangGraph until loops need durable branching.
+- Email: **dual path** — in-app queue→approve, **or** email `juakali@agentmail.to` (AgentMail). Both paths run the same durable `agentRuns` pipeline (see below). Webhook Svix-verified. Optional subject `venture:<slug>`. Gmail OAuth for the human investor later. No LangGraph until loops need durable branching.
 - Fidelity split: capital stays **soft** (not escrow); agent inbox inbound is **live**.
 - Public ledger queries are unauthenticated for demo transparency (**public by default**).
 - Mode scoping = **auth × fidelity (± env)**; “demo” is a preset (loud teaching), not a forked IA. Netlify ships `EXPO_PUBLIC_PRODUCT_PRESET=demo`.
 - Teaching fades with competence (first run / session / long absence) — not hostname.
 - Matching telephony stack remains intact as top-of-funnel (Lab only).
+- **Truthful agent runs**: approve & run creates a durable `agentRuns` record; each step (KPI → digest → ledger → reply) commits in its own transaction and the cockpit streams real step state via subscriptions. No simulated chips, no artificial delays. Inbound AgentMail uses the same pipeline (trigger `inbound_email`), so email-triggered work streams live too. A cron fails runs stuck >90s.
+- **Digest is a first-class artifact**: `latestDigest` carries summary, insight, next action, and evidence tags; rendered as a dedicated digest card with "View on Ledger".
+- **Landing shows the product, not a diagram**: headline + live public-ledger artifact (real `publicLedger` rows) replace the You/Agent/Ledger loop schematic. Primary CTA = "Watch a deal come alive" (seed → cockpit); own commitment is the slim secondary path (name · venture · deal). Brass SunMark (jua = sun) is the repeated brand motif (landing, digest card, ledger hero).
+- **Approval gate previews consequences**: the queued card lists what approving will do (KPI, digest, ledger, reply) and the approve button is brass — visually distinct from navigation.
+- **Welcome-back is one line**: session re-orientation is a single compact bar with How it works / Terms / Dismiss — no stacked teaching cards.
+- **The agent is named Jua** (jua = sun; "to know" in Swahili). SunMark is its face, repeated as the brand motif (landing, digest card, ledger hero, chat header); replies and digest copy sign "— Jua · JuaKali agent".
+- **One visual language everywhere**: Lab (Funnel/Ops) remapped from sage/terracotta/cream onto the ledger tokens (stone/charcoal/brass); Fraunces/Plex also for Lab headings.
+- **Auth at the moment of intent**: after opening a commitment while signed out, a "Save your pledge, {name}" step captures email (magic link) or Google (web) before entering the app; skip-for-now stays possible. UI copy drops infra jargon ("Soft identity" → "Sign in"; no AUTH_* strings user-facing). Signed-in users get a named greeting. Canonical slogan everywhere: "Deals = act · Ledger = public proof".
+- **Ledger is the shareable proof surface**: `ledgerEvents.evidence` tags record where each entry came from (`email`/`agent`/`sms`/`whatsapp` + `agent`), rendered as small chips per row. `publicLedger` accepts `ventureSlug` to scope events + totals to one deal; the ventures-with-events list powers horizontal filter chips. Ledger rows get type glyphs (◈ capital · ▲ KPI · ✎ digest · ⚡ action). The pledged total is the hero number (40px display). Every deal is shareable: cockpit scorecard + ledger Share button produce `?ledger=<slug>` links; the URL stays in sync with the active filter.
+- **Per-deal OG meta — no edge functions**: share links use a real path, `/deal/<slug>` (crawlable, not a query param). Netlify's `[[redirects]]` proxies `/deal/*` → Convex HTTP route `/share/ledger?slug=...` (status 200). Convex serves a static HTML shell with live per-deal `og:*` (name · pledged · KPIs · digests from `internal.dealShare.getShareData`) and a meta-refresh that sends humans into the SPA at `/?ledger=<slug>`. Deterministic serverless function, no UA sniffing, no edge runtime to babysit; deploys atomically with the schema.
+- **Accessibility baseline**: meta text (`mist`) darkened to ~5.5:1 on paper; all small uppercase brass text moved to `brassDeep` (~5.6:1) — AA at 9–12px sizes.
 
 ## Demo script (~3 min)
 1. **Home** → Seed if empty → show How this works + scorecard + agent inbox.
