@@ -152,7 +152,7 @@ export function Paywall() {
             </View>
 
             <View style={styles.footer}>
-                <Pressable onPress={onRestore} disabled={busy !== null} style={styles.linkBtn}>
+                <Pressable onPress={onRestore} disabled={busy !== null} style={styles.linkBtn} accessibilityRole="button">
                     {busy === "restore" ? (
                         <ActivityIndicator color={color.brass} />
                     ) : (
