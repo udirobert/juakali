@@ -337,7 +337,7 @@ function LedgerRow({
     return (
         // No per-row layout transitions: detail fades in and neighbors reflow
         // immediately. Rows are many — layout animation is the expensive one.
-        <View style={styles.row}>
+        <View style={[styles.row, compact && styles.rowCompact]}>
             <Pressable
                 onPress={onToggle}
                 accessibilityRole="button"
@@ -380,8 +380,11 @@ function LedgerRow({
                 )}
                 {event.evidence.length > 0 && !expanded ? (
                     <View style={styles.evidenceRow}>
-                        {event.evidence.map((tag: string) => (
-                            <View key={tag} style={styles.evidenceChip}>
+                        {(compact && event.evidence.length > 1
+                            ? [event.evidence[0]!, `+${event.evidence.length - 1}`]
+                            : event.evidence
+                        ).map((tag: string) => (
+                            <View key={tag} style={[styles.evidenceChip, compact && styles.evidenceChipNarrow]}>
                                 <Text style={styles.evidenceChipText}>{tag}</Text>
                             </View>
                         ))}

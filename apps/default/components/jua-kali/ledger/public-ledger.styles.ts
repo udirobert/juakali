@@ -135,4 +135,8 @@ export const styles = StyleSheet.create({
     detailValueNum: { fontVariant: tabularNums },
     evidenceChipBig: { paddingVertical: 5, paddingHorizontal: 9 },
     evidenceChipTextBig: { fontSize: 10, letterSpacing: 0.6 },
+    // Narrow-screen density: collapsed rows breathe less, and many evidence
+    // tags collapse to a "+N" chip so the foot doesn't crowd at phone width.
+    rowCompact: { paddingVertical: 10 },
+    evidenceChipNarrow: { paddingHorizontal: 6, paddingVertical: 2 },
 });
