@@ -1,4 +1,13 @@
-const CONVEX_SITE_URL = process.env.CONVEX_SITE_URL ?? "http://localhost:3210";
+/**
+ * Convex HTTP API client.
+ *
+ * IMPORTANT: function calls (/api/query, /api/mutation, /api/action) must hit
+ * the `.convex.cloud` domain — the `.convex.site` domain only serves custom
+ * HTTP routes defined in http.ts (webhooks, share cards, etc.).
+ */
+const CONVEX_CLOUD_URL =
+    process.env.CONVEX_CLOUD_URL ??
+    (process.env.CONVEX_SITE_URL ?? "http://localhost:3210").replace(/\.site$/, ".cloud");
 
 interface ConvexResponse<T> {
     status: number;
@@ -7,7 +16,7 @@ interface ConvexResponse<T> {
 }
 
 export async function convexQuery<T>(path: string, args: Record<string, unknown> = {}): Promise<T> {
-    const response = await fetch(`${CONVEX_SITE_URL}/api/query`, {
+    const response = await fetch(`${CONVEX_CLOUD_URL}/api/query`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path, args }),
@@ -19,7 +28,7 @@ export async function convexQuery<T>(path: string, args: Record<string, unknown>
 }
 
 export async function convexMutation<T>(path: string, args: Record<string, unknown> = {}): Promise<T> {
-    const response = await fetch(`${CONVEX_SITE_URL}/api/mutation`, {
+    const response = await fetch(`${CONVEX_CLOUD_URL}/api/mutation`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path, args }),
@@ -31,7 +40,7 @@ export async function convexMutation<T>(path: string, args: Record<string, unkno
 }
 
 export async function convexAction<T>(path: string, args: Record<string, unknown> = {}): Promise<T> {
-    const response = await fetch(`${CONVEX_SITE_URL}/api/action`, {
+    const response = await fetch(`${CONVEX_CLOUD_URL}/api/action`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path, args }),
