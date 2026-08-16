@@ -30,6 +30,7 @@ import {
     IconChevronDown,
     IconPen,
     IconShare,
+    IconSparkle,
     IconTrend,
 } from "@/components/jua-kali/icons";
 import { Chip } from "@/components/jua-kali/ui";
@@ -79,6 +80,8 @@ function typeLabel(type: string) {
             return "KPI";
         case "digest":
             return "Digest";
+        case "wisdom":
+            return "Wisdom";
         default:
             return "Action";
     }
@@ -93,6 +96,8 @@ function typeGlyph(type: string, size = 12) {
             return <IconTrend size={size} color={color.brassDeep} />;
         case "digest":
             return <IconPen size={size} color={color.brassDeep} />;
+        case "wisdom":
+            return <IconSparkle size={size} color={color.brassDeep} />;
         default:
             return <IconBolt size={size} color={color.brassDeep} />;
     }

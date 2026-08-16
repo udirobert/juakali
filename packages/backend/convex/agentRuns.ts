@@ -67,7 +67,8 @@ export const runStatusValidator = v.union(
 export const runTriggerValidator = v.union(
     v.literal("approved_note"),
     v.literal("inbound_email"),
-    v.literal("proactive")
+    v.literal("proactive"),
+    v.literal("entrepreneur_note")
 );
 
 /** All-pending steps for a proposal (nothing runs until approval). */
@@ -149,6 +150,8 @@ function originPhrase(run: Doc<"agentRuns">): string {
             return "your email";
         case "proactive":
             return "my check-in";
+        case "entrepreneur_note":
+            return "the founder's update";
         default:
             return "your approved note";
     }
@@ -214,10 +217,10 @@ export async function createAgentRun(
         subject?: string;
         metric?: string | null;
         value?: number | null;
-        trigger: "approved_note" | "inbound_email";
+        trigger: "approved_note" | "inbound_email" | "entrepreneur_note";
         fromAddressOverride?: string;
         toAddressOverride?: string;
-        source: "agent" | "sms" | "manual" | "email_paste";
+        source: "agent" | "sms" | "manual" | "email_paste" | "self";
     }
 ) {
     const body = args.noteBody.trim();
@@ -396,6 +399,20 @@ export const stepRecordKpi = internalMutation({
                 .take(200);
             const kpiBefore = checkInsBefore.reduce((sum, row) => sum + row.value, 0);
 
+            // Outcome linkage: if the venture carries recently-applied mentor
+            // wisdom, this check-in measures it.
+            const appliedWisdom = await ctx.db
+                .query("sharedItems")
+                .withIndex("by_ventureId_and_status", (q) =>
+                    q.eq("ventureId", venture._id).eq("status", "applied")
+                )
+                .order("desc")
+                .first();
+            const appliedItemId =
+                appliedWisdom && appliedWisdom.appliedAt != null && now - appliedWisdom.appliedAt < 45 * 24 * 3600 * 1000
+                    ? appliedWisdom._id
+                    : null;
+
             const checkInId = await ctx.db.insert("kpiCheckIns", {
                 ventureId: venture._id,
                 commitmentId: run.commitmentId,
@@ -404,6 +421,7 @@ export const stepRecordKpi = internalMutation({
                 value,
                 note: run.noteBody.slice(0, 160),
                 source: run.source,
+                appliedItemId,
                 createdAt: now,
             });
 

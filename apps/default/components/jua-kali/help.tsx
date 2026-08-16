@@ -373,11 +373,14 @@ export function HelpMenuButton({
     onHowItWorks,
     onGlossary,
     onShowIntro,
+    footer,
 }: {
     onHowItWorks: () => void;
     onGlossary: () => void;
     /** Optional — returns to landing pitch (demo recovery). */
     onShowIntro?: () => void;
+    /** Optional muted row at the menu's foot — e.g. the fidelity badge on mobile. */
+    footer?: ReactNode;
 }) {
     const [open, setOpen] = useState(false);
 
@@ -422,6 +425,7 @@ export function HelpMenuButton({
                             <Text style={styles.helpItemText}>Show intro again</Text>
                         </Pressable>
                     ) : null}
+                    {footer ? <View style={styles.helpFooter}>{footer}</View> : null}
                 </View>
             ) : null}
         </>
@@ -633,4 +637,11 @@ const styles = StyleSheet.create({
     },
     helpItem: { paddingHorizontal: 14, paddingVertical: 12 },
     helpItemText: { fontFamily: font.bodyBold, fontSize: 13, fontWeight: "700", color: color.charcoal },
+    helpFooter: {
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        borderTopWidth: 1,
+        borderTopColor: color.line,
+        marginTop: 2,
+    },
 });

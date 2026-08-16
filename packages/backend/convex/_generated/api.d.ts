@@ -28,7 +28,9 @@ import type * as softAuth from "../softAuth.js";
 import type * as softEmail from "../softEmail.js";
 import type * as subscriptions from "../subscriptions.js";
 import type * as telephony from "../telephony.js";
+import type * as venture from "../venture.js";
 import type * as voiceProcessing from "../voiceProcessing.js";
+import type * as wisdom from "../wisdom.js";
 
 import type {
   ApiFromModules,
@@ -57,7 +59,9 @@ declare const fullApi: ApiFromModules<{
   softEmail: typeof softEmail;
   subscriptions: typeof subscriptions;
   telephony: typeof telephony;
+  venture: typeof venture;
   voiceProcessing: typeof voiceProcessing;
+  wisdom: typeof wisdom;
 }>;
 
 /**

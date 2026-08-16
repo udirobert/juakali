@@ -27,14 +27,16 @@ import {
 import { Onboarding } from "@/components/jua-kali/onboarding";
 import { PublicLedger } from "@/components/jua-kali/public-ledger";
 import { SoftIdentityBar } from "@/components/jua-kali/soft-identity";
+import { VentureCockpit } from "@/components/jua-kali/venture-cockpit";
 import { writeCoachDismissed } from "@/components/jua-kali/session-persist";
 import { color, font, layout } from "@/components/jua-kali/theme";
 import { useProductMode } from "@/lib/product-mode";
-import { useQuery } from "convex/react";
+import { useQuery, useConvexAuth } from "convex/react";
+import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 
-type Screen = "home" | "ledger" | "lab";
+type Screen = "home" | "ledger" | "venture" | "lab";
 type LabScreen = "agent" | "funnel" | "ops";
 
 const labTabs: Array<{ id: LabScreen; label: string }> = [
@@ -47,9 +49,11 @@ function readTabParam(): Screen | null {
     if (Platform.OS !== "web" || typeof window === "undefined") return null;
     const params = new URLSearchParams(window.location.search);
     const tab = params.get("tab");
-    if (tab === "home" || tab === "ledger" || tab === "lab") return tab;
-    // Share-card deep link: /?ledger=<slug> opens the ledger tab directly.
+    if (tab === "home" || tab === "ledger" || tab === "venture" || tab === "lab") return tab;
+    // Share-card deep link: /?ledger=<venture-slug> opens the ledger tab directly.
     if (params.get("ledger")) return "ledger";
+    // Entrepreneur entry: /?venture=1 opens the founder side (claim or cockpit).
+    if (params.get("venture")) return "venture";
     return null;
 }
 
@@ -100,6 +104,20 @@ export default function Index() {
     const onboarding = useInvestorOnboardingGate();
     const coach = useCoachGate();
     const labUnlocked = useLabUnlocked();
+    // The founder side: visible once the user runs a venture (or via ?venture=1).
+    const myVenture = useQuery(api.venture.myVenture);
+    const showVentureTab = myVenture != null || screen === "venture";
+
+    // Dev-only persona switch: ?dev_anon=1 signs in anonymously so the
+    // founder side can be exercised locally. Stripped from release builds.
+    const { isAuthenticated } = useConvexAuth();
+    const { signIn } = useAuthActions();
+    useEffect(() => {
+        if (!__DEV__ || Platform.OS !== "web" || typeof window === "undefined") return;
+        if (isAuthenticated) return;
+        if (new URLSearchParams(window.location.search).get("dev_anon") !== "1") return;
+        void signIn("anonymous");
+    }, [isAuthenticated, signIn]);
 
     const setScreen = useCallback((next: Screen) => {
         setScreenState(next);
@@ -126,9 +144,10 @@ export default function Index() {
             { id: "home", label: useTopNav ? "My deals" : "Deals" },
             { id: "ledger", label: useTopNav ? "Public ledger" : "Ledger" },
         ];
+        if (showVentureTab) tabs.push({ id: "venture", label: useTopNav ? "My venture" : "Venture" });
         if (labUnlocked) tabs.push({ id: "lab", label: "Lab" });
         return tabs;
-    }, [labUnlocked, useTopNav]);
+    }, [labUnlocked, useTopNav, showVentureTab]);
 
     useEffect(() => {
         if (!labUnlocked && screen === "lab") setScreen("home");
@@ -213,6 +232,17 @@ export default function Index() {
                         coach.reset();
                     })();
                 }}
+                footer={
+                    useTopNav ? undefined : (
+                        <FidelityBadge
+                            mode={product}
+                            compact
+                            onPress={() => {
+                                openGlossary("soft-pledge");
+                            }}
+                        />
+                    )
+                }
             />
         </View>
     );
@@ -240,12 +270,9 @@ export default function Index() {
                 </View>
             ) : (
                 <View style={[styles.mobileHelpBar, { paddingTop: Math.max(insets.top, 8) }]}>
+                    {/* First screen is the job — identity plus help; the fidelity
+                        badge lives inside the Help menu on mobile. */}
                     <View style={styles.mobileLead}>
-                        <FidelityBadge
-                            mode={product}
-                            compact
-                            onPress={() => openGlossary("soft-pledge")}
-                        />
                         <SoftIdentityBar compact />
                     </View>
                     {helpCluster}
@@ -284,6 +311,12 @@ export default function Index() {
                 <View style={[styles.screenPane, screen !== "ledger" && styles.screenHidden]}>
                     <PublicLedger onOpenGlossary={openGlossary} hideTitleChrome={useTopNav} />
                 </View>
+                {/* Founder side kept alive too — claim flow and cockpit both live here. */}
+                {showVentureTab ? (
+                    <View style={[styles.screenPane, screen !== "venture" && styles.screenHidden]}>
+                        <VentureCockpit onOpenLedger={() => setScreen("ledger")} />
+                    </View>
+                ) : null}
                 {screen === "lab" && labUnlocked ? (
                     labScreen === "agent" ? (
                         <AgentChat />

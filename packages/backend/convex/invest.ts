@@ -20,13 +20,15 @@ const kpiSourceValidator = v.union(
     v.literal("agent"),
     v.literal("sms"),
     v.literal("manual"),
-    v.literal("email_paste")
+    v.literal("email_paste"),
+    v.literal("self")
 );
 const ledgerTypeValidator = v.union(
     v.literal("pledge"),
     v.literal("checkin"),
     v.literal("digest"),
-    v.literal("action")
+    v.literal("action"),
+    v.literal("wisdom")
 );
 
 const ventureSummaryValidator = v.object({
@@ -109,7 +111,7 @@ async function pledgedForVenture(ctx: DbCtx, ventureId: Id<"ventures">) {
 async function writeLedgerEvent(
     ctx: MutationCtx,
     args: {
-        type: "pledge" | "checkin" | "digest" | "action";
+        type: "pledge" | "checkin" | "digest" | "action" | "wisdom";
         ventureId?: Id<"ventures"> | null;
         commitmentId?: Id<"commitments"> | null;
         summary: string;
@@ -1352,6 +1354,52 @@ export const seedInvestDemo = mutation({
                 summary: "Faith Tailoring Line listed for public investment — seeking first soft pledge for machine servicing.",
                 createdAt: now + 50,
             });
+
+            // The wisdom loop has history too: a mentor's applied note with a
+            // measured outcome, so both sides of the loop demo truthfully.
+            const existingWisdom = await ctx.db
+                .query("sharedItems")
+                .withIndex("by_ventureId_and_status", (q) =>
+                    q.eq("ventureId", ventureIds[0]!).eq("status", "applied")
+                )
+                .first();
+            if (!existingWisdom) {
+                const appliedAt = now - 4 * 24 * 60 * 60 * 1000;
+                await ctx.db.insert("sharedItems", {
+                    ventureId: ventureIds[0]!,
+                    investorId,
+                    kind: "note",
+                    sourceUrl: null,
+                    title: "Note from your mentor",
+                    body: "Stop selling to everyone. Pick the clinic admins you already met — they know you. Ask each for one referral before Friday and write down who said what.",
+                    charCount: 160,
+                    status: "applied",
+                    parse: {
+                        summary: "Focus the week on referral selling through warm clinic-admin contacts instead of cold outreach.",
+                        principles: [
+                            "Warm referrals close faster than cold outreach",
+                            "Ask for one referral per existing contact",
+                            "Write down every answer — pipeline memory",
+                        ],
+                        application: {
+                            title: "Run the referral sweep this week",
+                            body: "List the clinic admins already met, ask each for one referral before Friday, and log every answer. Jua will measure meetings booked against this and report the delta to your mentor.",
+                        },
+                        confidence: 0.82,
+                        engine: "fallback",
+                    },
+                    appliedAt,
+                    createdAt: appliedAt - 3600_000,
+                });
+                await writeLedgerEvent(ctx, {
+                    type: "wisdom",
+                    ventureId: ventureIds[0]!,
+                    commitmentId: null,
+                    summary: "Wanjiru Kamau shared a note with Amina Sales Pod — Jua applied: Run the referral sweep this week",
+                    createdAt: appliedAt,
+                    evidence: ["agent", "note"],
+                });
+            }
         }
 
         const alreadySeeded =

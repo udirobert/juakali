@@ -241,6 +241,11 @@ export const whoAmI = query({
             email: v.union(v.string(), v.null()),
             name: v.union(v.string(), v.null()),
             investorId: v.union(v.id("investors"), v.null()),
+            /** The venture this user runs, if they're on the entrepreneur side. */
+            ownedVenture: v.union(
+                v.object({ ventureId: v.id("ventures"), name: v.string() }),
+                v.null()
+            ),
         })
     ),
     handler: async (ctx) => {
@@ -252,11 +257,17 @@ export const whoAmI = query({
             .query("investors")
             .withIndex("by_userId", (q) => q.eq("userId", userId))
             .first();
+        const owner = await ctx.db
+            .query("ventureOwners")
+            .withIndex("by_userId", (q) => q.eq("userId", userId))
+            .first();
+        const ownedVenture = owner ? await ctx.db.get(owner.ventureId) : null;
         return {
             userId,
             email: typeof user.email === "string" ? user.email : null,
             name: typeof user.name === "string" ? user.name : null,
             investorId: investor?._id ?? null,
+            ownedVenture: ownedVenture ? { ventureId: ownedVenture._id, name: ownedVenture.name } : null,
         };
     },
 });

@@ -26,13 +26,21 @@ const kpiSource = v.union(
     v.literal("agent"),
     v.literal("sms"),
     v.literal("manual"),
-    v.literal("email_paste")
+    v.literal("email_paste"),
+    v.literal("self")
 );
 const ledgerEventType = v.union(
     v.literal("pledge"),
     v.literal("checkin"),
     v.literal("digest"),
-    v.literal("action")
+    v.literal("action"),
+    v.literal("wisdom")
+);
+const sharedKind = v.union(
+    v.literal("article"),
+    v.literal("podcast"),
+    v.literal("note"),
+    v.literal("voice")
 );
 
 export default defineSchema({
@@ -302,11 +310,62 @@ export default defineSchema({
         value: v.number(),
         note: v.string(),
         source: kpiSource,
+        /** Set when this check-in measures a piece of applied mentor wisdom. */
+        appliedItemId: v.optional(v.union(v.id("sharedItems"), v.null())),
         createdAt: v.number(),
     })
         .index("by_ventureId", ["ventureId"])
         .index("by_commitmentId", ["commitmentId"])
         .index("by_createdAt", ["createdAt"]),
+
+    /**
+     * Entrepreneurs — venture owners. The second side of the loop: links an
+     * auth user to a venture the same way `investors` links users to capital.
+     */
+    ventureOwners: defineTable({
+        userId: v.id("users"),
+        ventureId: v.id("ventures"),
+        role: v.literal("owner"),
+        createdAt: v.number(),
+    })
+        .index("by_userId", ["userId"])
+        .index("by_ventureId", ["ventureId"]),
+
+    /**
+     * Shared wisdom — a mentor's podcast, article, note, or dictated voice,
+     * parsed by Jua into an applicable recommendation for one venture.
+     * `applied` items carry measurable outcomes via kpiCheckIns.appliedItemId.
+     */
+    sharedItems: defineTable({
+        ventureId: v.id("ventures"),
+        investorId: v.optional(v.union(v.id("investors"), v.null())),
+        kind: sharedKind,
+        sourceUrl: v.optional(v.union(v.string(), v.null())),
+        title: v.optional(v.union(v.string(), v.null())),
+        body: v.string(),
+        charCount: v.number(),
+        status: v.union(
+            v.literal("pending"),
+            v.literal("parsed"),
+            v.literal("applied"),
+            v.literal("archived")
+        ),
+        /** Jua's parse — absent while pending, present once parsed. */
+        parse: v.optional(
+            v.object({
+                summary: v.string(),
+                principles: v.array(v.string()),
+                application: v.object({ title: v.string(), body: v.string() }),
+                confidence: v.number(),
+                engine: v.union(v.literal("gemini"), v.literal("fallback")),
+            })
+        ),
+        appliedAt: v.optional(v.union(v.number(), v.null())),
+        createdAt: v.number(),
+    })
+        .index("by_ventureId", ["ventureId"])
+        .index("by_status", ["status"])
+        .index("by_ventureId_and_status", ["ventureId", "status"]),
 
     agentDigests: defineTable({
         commitmentId: v.id("commitments"),
@@ -342,7 +401,8 @@ export default defineSchema({
         trigger: v.union(
             v.literal("approved_note"),
             v.literal("inbound_email"),
-            v.literal("proactive")
+            v.literal("proactive"),
+            v.literal("entrepreneur_note")
         ),
         noteBody: v.string(),
         subject: v.string(),

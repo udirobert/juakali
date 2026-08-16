@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     AccessibilityInfo,
     ActivityIndicator,
@@ -30,13 +30,14 @@ import type { FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import { SITE_URL } from "@/lib/site";
 import { HowItWorksCard, TermHint } from "@/components/jua-kali/help";
-import { successHaptic } from "@/components/jua-kali/haptics";
+import { successHaptic, tapHaptic } from "@/components/jua-kali/haptics";
 import { AuthRequiredGate } from "@/components/jua-kali/soft-identity";
 import { SunMark } from "@/components/jua-kali/sun-mark";
 import { LivingSun } from "@/components/jua-kali/living-sun";
 import { IconCheck, IconSend, IconShare, IconX } from "@/components/jua-kali/icons";
 import { Button, Card, Chip, Input } from "@/components/jua-kali/ui";
-import { color, font, layout, motion, tabularNums } from "@/components/jua-kali/theme";
+import { ShareWisdomCard, WisdomItemCard } from "@/components/jua-kali/wisdom";
+import { color, elevation, font, layout, motion, tabularNums } from "@/components/jua-kali/theme";
 
 const AnimatedPath = Animated.createAnimatedComponent(SvgPath);
 
@@ -46,6 +47,15 @@ type AgentRun = NonNullable<FunctionReturnType<typeof api.agentRuns.getAgentRun>
 type LatestRun = NonNullable<FunctionReturnType<typeof api.agentRuns.getLatestRun>>;
 type RunStep = AgentRun["steps"][number];
 type AgentPhase = "idle" | "queued" | "acting" | "done" | "failed";
+/** Structural shape RunSteps needs — real runs and the optimistic preview both fit. */
+type RunLike = Pick<AgentRun, "status" | "steps" | "result" | "error">;
+
+/** One-tap notes for mobile — the fastest path from open deal to working agent. */
+const PROMPTS: Array<{ label: string; value: string }> = [
+    { label: "Push follow-ups", value: "Push follow-ups this week. Reply with what moved." },
+    { label: "Request evidence", value: "Ask for photos or a short note proving this week's work." },
+    { label: "KPI status", value: "How is the KPI trending vs target? Summarize briefly." },
+];
 
 function readDealParams(): { commitmentId?: Id<"commitments">; ventureSlug?: string } {
     if (Platform.OS !== "web" || typeof window === "undefined") return {};
@@ -298,6 +308,18 @@ export function InvestorCockpit({
         setStatusMessage(error);
     }, []);
 
+    // When a run starts, bring the ritual to the investor — approval shouldn't
+    // hunt for its consequence below the fold.
+    const scrollRef = useRef<ScrollView>(null);
+    const ritualTop = useRef(0);
+    useEffect(() => {
+        if (agentPhase !== "acting") return;
+        const timer = setTimeout(() => {
+            scrollRef.current?.scrollTo({ y: Math.max(0, ritualTop.current - 12), animated: true });
+        }, 200);
+        return () => clearTimeout(timer);
+    }, [agentPhase]);
+
     async function handleSeed() {
         setIsSeeding(true);
         try {
@@ -414,6 +436,7 @@ export function InvestorCockpit({
     return (
         <View style={[styles.screen, { paddingTop: hideBrand ? 8 : insets.top }]}>
             <ScrollView
+                ref={scrollRef}
                 contentContainerStyle={[
                     styles.content,
                     {
@@ -483,15 +506,6 @@ export function InvestorCockpit({
                     }
                     return null;
                 })()}
-
-                {onDismissCoach ? (
-                    <HowItWorksCard
-                        visible={showCoach}
-                        onDismiss={onDismissCoach}
-                        onOpenGlossary={onOpenGlossary ? () => onOpenGlossary() : undefined}
-                        compact={compact}
-                    />
-                ) : null}
 
                 {showPledge ? (
                     <AuthRequiredGate required={requireAuthToAct}>
@@ -581,30 +595,43 @@ export function InvestorCockpit({
 
                         {selectedCommitment ? (
                             <View style={styles.stack}>
+                                {/* The action leads: note-to-Jua first, proof
+                                    second, teaching one tap away at the bottom. */}
+                                <View
+                                    onLayout={(event) => {
+                                        ritualTop.current = event.nativeEvent.layout.y;
+                                    }}
+                                >
+                                    <AuthRequiredGate required={requireAuthToAct}>
+                                    <Ritual
+                                        compact={compact}
+                                        commitment={selectedCommitment}
+                                        draft={emailDraft}
+                                        onChangeDraft={setEmailDraft}
+                                        pendingBody={pendingBody}
+                                        agentPhase={agentPhase}
+                                        activeRunId={activeRunId}
+                                        inboundRun={inboundRun ?? null}
+                                        onRunRunning={handleRunRunning}
+                                        onRunCompleted={handleRunCompleted}
+                                        onRunFailed={handleRunFailed}
+                                        emailInbox={agentMail?.configured ? agentMail.inboxEmail ?? null : null}
+                                        onQueue={handleQueueEmail}
+                                        onApprove={() => void handleApproveEmail()}
+                                        onDiscard={handleDiscardQueue}
+                                        onOpenLedger={onOpenLedger}
+                                        onOpenGlossary={onOpenGlossary}
+                                    />
+                                    </AuthRequiredGate>
+                                </View>
                                 <Scorecard
                                     commitment={selectedCommitment}
                                     onOpenGlossary={onOpenGlossary}
                                 />
-                                <AuthRequiredGate required={requireAuthToAct}>
-                                <Ritual
-                                    commitment={selectedCommitment}
-                                    draft={emailDraft}
-                                    onChangeDraft={setEmailDraft}
-                                    pendingBody={pendingBody}
-                                    agentPhase={agentPhase}
-                                    activeRunId={activeRunId}
-                                    inboundRun={inboundRun ?? null}
-                                    onRunRunning={handleRunRunning}
-                                    onRunCompleted={handleRunCompleted}
-                                    onRunFailed={handleRunFailed}
-                                    emailInbox={agentMail?.configured ? agentMail.inboxEmail ?? null : null}
-                                    onQueue={handleQueueEmail}
-                                    onApprove={() => void handleApproveEmail()}
-                                    onDiscard={handleDiscardQueue}
-                                    onOpenLedger={onOpenLedger}
-                                    onOpenGlossary={onOpenGlossary}
+                                <WisdomForCommitment
+                                    ventureId={selectedCommitment.venture.id}
+                                    ventureName={selectedCommitment.venture.name}
                                 />
-                                </AuthRequiredGate>
                                 {selectedCommitment.latestDigest ? (
                                     <DigestArtifactCard
                                         commitment={selectedCommitment}
@@ -616,6 +643,15 @@ export function InvestorCockpit({
                         ) : null}
                     </>
                 )}
+
+                {onDismissCoach ? (
+                    <HowItWorksCard
+                        visible={showCoach}
+                        onDismiss={onDismissCoach}
+                        onOpenGlossary={onOpenGlossary ? () => onOpenGlossary() : undefined}
+                        compact={compact}
+                    />
+                ) : null}
             </ScrollView>
         </View>
     );
@@ -881,6 +917,7 @@ function Metric({
 }
 
 function Ritual({
+    compact,
     commitment,
     draft,
     onChangeDraft,
@@ -898,6 +935,7 @@ function Ritual({
     onOpenLedger,
     onOpenGlossary,
 }: {
+    compact: boolean;
     commitment: Commitment;
     draft: string;
     onChangeDraft: (value: string) => void;
@@ -943,6 +981,10 @@ function Ritual({
     const showApproveGate = pendingBody != null && agentPhase === "queued";
     const showSteps = liveRun != null && (runIsOurs || inboundActing);
 
+    // The approval is in flight but Convex hasn't confirmed the run yet —
+    // render the promised steps as queued chips so the moment has no gap.
+    const optimistic = agentPhase === "acting" && liveRun == null;
+
     // Lifecycle for runs we own only — inbound runs never clobber root state.
     // Fires on status transitions, not per step.
     useEffect(() => {
@@ -976,6 +1018,36 @@ function Ritual({
               ? 0.3 + 0.7 * (doneCount / steps.length)
               : 0.35;
 
+    // A tick per committed step — the run is felt, not just watched.
+    const prevDone = useRef(0);
+    useEffect(() => {
+        if (!liveRun || liveRun.status !== "running") {
+            prevDone.current = 0;
+            return;
+        }
+        if (doneCount > prevDone.current) tapHaptic();
+        prevDone.current = doneCount;
+    }, [doneCount, liveRun]);
+
+    // Ceremony: on mobile, our run takes the card over — big sun, large
+    // steps, one card to watch. Inbound runs and web keep the compact form.
+    const ceremony = compact && (optimistic || (liveRun != null && runIsOurs));
+
+    // What RunSteps renders while the real run is being created.
+    const optimisticRun: RunLike | null = optimistic
+        ? {
+              status: "running",
+              result: null,
+              error: null,
+              steps: [
+                  "KPI check-in",
+                  "Investor digest",
+                  "Public ledger post",
+                  "Reply with evidence",
+              ].map((label) => ({ tool: label, label, detail: null, status: "pending" as const })),
+          }
+        : null;
+
     const phaseLabel = showApproveGate
         ? "Waiting for your approval"
         : runLive
@@ -988,22 +1060,51 @@ function Ritual({
                 ? "Run failed"
                 : "Ready for a note";
 
+    const ceremonyHeadline = optimistic
+        ? "Starting the run…"
+        : liveRun?.status === "completed"
+          ? "Done — posted to Ledger"
+          : liveRun?.status === "failed"
+            ? "Run failed"
+            : runLive
+              ? "Jua is working"
+              : "Note to Jua";
+
     return (
-        <Card>
-            <View style={styles.cardTop}>
-                <View style={styles.titleWithHint}>
-                    {liveRun ? (
-                        <LivingSun progress={sunProgress} size={18} working={runLive} />
-                    ) : (
-                        <SunMark size={16} />
-                    )}
-                    <Text style={styles.cardTitle}>Note to Jua</Text>
-                    {onOpenGlossary ? <TermHint termId="queue-approve" onOpenGlossary={onOpenGlossary} /> : null}
+        <Card
+            variant={ceremony ? "trust" : "default"}
+            style={ceremony ? styles.ceremonyCard : undefined}
+        >
+            {ceremony ? (
+                <View style={styles.ceremonyHead}>
+                    <LivingSun progress={sunProgress} size={56} working={runLive || optimistic} />
+                    <Text style={styles.ceremonyTitle}>{ceremonyHeadline}</Text>
+                    {optimistic || runLive || liveRun?.status === "failed" ? (
+                        <Text style={[styles.meta, liveRun?.status === "failed" && styles.metaDanger]}>
+                            {optimistic
+                                ? "Approving…"
+                                : runLive
+                                  ? phaseLabel
+                                  : liveRun?.error ?? "The run did not complete."}
+                        </Text>
+                    ) : null}
                 </View>
-                <Text style={[styles.meta, liveRun?.status === "failed" && styles.metaDanger]}>
-                    {phaseLabel}
-                </Text>
-            </View>
+            ) : (
+                <View style={styles.cardTop}>
+                    <View style={styles.titleWithHint}>
+                        {liveRun ? (
+                            <LivingSun progress={sunProgress} size={18} working={runLive} />
+                        ) : (
+                            <SunMark size={16} />
+                        )}
+                        <Text style={styles.cardTitle}>Note to Jua</Text>
+                        {onOpenGlossary ? <TermHint termId="queue-approve" onOpenGlossary={onOpenGlossary} /> : null}
+                    </View>
+                    <Text style={[styles.meta, liveRun?.status === "failed" && styles.metaDanger]}>
+                        {phaseLabel}
+                    </Text>
+                </View>
+            )}
 
             <Text style={styles.fieldHint}>
                 {inboundActing
@@ -1013,7 +1114,9 @@ function Ritual({
 
             <WaitingShimmer active={waiting} />
 
-            {showSteps && liveRun ? (
+            {ceremony && (optimisticRun || liveRun) ? (
+                <RunSteps run={(optimisticRun ?? liveRun)!} onOpenLedger={onOpenLedger} large />
+            ) : showSteps && liveRun ? (
                 <RunSteps run={liveRun} onOpenLedger={onOpenLedger} />
             ) : null}
 
@@ -1038,8 +1141,24 @@ function Ritual({
                         <Text style={styles.discard}>Discard</Text>
                     </Pressable>
                 </Animated.View>
-            ) : !runLive ? (
+            ) : !runLive && !optimistic ? (
                 <View style={styles.composer}>
+                    {compact ? (
+                        <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            contentContainerStyle={styles.promptRow}
+                        >
+                            {PROMPTS.map((prompt) => (
+                                <Chip
+                                    key={prompt.label}
+                                    label={prompt.label}
+                                    active={draft === prompt.value}
+                                    onPress={() => onChangeDraft(prompt.value)}
+                                />
+                            ))}
+                        </ScrollView>
+                    ) : null}
                     <TextInput
                         value={draft}
                         onChangeText={onChangeDraft}
@@ -1085,23 +1204,48 @@ function Ritual({
     );
 }
 
+/**
+ * The mentor's wisdom column for the selected deal: the share bar, then each
+ * item living its life — read, proposed, applied with measured outcome.
+ */
+function WisdomForCommitment({ ventureId, ventureName }: { ventureId: string; ventureName: string }) {
+    const items = useQuery(api.wisdom.wisdomForVenture, { ventureId: ventureId as never });
+    if (items === undefined) return null;
+    return (
+        <View style={styles.stack}>
+            <ShareWisdomCard ventureName={ventureName} ventureId={ventureId} />
+            {items.length > 0 ? (
+                <View style={styles.stack}>
+                    {items.map((item) => (
+                        <WisdomItemCard key={item.id} item={item} ventureName={ventureName} />
+                    ))}
+                </View>
+            ) : null}
+        </View>
+    );
+}
+
 /** Live step chips driven by the real agentRun — nothing is simulated. */
 function RunSteps({
     run,
     onOpenLedger,
+    large = false,
 }: {
-    run: AgentRun;
+    run: RunLike;
     onOpenLedger?: () => void;
+    /** Ceremony sizing — big rows for the run-in-flight takeover. */
+    large?: boolean;
 }) {
     const failed = run.status === "failed";
     const done = run.status === "completed";
     return (
-        <View style={styles.toolRow} accessibilityLiveRegion="polite">
+        <View style={[styles.toolRow, large && styles.toolRowLarge]} accessibilityLiveRegion="polite">
             {run.steps.map((step: RunStep) => (
                 <View
                     key={step.tool}
                     style={[
                         styles.toolChip,
+                        large && styles.toolChipLarge,
                         step.status === "running" && styles.toolChipRun,
                         step.status === "failed" && styles.toolChipFail,
                     ]}
@@ -1109,13 +1253,13 @@ function RunSteps({
                     {step.status === "running" ? (
                         <ActivityIndicator size="small" color={color.brass} />
                     ) : step.status === "done" ? (
-                        <IconCheck size={11} color={color.success} strokeWidth={2.4} />
+                        <IconCheck size={large ? 14 : 11} color={color.success} strokeWidth={2.4} />
                     ) : step.status === "failed" ? (
-                        <IconX size={10} color={color.danger} strokeWidth={2.4} />
+                        <IconX size={large ? 13 : 10} color={color.danger} strokeWidth={2.4} />
                     ) : (
-                        <View style={styles.toolDot} />
+                        <View style={[styles.toolDot, large && styles.toolDotLarge]} />
                     )}
-                    <Text style={styles.toolName} numberOfLines={1}>
+                    <Text style={[styles.toolName, large && styles.toolNameLarge]} numberOfLines={1}>
                         {step.label}
                     </Text>
                 </View>
@@ -1462,6 +1606,7 @@ const styles = StyleSheet.create({
     },
     shimmerBar: { width: "40%", height: "100%", backgroundColor: color.brass, borderRadius: 99 },
     toolRow: { gap: 6 },
+    toolRowLarge: { gap: 8 },
     toolChip: {
         flexDirection: "row",
         alignItems: "center",
@@ -1471,10 +1616,37 @@ const styles = StyleSheet.create({
         borderRadius: 4,
         backgroundColor: color.stone,
     },
+    toolChipLarge: {
+        gap: 10,
+        paddingHorizontal: 14,
+        paddingVertical: 13,
+        minHeight: 48,
+        backgroundColor: color.paper,
+        borderWidth: 1,
+        borderColor: color.line,
+    },
     toolChipRun: { backgroundColor: color.brassSoft },
     toolChipFail: { backgroundColor: "rgba(139,58,47,0.08)" },
     toolDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: color.lineStrong },
+    toolDotLarge: { width: 10, height: 10 },
     toolName: { fontFamily: font.bodyBold, fontSize: 11, fontWeight: "700", color: color.charcoal, flexShrink: 1 },
+    toolNameLarge: { fontSize: 13 },
+    // The ceremony — the ritual card taken over by a run in flight.
+    ceremonyCard: {
+        paddingTop: 22,
+        paddingBottom: 18,
+        ...elevation.raised,
+    },
+    ceremonyHead: { alignItems: "center", gap: 6 },
+    ceremonyTitle: {
+        fontFamily: font.displayMedium,
+        fontSize: 21,
+        fontWeight: "600",
+        letterSpacing: -0.4,
+        color: color.charcoal,
+        textAlign: "center",
+    },
+    promptRow: { gap: 6, paddingVertical: 2 },
     runDone: {
         flexDirection: "row",
         alignItems: "center",
