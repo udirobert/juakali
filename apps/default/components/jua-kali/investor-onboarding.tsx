@@ -3,7 +3,6 @@ import {
     Platform,
     Pressable,
     ScrollView,
-    StyleSheet,
     Text,
     useWindowDimensions,
     View,
@@ -22,6 +21,7 @@ import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import type { Id } from "@/convex/_generated/dataModel";
 
 import { api } from "@/convex/_generated/api";
+import { styles } from "@/components/jua-kali/investor-onboarding/investor-onboarding.styles";
 import {
     clearDemoGates,
     hasFreshParam,
@@ -36,7 +36,7 @@ import { SoftIdentityBar } from "@/components/jua-kali/soft-identity";
 import { LivingSun } from "@/components/jua-kali/living-sun";
 import { IconArrowRight, IconCapital, IconPen, IconTrend } from "@/components/jua-kali/icons";
 import { Button, Card, Chip, Input, SectionLabel } from "@/components/jua-kali/ui";
-import { color, font, layout, motion, sun } from "@/components/jua-kali/theme";
+import { color, layout, motion } from "@/components/jua-kali/theme";
 
 type KpiUnit = "meetings" | "revenue_kes" | "jobs";
 
@@ -593,197 +593,3 @@ export function InvestorLanding({
     );
 }
 
-const styles = StyleSheet.create({
-    screen: { flex: 1, backgroundColor: color.stone },
-    scroll: {
-        width: "100%",
-        alignSelf: "center",
-        paddingHorizontal: 20,
-        paddingBottom: 32,
-        flexGrow: 1,
-        justifyContent: "center",
-    },
-    frame: { width: "100%", gap: 14, alignItems: "center" },
-    // Hero stage — the sun rises over a horizon hairline.
-    stage: {
-        width: "100%",
-        maxWidth: 420,
-        overflow: "hidden",
-        justifyContent: "flex-start",
-    },
-    stageLine: {
-        position: "absolute",
-        left: -10,
-        right: -10,
-        top: "62%",
-        height: 1,
-        backgroundColor: sun.horizon,
-    },
-    stageSun: {
-        position: "absolute",
-        alignSelf: "center",
-    },
-    brandBlock: { alignItems: "center" },
-    authBlock: { width: "100%", maxWidth: 400 },
-    brand: {
-        fontFamily: font.display,
-        fontSize: 40,
-        fontWeight: "700",
-        letterSpacing: -1.4,
-        color: color.charcoal,
-    },
-    eyebrow: {
-        fontFamily: font.bodyBold,
-        fontSize: 11,
-        fontWeight: "700",
-        letterSpacing: 1.4,
-        textTransform: "uppercase",
-        color: color.brassDeep,
-        marginTop: -8,
-    },
-    headline: {
-        fontFamily: font.display,
-        fontSize: 30,
-        fontWeight: "700",
-        color: color.charcoal,
-        textAlign: "center",
-        letterSpacing: -0.6,
-        maxWidth: 380,
-        lineHeight: 34,
-        marginTop: 4,
-    },
-    headlineCompact: { fontSize: 24, lineHeight: 28, maxWidth: 300 },
-    subhead: {
-        fontFamily: font.body,
-        fontSize: 13,
-        lineHeight: 19,
-        color: color.ink,
-        textAlign: "center",
-        maxWidth: 360,
-    },
-    artifactBlock: { width: "100%", alignItems: "center", gap: 8 },
-    // Live ledger artifact — the pitch is the product itself
-    artifact: {
-        width: "100%",
-        maxWidth: 420,
-        gap: 0,
-        padding: 14,
-    },
-    artifactHead: {
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        paddingBottom: 8,
-        borderBottomWidth: 1,
-        borderBottomColor: color.line,
-    },
-    artifactTitle: {
-        fontFamily: font.displayMedium,
-        fontSize: 16,
-        fontWeight: "600",
-        color: color.charcoal,
-    },
-    artifactLive: {
-        fontFamily: font.bodyBold,
-        fontSize: 9,
-        fontWeight: "700",
-        letterSpacing: 0.8,
-        textTransform: "uppercase",
-        color: color.success,
-    },
-    artifactEmpty: {
-        fontFamily: font.body,
-        fontSize: 12,
-        lineHeight: 17,
-        color: color.mist,
-        textAlign: "center",
-        paddingVertical: 16,
-    },
-    artifactRow: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 8,
-        paddingVertical: 9,
-    },
-    artifactRowBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: color.line },
-    artifactType: {
-        fontFamily: font.bodyBold,
-        fontSize: 9,
-        fontWeight: "700",
-        letterSpacing: 0.6,
-        textTransform: "uppercase",
-        color: color.brassDeep,
-        width: 52,
-    },
-    artifactSummary: {
-        flex: 1,
-        fontFamily: font.body,
-        fontSize: 12,
-        lineHeight: 17,
-        color: color.ink,
-    },
-    artifactWhen: { fontFamily: font.bodyMedium, fontSize: 11, color: color.mist },
-    ctaBlock: { width: "100%", alignItems: "center", gap: 2 },
-    ctaBlockFull: { width: "100%", maxWidth: 360 },
-    secondary: {
-        fontFamily: font.bodyBold,
-        fontSize: 13,
-        fontWeight: "700",
-        color: color.mist,
-        paddingVertical: 10,
-    },
-    // The proof strip — hairline-separated facts, not another box.
-    proofStrip: {
-        flexDirection: "row",
-        marginTop: 18,
-        paddingTop: 14,
-        borderTopWidth: 1,
-        borderTopColor: color.line,
-    },
-    proofItem: { flex: 1, alignItems: "center", gap: 6 },
-    proofItemBorder: { borderLeftWidth: 1, borderLeftColor: color.line },
-    proofLabel: {
-        fontFamily: font.bodyBold,
-        fontSize: 10,
-        fontWeight: "700",
-        letterSpacing: 0.5,
-        textTransform: "uppercase",
-        color: color.mist,
-    },
-    footnote: {
-        fontFamily: font.body,
-        fontSize: 11,
-        color: color.mist,
-        textAlign: "center",
-        marginTop: 4,
-    },
-    form: { width: "100%", maxWidth: 400, gap: 8 },
-    formTitle: {
-        fontFamily: font.displayMedium,
-        fontSize: 20,
-        fontWeight: "600",
-        color: color.charcoal,
-        textAlign: "center",
-        marginBottom: 2,
-    },
-    formSub: {
-        fontFamily: font.body,
-        fontSize: 12,
-        color: color.mist,
-        textAlign: "center",
-        marginBottom: 6,
-    },
-    fieldLabel: {
-        fontFamily: font.bodyBold,
-        fontSize: 11,
-        fontWeight: "700",
-        letterSpacing: 0.6,
-        textTransform: "uppercase",
-        color: color.brassDeep,
-        marginTop: 6,
-    },
-    row2: { flexDirection: "row", gap: 8 },
-    half: { flex: 1 },
-    chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-    error: { fontFamily: font.body, fontSize: 13, color: color.danger, marginTop: 4 },
-});
