@@ -4,6 +4,8 @@ import { Platform, type TextStyle } from "react-native";
 export const color = {
     stone: "#E6E4DF",
     paper: "#F7F6F2",
+    /** Warm white for text sitting on brass/charcoal fills. */
+    foam: "#FFFDF7",
     charcoal: "#141816",
     ink: "#1C2420",
     brass: "#A67C2D",
@@ -17,6 +19,40 @@ export const color = {
     success: "#2F5D3A",
     danger: "#8B3A2F",
 };
+
+/**
+ * Radius scale — the app core already lives on {2, 4, 6, 8}; these tokens make
+ * it explicit. Nested surfaces should read concentrically (outer = inner + padding),
+ * which this 2-step scale satisfies for 8–12px paddings.
+ */
+export const radius = {
+    xs: 2,
+    sm: 4,
+    md: 6,
+    lg: 8,
+    pill: 99,
+};
+
+/**
+ * Motion tokens. Restrained by design: UI stays under 300ms, ease-out only,
+ * no bounce. Stagger is reserved for infrequent authored moments (the arrival
+ * voice, a proposal appearing) — never for routine taps or row updates.
+ */
+export const motion = {
+    /** Immediate feedback (press, chip toggle). */
+    fast: 150,
+    /** Routine state change (cards, gates). */
+    base: 250,
+    /** Deliberately authored entrance (the arrival voice). Rare only. */
+    slow: 400,
+    /** Delay between items in an authored stagger. */
+    stagger: 60,
+    /** Tactile press scale — 0.96; never below 0.95. */
+    pressScale: 0.96,
+};
+
+/** fontVariant for any number that updates live — prevents layout jitter. */
+export const tabularNums: TextStyle["fontVariant"] = ["tabular-nums"];
 
 export const font = {
     display: Platform.select({

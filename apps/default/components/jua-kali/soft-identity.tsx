@@ -6,7 +6,8 @@ import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useOAuthSignIn } from "@/hooks/use-oauth-sign-in";
 import { useProductMode } from "@/lib/product-mode";
-import { color, font } from "@/components/jua-kali/theme";
+import { color, font, motion } from "@/components/jua-kali/theme";
+import { tapHaptic } from "@/components/jua-kali/haptics";
 
 function firstName(name: string | null | undefined, email: string | null | undefined) {
     const fromName = name?.trim().split(/\s+/)[0];
@@ -162,8 +163,14 @@ export function SoftIdentityBar({
             {Platform.OS === "web" ? (
                 <Pressable
                     onPress={() => void googleSignIn()}
+                    onPressIn={tapHaptic}
                     disabled={oauthLoading}
-                    style={[styles.googleBtn, oauthLoading && styles.disabled]}
+                    style={({ pressed }) => [
+                        styles.googleBtn,
+                        pressed && styles.btnPressed,
+                        oauthLoading && styles.disabled,
+                    ]}
+                    accessibilityRole="button"
                 >
                     <Text style={styles.googleText}>
                         {oauthLoading ? "Opening…" : "Continue with Google"}
@@ -182,8 +189,14 @@ export function SoftIdentityBar({
             />
             <Pressable
                 onPress={() => void sendLink()}
+                onPressIn={tapHaptic}
                 disabled={busy}
-                style={[styles.primary, busy && styles.disabled]}
+                style={({ pressed }) => [
+                    styles.primary,
+                    pressed && styles.btnPressed,
+                    busy && styles.disabled,
+                ]}
+                accessibilityRole="button"
             >
                 <Text style={styles.primaryText}>{busy ? "Sending…" : sent ? "Send again" : "Send magic link"}</Text>
             </Pressable>
@@ -292,6 +305,7 @@ const styles = StyleSheet.create({
     secondaryText: { fontFamily: font.bodyBold, fontSize: 13, fontWeight: "700", color: color.brass },
     status: { fontFamily: font.body, fontSize: 12, color: color.mist },
     error: { fontFamily: font.body, fontSize: 12, color: color.danger },
+    btnPressed: { transform: [{ scale: motion.pressScale }] },
     disabled: { opacity: 0.5 },
     gate: { gap: 10, padding: 14 },
     gateTitle: {

@@ -26,7 +26,7 @@ import type { FunctionReturnType } from "convex/server";
 import type { ViewStyle } from "react-native";
 
 import { api } from "@/convex/_generated/api";
-import { color } from "@/components/jua-kali/theme";
+import { color, motion } from "@/components/jua-kali/theme";
 
 type DashboardData = FunctionReturnType<typeof api.telephony.dashboardData>;
 type MasterSummary = DashboardData["masters"][number];
@@ -611,13 +611,13 @@ const styles = StyleSheet.create({
         backgroundColor: palette.olive,
     },
     buttonPressed: {
-        transform: [{ scale: 0.97 }, { rotate: "-1deg" }],
+        transform: [{ scale: motion.pressScale }, { rotate: "-1deg" }],
     },
     buttonDisabled: {
         opacity: 0.64,
     },
     organicButtonText: {
-        color: "#FFFDF7",
+        color: color.foam,
         fontSize: 13,
         fontWeight: "800",
         letterSpacing: 0.2,
@@ -643,7 +643,7 @@ const styles = StyleSheet.create({
         backgroundColor: "rgba(255,255,255,0.12)",
     },
     figureNumber: {
-        color: "#FFFDF7",
+        color: color.foam,
         fontSize: 78,
         fontWeight: "900",
         fontVariant: ["tabular-nums"],
@@ -657,7 +657,7 @@ const styles = StyleSheet.create({
         textTransform: "uppercase",
     },
     figurePullQuote: {
-        color: "#FFFDF7",
+        color: color.foam,
         fontSize: 21,
         fontWeight: "300",
         lineHeight: 29,

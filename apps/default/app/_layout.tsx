@@ -53,6 +53,16 @@ export default function RootLayout() {
         link.href =
             "https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;700&display=swap";
         document.head.appendChild(link);
+
+        // Crisper text on macOS — applied once at the root, not per element.
+        const baseId = "juakali-web-base";
+        if (!document.getElementById(baseId)) {
+            const style = document.createElement("style");
+            style.id = baseId;
+            style.textContent =
+                "html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }";
+            document.head.appendChild(style);
+        }
     }, []);
 
     if (!frauncesLoaded || !plexLoaded) {

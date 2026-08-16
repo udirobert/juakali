@@ -178,7 +178,8 @@ export function TermHint({
                     if (onOpenGlossary) onOpenGlossary(termId);
                     else setOpen(true);
                 }}
-                hitSlop={8}
+                // 18px mark + 13px slop per side = 44px touch target.
+                hitSlop={13}
                 accessibilityRole="button"
                 accessibilityLabel={`What is ${term.label}?`}
                 style={styles.hintBtn}
@@ -622,7 +623,7 @@ const styles = StyleSheet.create({
         ...Platform.select({
             web: { boxShadow: "0 8px 24px rgba(20,24,22,0.12)" } as object,
             default: {
-                shadowColor: "#141816",
+                shadowColor: color.charcoal,
                 shadowOpacity: 0.12,
                 shadowRadius: 12,
                 shadowOffset: { width: 0, height: 6 },

@@ -2,7 +2,8 @@ import { useCallback, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { color, font, layout, type } from "@/components/jua-kali/theme";
+import { color, font, layout, motion, type } from "@/components/jua-kali/theme";
+import { tapHaptic } from "@/components/jua-kali/haptics";
 import {
     configurePurchases,
     purchaseMonthly,
@@ -137,8 +138,13 @@ export function Paywall() {
                             {tier.highlighted && (
                                 <Pressable
                                     onPress={onSubscribe}
+                                    onPressIn={tapHaptic}
                                     disabled={busy !== null || !live || isOwned}
-                                    style={[styles.cta, (!live || isOwned) && styles.ctaDisabled]}
+                                    style={({ pressed }) => [
+                                        styles.cta,
+                                        pressed && styles.ctaPressed,
+                                        (!live || isOwned) && styles.ctaDisabled,
+                                    ]}
                                 >
                                     {busy === "subscribe" ? (
                                         <ActivityIndicator color={color.paper} />
@@ -191,7 +197,7 @@ const styles = StyleSheet.create({
     cards: { gap: 14, marginTop: 22 },
     card: {
         backgroundColor: color.paper,
-        borderRadius: 10,
+        borderRadius: 8,
         borderWidth: 1,
         borderColor: color.line,
         padding: 16,
@@ -215,6 +221,7 @@ const styles = StyleSheet.create({
         alignItems: "center",
     },
     ctaDisabled: { backgroundColor: color.mist },
+    ctaPressed: { transform: [{ scale: motion.pressScale }] },
     ctaText: { fontFamily: font.bodyBold, fontSize: 15, color: color.paper },
     footer: { gap: 10, marginTop: 26 },
     linkBtn: { alignItems: "center", paddingVertical: 4 },

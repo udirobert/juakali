@@ -27,7 +27,8 @@ import {
 import { useProductMode, SOFT_RETURN_MS } from "@/lib/product-mode";
 import { SoftIdentityBar } from "@/components/jua-kali/soft-identity";
 import { SunMark } from "@/components/jua-kali/sun-mark";
-import { color, font, layout } from "@/components/jua-kali/theme";
+import { color, font, layout, motion } from "@/components/jua-kali/theme";
+import { tapHaptic } from "@/components/jua-kali/haptics";
 
 type KpiUnit = "meetings" | "revenue_kes" | "jobs";
 
@@ -353,8 +354,13 @@ export function InvestorLanding({
 
                             <Pressable
                                 onPress={() => void handleExample()}
+                                onPressIn={tapHaptic}
                                 disabled={busy}
-                                style={[styles.cta, busy && styles.disabled]}
+                                style={({ pressed }) => [
+                                    styles.cta,
+                                    pressed && styles.ctaPressed,
+                                    busy && styles.disabled,
+                                ]}
                                 accessibilityRole="button"
                                 accessibilityHint="Loads example deals and opens My deals"
                             >
@@ -445,8 +451,14 @@ export function InvestorLanding({
 
                             <Pressable
                                 onPress={() => void handleStart()}
+                                onPressIn={tapHaptic}
                                 disabled={busy}
-                                style={[styles.cta, busy && styles.disabled]}
+                                style={({ pressed }) => [
+                                    styles.cta,
+                                    pressed && styles.ctaPressed,
+                                    busy && styles.disabled,
+                                ]}
+                                accessibilityRole="button"
                             >
                                 <Text style={styles.ctaText}>{busy ? "Opening…" : "Open commitment"}</Text>
                             </Pressable>
@@ -609,6 +621,7 @@ const styles = StyleSheet.create({
         marginTop: 8,
     },
     ctaText: { fontFamily: font.bodyBold, color: color.paper, fontWeight: "700", fontSize: 15 },
+    ctaPressed: { transform: [{ scale: motion.pressScale }] },
     secondary: {
         fontFamily: font.bodyBold,
         fontSize: 13,

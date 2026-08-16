@@ -29,9 +29,10 @@ import type { FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import { SITE_URL } from "@/lib/site";
 import { HowItWorksCard, TermHint } from "@/components/jua-kali/help";
+import { tapHaptic } from "@/components/jua-kali/haptics";
 import { AuthRequiredGate } from "@/components/jua-kali/soft-identity";
 import { SunMark } from "@/components/jua-kali/sun-mark";
-import { color, font, layout } from "@/components/jua-kali/theme";
+import { color, font, layout, motion, tabularNums } from "@/components/jua-kali/theme";
 
 type Cockpit = FunctionReturnType<typeof api.invest.investorCockpit>;
 type Commitment = Cockpit["commitments"][number];
@@ -138,7 +139,8 @@ function PressableScale({
         <Pressable
             disabled={disabled}
             onPressIn={() => {
-                if (!reduceMotion) scale.value = withSpring(0.97, { damping: 20, stiffness: 400 });
+                tapHaptic();
+                if (!reduceMotion) scale.value = withSpring(motion.pressScale, { damping: 20, stiffness: 400 });
             }}
             onPressOut={() => {
                 if (!reduceMotion) scale.value = withSpring(1, { damping: 18, stiffness: 320 });
@@ -694,6 +696,7 @@ function ProposalCard({
 /**
  * Arrival moment: the first thing on Home is Jua's latest utterance, not
  * metrics. Narrates live inbound runs; otherwise recites the last digest.
+ * The one authored entrance on the screen — mark, voice, timestamp stagger in.
  */
 function AgentArrival({
     liveRun,
@@ -706,6 +709,7 @@ function AgentArrival({
     latestDigest: Commitment["latestDigest"];
     dealCount: number;
 }) {
+    const reduceMotion = useReducedMotion();
     const inboundActing = liveRun?.status === "running" && !runIsOurs;
 
     let voice: string;
@@ -722,13 +726,20 @@ function AgentArrival({
         voice = "Nothing on my desk yet — pledge a venture and I'll start following it.";
     }
 
+    const enter = (index: number) =>
+        reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(index * motion.stagger);
+
     return (
-        <View style={styles.arrival}>
-            <SunMark size={18} />
-            <Text style={styles.arrivalVoice}>{voice}</Text>
-            {latestDigest && !inboundActing ? (
-                <Text style={styles.arrivalWhen}>{relativeTime(latestDigest.createdAt)}</Text>
-            ) : null}
+        <View style={styles.arrival} accessibilityRole="text">
+            <Animated.View entering={enter(0)}>
+                <SunMark size={18} />
+            </Animated.View>
+            <Animated.View style={styles.arrivalBody} entering={enter(1)}>
+                <Text style={styles.arrivalVoice}>{voice}</Text>
+                {latestDigest && !inboundActing ? (
+                    <Text style={styles.arrivalWhen}>{relativeTime(latestDigest.createdAt)}</Text>
+                ) : null}
+            </Animated.View>
         </View>
     );
 }
@@ -1300,7 +1311,7 @@ const styles = StyleSheet.create({
     stripItemOn: { borderColor: color.brass, backgroundColor: color.brassSoft },
     stripName: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.ink },
     stripNameOn: { color: color.charcoal },
-    stripAmt: { fontFamily: font.body, fontSize: 11, color: color.brass },
+    stripAmt: { fontFamily: font.body, fontSize: 11, color: color.brass, fontVariant: tabularNums },
     stack: { gap: 12 },
     metrics: { flexDirection: "row", gap: 8 },
     metric: { flex: 1, padding: 10, borderRadius: 4, backgroundColor: color.stone, gap: 2 },
@@ -1310,6 +1321,7 @@ const styles = StyleSheet.create({
         fontWeight: "700",
         color: color.charcoal,
         letterSpacing: -0.4,
+        fontVariant: tabularNums,
     },
     metricLabel: {
         fontFamily: font.bodyBold,
@@ -1366,12 +1378,12 @@ const styles = StyleSheet.create({
         borderColor: color.brass,
         borderRadius: 6,
     },
+    arrivalBody: { flex: 1, gap: 2 },
     arrivalVoice: {
         fontFamily: font.bodyMedium,
         fontSize: 14,
         lineHeight: 20,
         color: color.ink,
-        flex: 1,
     },
     arrivalWhen: {
         fontFamily: font.body,

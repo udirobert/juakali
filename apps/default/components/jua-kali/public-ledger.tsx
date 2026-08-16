@@ -17,7 +17,7 @@ import { api } from "@/convex/_generated/api";
 import { SITE_URL } from "@/lib/site";
 import { TermHint } from "@/components/jua-kali/help";
 import { SunMark } from "@/components/jua-kali/sun-mark";
-import { color, font, layout } from "@/components/jua-kali/theme";
+import { color, font, layout, tabularNums } from "@/components/jua-kali/theme";
 
 function formatKes(value: number) {
     return `KES ${value.toLocaleString()}`;
@@ -200,6 +200,9 @@ export function PublicLedger({
                         <Pressable
                             onPress={onOpenGlossary ? () => onOpenGlossary("kpi") : undefined}
                             disabled={!onOpenGlossary}
+                            hitSlop={4}
+                            accessibilityRole="button"
+                            accessibilityLabel="What is a KPI?"
                         >
                             <Text style={styles.stat}>{data.totals.checkIns} KPIs</Text>
                         </Pressable>
@@ -207,6 +210,9 @@ export function PublicLedger({
                         <Pressable
                             onPress={onOpenGlossary ? () => onOpenGlossary("digest") : undefined}
                             disabled={!onOpenGlossary}
+                            hitSlop={4}
+                            accessibilityRole="button"
+                            accessibilityLabel="What is a digest?"
                         >
                             <Text style={styles.stat}>{data.totals.digests} digests</Text>
                         </Pressable>
@@ -226,6 +232,8 @@ export function PublicLedger({
                         <Pressable
                             onPress={() => toggleFilter(null)}
                             style={[styles.filterChip, slug === null && styles.filterChipOn]}
+                            accessibilityRole="button"
+                            accessibilityState={{ selected: slug === null }}
                         >
                             <Text style={[styles.filterChipText, slug === null && styles.filterChipTextOn]}>
                                 All
@@ -238,6 +246,8 @@ export function PublicLedger({
                                     key={venture.slug}
                                     onPress={() => toggleFilter(on ? null : venture.slug)}
                                     style={[styles.filterChip, on && styles.filterChipOn]}
+                                    accessibilityRole="button"
+                                    accessibilityState={{ selected: on }}
                                 >
                                     <Text style={[styles.filterChipText, on && styles.filterChipTextOn]}>
                                         {venture.name}
@@ -260,7 +270,10 @@ export function PublicLedger({
                             <View key={event.id} style={styles.row}>
                                 <View style={styles.rowTop}>
                                     <View style={styles.typeRow}>
-                                        <Text style={styles.typeGlyph}>{typeGlyph(event.type)}</Text>
+                                        {/* Decorative signature — the type label carries the meaning. */}
+                                        <Text style={styles.typeGlyph} accessibilityElementsHidden>
+                                            {typeGlyph(event.type)}
+                                        </Text>
                                         <Text style={styles.type}>{typeLabel(event.type)}</Text>
                                         {onOpenGlossary ? (
                                             <TermHint
@@ -282,6 +295,8 @@ export function PublicLedger({
                                             }
                                             disabled={!event.ventureSlug}
                                             hitSlop={4}
+                                            accessibilityRole="button"
+                                            accessibilityLabel={`Filter ledger by ${event.ventureName}`}
                                         >
                                             <Text style={styles.venture}>{event.ventureName}</Text>
                                         </Pressable>
@@ -347,6 +362,7 @@ const styles = StyleSheet.create({
         letterSpacing: -1.2,
         color: color.charcoal,
         marginTop: 4,
+        fontVariant: tabularNums,
     },
     totalHint: {
         fontFamily: font.body,
@@ -356,7 +372,7 @@ const styles = StyleSheet.create({
         textAlign: "center",
     },
     stats: { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap", justifyContent: "center" },
-    stat: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.ink },
+    stat: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.ink, fontVariant: tabularNums },
     statDot: { color: color.mist },
     shareLink: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.brassDeep },
     filterRow: { gap: 6, paddingHorizontal: 2, paddingVertical: 2 },

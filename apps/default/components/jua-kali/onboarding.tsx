@@ -31,7 +31,7 @@ import { useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 
 import { api } from "@/convex/_generated/api";
-import { color, font } from "@/components/jua-kali/theme";
+import { color, font, motion } from "@/components/jua-kali/theme";
 
 type InterviewResult = FunctionReturnType<typeof api.telephony.runApprenticeInterview>;
 type MatchResult = InterviewResult["matches"][number];
@@ -666,7 +666,7 @@ const styles = StyleSheet.create({
     craftChip: { gap: 4, padding: 14, minHeight: 78, borderTopLeftRadius: 26, borderTopRightRadius: 10, borderBottomLeftRadius: 12, borderBottomRightRadius: 28, backgroundColor: "rgba(255,253,247,0.78)", borderWidth: 1, borderColor: "rgba(59,77,59,0.14)", boxShadow: "0 12px 22px rgba(59,77,59,0.1)" },
     craftChipActive: { backgroundColor: palette.olive, borderColor: palette.olive },
     craftChipTitle: { color: palette.ink, fontFamily: headingFont, fontSize: 17, fontWeight: "800" },
-    craftChipTitleActive: { color: "#FFFDF7" },
+    craftChipTitleActive: { color: color.foam },
     craftChipHint: { color: "rgba(36,49,36,0.62)", fontFamily: bodyFont, fontSize: 12, fontWeight: "300", lineHeight: 16 },
     craftChipHintActive: { color: "rgba(255,253,247,0.82)" },
 
@@ -674,7 +674,7 @@ const styles = StyleSheet.create({
     placeChip: { paddingHorizontal: 16, paddingVertical: 11, borderRadius: 22, borderTopLeftRadius: 6, backgroundColor: "rgba(255,253,247,0.78)", borderWidth: 1, borderColor: "rgba(59,77,59,0.16)" },
     placeChipActive: { backgroundColor: palette.terracotta, borderColor: palette.terracotta },
     placeChipText: { color: palette.ink, fontFamily: bodyFont, fontSize: 14, fontWeight: "700" },
-    placeChipTextActive: { color: "#FFFDF7" },
+    placeChipTextActive: { color: color.foam },
     input: { marginTop: 4, paddingHorizontal: 16, paddingVertical: 13, borderRadius: 18, borderTopLeftRadius: 6, backgroundColor: "rgba(255,253,247,0.9)", borderWidth: 1, borderColor: "rgba(59,77,59,0.18)", color: palette.ink, fontFamily: bodyFont, fontSize: 15 },
     continueRow: { marginTop: 6, alignItems: "flex-start" },
     errorText: { color: palette.terracotta, fontFamily: bodyFont, fontSize: 13, fontWeight: "700" },
@@ -693,7 +693,7 @@ const styles = StyleSheet.create({
     matchCard: { flexDirection: "row", gap: 13, padding: 14, backgroundColor: "rgba(255,253,247,0.82)", borderTopLeftRadius: 30, borderTopRightRadius: 12, borderBottomLeftRadius: 14, borderBottomRightRadius: 34, borderWidth: 1, borderColor: "rgba(59,77,59,0.12)", boxShadow: "0 18px 30px rgba(59,77,59,0.14)" },
     matchCardOffset: { marginLeft: "7%" },
     matchBadge: { width: 58, height: 58, alignItems: "center", justifyContent: "center" },
-    matchBadgeText: { color: "#FFFDF7", fontFamily: headingFont, fontSize: 26, fontWeight: "900" },
+    matchBadgeText: { color: color.foam, fontFamily: headingFont, fontSize: 26, fontWeight: "900" },
     matchBody: { flex: 1, gap: 4 },
     matchTopline: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
     matchName: { flex: 1, color: palette.ink, fontFamily: headingFont, fontSize: 18, fontWeight: "900" },
@@ -707,12 +707,12 @@ const styles = StyleSheet.create({
     revealActions: { gap: 12, alignItems: "flex-start" },
 
     primaryButton: { overflow: "hidden", paddingHorizontal: 26, paddingVertical: 15, borderTopLeftRadius: 26, borderTopRightRadius: 10, borderBottomLeftRadius: 12, borderBottomRightRadius: 28, boxShadow: "0 16px 28px rgba(224,122,95,0.34)" },
-    primaryPressed: { transform: [{ scale: 0.97 }] },
+    primaryPressed: { transform: [{ scale: motion.pressScale }] },
     primaryDisabled: { opacity: 0.5 },
-    primaryLabel: { color: "#FFFDF7", fontFamily: headingFont, fontSize: 16, fontWeight: "900", letterSpacing: 0.3 },
+    primaryLabel: { color: color.foam, fontFamily: headingFont, fontSize: 16, fontWeight: "900", letterSpacing: 0.3 },
     ghostLink: { paddingVertical: 4 },
     ghostLinkText: { color: palette.olive, fontFamily: bodyFont, fontSize: 14, fontWeight: "700" },
-    pressed: { transform: [{ scale: 0.97 }] },
+    pressed: { transform: [{ scale: motion.pressScale }] },
 
     mascotBody: { borderTopLeftRadius: 48, borderTopRightRadius: 40, borderBottomLeftRadius: 44, borderBottomRightRadius: 52, transform: [{ rotate: "-4deg" }], boxShadow: "0 14px 24px rgba(59,77,59,0.22)" },
     mascotEye: { position: "absolute", width: 12, height: 14, borderRadius: 7, backgroundColor: palette.ink },
