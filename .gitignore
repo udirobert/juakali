@@ -130,6 +130,15 @@ lost+found/
 .qoder/settings.local.json
 
 # ============================================
+# Agent / AI session scratch (do not commit)
+# ============================================
+.zcode/
+.codex/
+.continue/
+.aider*
+.windsurf/
+
+# ============================================
 # Plans / Notes (optional - uncomment if needed)
 # ============================================
 # plans/

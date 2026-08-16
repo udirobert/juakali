@@ -5,7 +5,6 @@ import {
     Pressable,
     StyleSheet,
     Text,
-    TextInput,
     useWindowDimensions,
     View,
 } from "react-native";
@@ -32,6 +31,8 @@ import type { FunctionReturnType } from "convex/server";
 
 import { api } from "@/convex/_generated/api";
 import { color, font, motion } from "@/components/jua-kali/theme";
+import { useCountUp } from "@/components/jua-kali/hooks/use-count-up";
+import { Button, Card, Chip, Input } from "@/components/jua-kali/ui";
 
 type InterviewResult = FunctionReturnType<typeof api.telephony.runApprenticeInterview>;
 type MatchResult = InterviewResult["matches"][number];
@@ -276,7 +277,7 @@ function WelcomeStep({ height, onStart, onAdmin }: { height: number; onStart: ()
             </View>
             <SocialProofBand />
             <View style={styles.welcomeActions}>
-                <PrimaryButton label="Start matching" onPress={onStart} />
+                <Button label="Start matching" variant="approve" onPress={onStart} style={styles.labCta} />
                 <Pressable accessibilityRole="button" onPress={onAdmin} hitSlop={8} style={styles.ghostLink}>
                     <Text style={styles.ghostLinkText}>I run the program →</Text>
                 </Pressable>
@@ -292,28 +293,10 @@ const testimonials = [
 ];
 
 function CountUp({ to, suffix = "" }: { to: number; suffix?: string }) {
-    const reducedMotion = useReducedMotion();
-    const [value, setValue] = useState(reducedMotion ? to : 0);
-    useEffect(() => {
-        if (reducedMotion) {
-            setValue(to);
-            return;
-        }
-        let raf = 0;
-        const start = Date.now();
-        const duration = 1300;
-        const tick = () => {
-            const t = Math.min(1, (Date.now() - start) / duration);
-            const eased = 1 - Math.pow(1 - t, 3);
-            setValue(Math.round(to * eased));
-            if (t < 1) raf = requestAnimationFrame(tick);
-        };
-        raf = requestAnimationFrame(tick);
-        return () => cancelAnimationFrame(raf);
-    }, [to, reducedMotion]);
+    const value = useCountUp(to, 1300);
     return (
         <Text style={styles.statValue}>
-            {value.toLocaleString()}
+            {Math.round(value).toLocaleString()}
             {suffix}
         </Text>
     );
@@ -339,13 +322,13 @@ function RotatingTestimonial() {
     }, [reducedMotion]);
     const item = testimonials[index];
     return (
-        <View style={styles.testimonialCard}>
+        <Card style={styles.testimonialCard}>
             <Text style={styles.stars}>★★★★★</Text>
             <Animated.View key={index} entering={FadeIn.duration(420)}>
                 <Text style={styles.testimonialQuote}>“{item.quote}”</Text>
                 <Text style={styles.testimonialName}>{item.name}</Text>
             </Animated.View>
-        </View>
+        </Card>
     );
 }
 
@@ -446,33 +429,22 @@ function LocationStep({
             </View>
             <Text style={styles.stepTitle}>Your area</Text>
             <View style={styles.locationGrid}>
-                {locations.map((place, index) => {
-                    const active = selected === place;
-                    return (
-                        <Animated.View key={place} entering={FadeInUp.delay(index * 40).duration(240)}>
-                            <Pressable
-                                accessibilityRole="button"
-                                onPress={() => onSelect(place)}
-                                style={({ pressed }) => [styles.placeChip, active && styles.placeChipActive, pressed && styles.pressed]}
-                            >
-                                <Text style={[styles.placeChipText, active && styles.placeChipTextActive]}>{place}</Text>
-                            </Pressable>
-                        </Animated.View>
-                    );
-                })}
+                {locations.map((place, index) => (
+                    <Animated.View key={place} entering={FadeInUp.delay(index * 40).duration(240)}>
+                        <Chip label={place} active={selected === place} onPress={() => onSelect(place)} />
+                    </Animated.View>
+                ))}
             </View>
-            <TextInput
+            <Input
                 value={custom}
                 onChangeText={onChangeCustom}
                 placeholder="Or type another town…"
-                placeholderTextColor="rgba(36,49,36,0.4)"
-                style={styles.input}
                 returnKeyType="done"
                 onSubmitEditing={() => canContinue && onContinue()}
             />
             {errorText ? <Text style={styles.errorText}>{errorText}</Text> : null}
             <View style={styles.continueRow}>
-                <PrimaryButton label="Build my plan" onPress={onContinue} disabled={!canContinue} />
+                <Button label="Build my plan" variant="approve" onPress={onContinue} disabled={!canContinue} style={styles.labCta} />
             </View>
         </Animated.View>
     );
@@ -536,7 +508,7 @@ function RevealStep({
                 )}
             </View>
             <View style={styles.revealActions}>
-                <PrimaryButton label="Enter the program" onPress={onEnter} />
+                <Button label="Enter the program" variant="approve" onPress={onEnter} style={styles.labCta} />
                 <Pressable accessibilityRole="button" onPress={onRestart} hitSlop={8} style={styles.ghostLink}>
                     <Text style={styles.ghostLinkText}>Try another craft</Text>
                 </Pressable>
@@ -547,26 +519,35 @@ function RevealStep({
 
 function MatchCard({ match, index }: { match: MatchResult; index: number }) {
     return (
-        <Animated.View entering={FadeInUp.delay(index * 140).duration(420)} style={[styles.matchCard, index % 2 === 1 && styles.matchCardOffset]}>
-            <LinearGradient
-                colors={index === 0 ? [palette.terracotta, color.brassDeep] : [palette.sage, palette.olive]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={[styles.matchBadge, clipBlobStyle]}
-            >
-                <Text style={styles.matchBadgeText}>{match.name.charAt(0)}</Text>
-            </LinearGradient>
-            <View style={styles.matchBody}>
-                <View style={styles.matchTopline}>
-                    <Text style={styles.matchName}>{match.name}</Text>
-                    <View style={styles.scorePill}>
-                        <Text style={styles.scorePillText}>{match.score}</Text>
+        <Animated.View
+            entering={FadeInUp.delay(index * 140).duration(420)}
+            style={index % 2 === 1 ? styles.matchCardOffset : undefined}
+        >
+            <Card style={styles.matchCard}>
+                <LinearGradient
+                    colors={index === 0 ? [palette.terracotta, color.brassDeep] : [palette.sage, palette.olive]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={[styles.matchBadge, clipBlobStyle]}
+                >
+                    <Text style={styles.matchBadgeText}>{match.name.charAt(0)}</Text>
+                </LinearGradient>
+                <View style={styles.matchBody}>
+                    <View style={styles.matchTopline}>
+                        <Text style={styles.matchName}>{match.name}</Text>
+                        <View style={styles.scorePill}>
+                            <Text style={styles.scorePillText}>{match.score}</Text>
+                        </View>
                     </View>
+                    <Text style={styles.matchMeta}>
+                        {match.craftText} · {match.locationText}
+                    </Text>
+                    <Text numberOfLines={2} style={styles.matchSummary}>
+                        {match.profileSummary}
+                    </Text>
+                    <Text style={styles.matchSkills}>{match.keySkills.slice(0, 3).join(" · ")}</Text>
                 </View>
-                <Text style={styles.matchMeta}>{match.craftText} · {match.locationText}</Text>
-                <Text numberOfLines={2} style={styles.matchSummary}>{match.profileSummary}</Text>
-                <Text style={styles.matchSkills}>{match.keySkills.slice(0, 3).join(" · ")}</Text>
-            </View>
+            </Card>
         </Animated.View>
     );
 }
@@ -584,20 +565,6 @@ function RoleCard({ emoji, title, body, tone, onPress }: { emoji: string; title:
                 <Text style={styles.roleBody}>{body}</Text>
             </View>
             <Text style={styles.roleArrow}>→</Text>
-        </Pressable>
-    );
-}
-
-function PrimaryButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {
-    return (
-        <Pressable
-            accessibilityRole="button"
-            disabled={disabled}
-            onPress={onPress}
-            style={({ pressed }) => [styles.primaryButton, pressed && styles.primaryPressed, disabled && styles.primaryDisabled]}
-        >
-            <LinearGradient colors={[palette.terracotta, color.brassDeep]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-            <Text style={styles.primaryLabel}>{label}</Text>
         </Pressable>
     );
 }
@@ -671,11 +638,6 @@ const styles = StyleSheet.create({
     craftChipHintActive: { color: "rgba(255,253,247,0.82)" },
 
     locationGrid: { flexDirection: "row", flexWrap: "wrap", gap: 9 },
-    placeChip: { paddingHorizontal: 16, paddingVertical: 11, borderRadius: 22, borderTopLeftRadius: 6, backgroundColor: "rgba(255,253,247,0.78)", borderWidth: 1, borderColor: "rgba(59,77,59,0.16)" },
-    placeChipActive: { backgroundColor: palette.terracotta, borderColor: palette.terracotta },
-    placeChipText: { color: palette.ink, fontFamily: bodyFont, fontSize: 14, fontWeight: "700" },
-    placeChipTextActive: { color: color.foam },
-    input: { marginTop: 4, paddingHorizontal: 16, paddingVertical: 13, borderRadius: 18, borderTopLeftRadius: 6, backgroundColor: "rgba(255,253,247,0.9)", borderWidth: 1, borderColor: "rgba(59,77,59,0.18)", color: palette.ink, fontFamily: bodyFont, fontSize: 15 },
     continueRow: { marginTop: 6, alignItems: "flex-start" },
     errorText: { color: palette.terracotta, fontFamily: bodyFont, fontSize: 13, fontWeight: "700" },
 
@@ -690,7 +652,7 @@ const styles = StyleSheet.create({
     revealHeader: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
     revealTitle: { color: palette.olive, fontFamily: headingFont, fontSize: 28, fontWeight: "800", letterSpacing: -1, marginLeft: -18 },
     matchList: { gap: 14, flex: 1 },
-    matchCard: { flexDirection: "row", gap: 13, padding: 14, backgroundColor: "rgba(255,253,247,0.82)", borderTopLeftRadius: 30, borderTopRightRadius: 12, borderBottomLeftRadius: 14, borderBottomRightRadius: 34, borderWidth: 1, borderColor: "rgba(59,77,59,0.12)", boxShadow: "0 18px 30px rgba(59,77,59,0.14)" },
+    matchCard: { flexDirection: "row", gap: 13, padding: 14 },
     matchCardOffset: { marginLeft: "7%" },
     matchBadge: { width: 58, height: 58, alignItems: "center", justifyContent: "center" },
     matchBadgeText: { color: color.foam, fontFamily: headingFont, fontSize: 26, fontWeight: "900" },
@@ -706,10 +668,7 @@ const styles = StyleSheet.create({
     emptyRevealText: { color: "rgba(36,49,36,0.74)", fontFamily: bodyFont, fontSize: 14, fontWeight: "300", lineHeight: 20 },
     revealActions: { gap: 12, alignItems: "flex-start" },
 
-    primaryButton: { overflow: "hidden", paddingHorizontal: 26, paddingVertical: 15, borderTopLeftRadius: 26, borderTopRightRadius: 10, borderBottomLeftRadius: 12, borderBottomRightRadius: 28, boxShadow: "0 16px 28px rgba(224,122,95,0.34)" },
-    primaryPressed: { transform: [{ scale: motion.pressScale }] },
-    primaryDisabled: { opacity: 0.5 },
-    primaryLabel: { color: color.foam, fontFamily: headingFont, fontSize: 16, fontWeight: "900", letterSpacing: 0.3 },
+    labCta: { alignSelf: "stretch" },
     ghostLink: { paddingVertical: 4 },
     ghostLinkText: { color: palette.olive, fontFamily: bodyFont, fontSize: 14, fontWeight: "700" },
     pressed: { transform: [{ scale: motion.pressScale }] },
@@ -733,7 +692,7 @@ const styles = StyleSheet.create({
     noise: { ...StyleSheet.absoluteFillObject, opacity: 0.16, backgroundColor: "rgba(255,255,255,0.22)" },
 
     proofBand: { flex: 1, justifyContent: "center", gap: 12, minHeight: 0, marginTop: 2 },
-    testimonialCard: { alignSelf: "flex-start", maxWidth: "94%", backgroundColor: "rgba(255,253,247,0.82)", paddingHorizontal: 15, paddingVertical: 12, borderTopLeftRadius: 6, borderTopRightRadius: 22, borderBottomLeftRadius: 22, borderBottomRightRadius: 22, borderWidth: 1, borderColor: "rgba(59,77,59,0.12)", boxShadow: "0 12px 22px rgba(59,77,59,0.1)", transform: [{ rotate: "-1.2deg" }] },
+    testimonialCard: { alignSelf: "flex-start", maxWidth: "94%", paddingHorizontal: 15, paddingVertical: 12, gap: 0 },
     stars: { color: palette.terracotta, fontSize: 13, letterSpacing: 2, marginBottom: 5 },
     testimonialQuote: { color: palette.ink, fontFamily: bodyFont, fontSize: 14, fontWeight: "500", lineHeight: 19 },
     testimonialName: { color: palette.moss, fontFamily: bodyFont, fontSize: 12, fontWeight: "800", marginTop: 4 },

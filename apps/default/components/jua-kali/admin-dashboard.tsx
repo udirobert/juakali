@@ -26,7 +26,8 @@ import type { FunctionReturnType } from "convex/server";
 import type { ViewStyle } from "react-native";
 
 import { api } from "@/convex/_generated/api";
-import { color, motion } from "@/components/jua-kali/theme";
+import { Button } from "@/components/jua-kali/ui";
+import { color } from "@/components/jua-kali/theme";
 
 type DashboardData = FunctionReturnType<typeof api.telephony.dashboardData>;
 type MasterSummary = DashboardData["masters"][number];
@@ -142,8 +143,19 @@ export function AdminDashboard() {
                             Matching Kenyan master artisans with youth seeking practical skills.
                         </Text>
                         <View style={styles.actionsRow}>
-                            <OrganicButton label="Seed demo village" onPress={handleSeedDemo} disabled={isSeeding} tone="terracotta" />
-                            <OrganicButton label="Send queued SMS" onPress={handleSendQueued} disabled={isSending} tone="olive" />
+                            <Button
+                                label="Seed demo village"
+                                variant="approve"
+                                onPress={() => void handleSeedDemo()}
+                                disabled={isSeeding}
+                                busy={isSeeding}
+                            />
+                            <Button
+                                label="Send queued SMS"
+                                onPress={() => void handleSendQueued()}
+                                disabled={isSending}
+                                busy={isSending}
+                            />
                         </View>
                         {statusMessage ? <Text style={styles.statusLine}>{statusMessage}</Text> : null}
                     </View>
@@ -253,24 +265,6 @@ function WaveDivider() {
             <View style={[styles.waveLobe, styles.waveLobeThree]} />
             <View style={styles.waveStroke} />
         </View>
-    );
-}
-
-function OrganicButton({ label, onPress, disabled, tone }: { label: string; onPress: () => void; disabled: boolean; tone: "terracotta" | "olive" }) {
-    return (
-        <Pressable
-            accessibilityRole="button"
-            disabled={disabled}
-            onPress={onPress}
-            style={({ pressed }) => [
-                styles.organicButton,
-                tone === "terracotta" ? styles.terracottaButton : styles.oliveButton,
-                pressed && styles.buttonPressed,
-                disabled && styles.buttonDisabled,
-            ]}
-        >
-            <Text style={styles.organicButtonText}>{disabled ? "Working…" : label}</Text>
-        </Pressable>
     );
 }
 
@@ -422,7 +416,7 @@ function StatusInk({ label }: { label: string }) {
 
 function AudioLink({ url }: { url: string }) {
     return (
-        <Pressable accessibilityRole="link" onPress={() => void Linking.openURL(url)} style={({ pressed }) => [styles.audioLink, pressed && styles.buttonPressed]}>
+        <Pressable accessibilityRole="link" onPress={() => void Linking.openURL(url)} style={({ pressed }) => [styles.audioLink, pressed && { opacity: 0.7 }]}>
             <Text style={styles.audioText}>Open audio</Text>
         </Pressable>
     );
@@ -594,33 +588,6 @@ const styles = StyleSheet.create({
         gap: 12,
         marginLeft: 4,
         marginTop: 8,
-    },
-    organicButton: {
-        paddingHorizontal: 18,
-        paddingVertical: 13,
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 8,
-        borderBottomLeftRadius: 10,
-        borderBottomRightRadius: 24,
-        boxShadow: "0 16px 28px rgba(59, 77, 59, 0.24)",
-    },
-    terracottaButton: {
-        backgroundColor: palette.terracotta,
-    },
-    oliveButton: {
-        backgroundColor: palette.olive,
-    },
-    buttonPressed: {
-        transform: [{ scale: motion.pressScale }, { rotate: "-1deg" }],
-    },
-    buttonDisabled: {
-        opacity: 0.64,
-    },
-    organicButtonText: {
-        color: color.foam,
-        fontSize: 13,
-        fontWeight: "800",
-        letterSpacing: 0.2,
     },
     statusLine: {
         color: palette.olive,
