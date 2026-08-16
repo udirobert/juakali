@@ -83,6 +83,13 @@ Ship a demoable full thin loop for investor leads: soft revenue-share microcommi
 - [ ] Gmail for human investor; capital may stay soft while email stays live
 - [ ] Optional ICS for digest cadence (not full calendar OAuth yet)
 
+## Design close-out
+- [x] **Reduced motion as one source**: `hooks/use-ui-motion.ts` now powers the authored entrances (arrival, proposal, gate, chat bubbles) and snaps them when the OS asks for less — no per-file `useReducedMotion` reinvention. Dark-token groundwork (`colorDark` + `themeColors`) shipped quietly.
+- [x] **Decompose monoliths**: cockpit helpers → `cockpit/format.ts`, cockpit styles → `cockpit/investor-cockpit.styles.ts`, ledger styles → `ledger/public-ledger.styles.ts`. `investor-cockpit.tsx` ~1731 → 1327 lines; `public-ledger.tsx` 565 → 431.
+- [x] **Ledger mobile density**: collapsed rows fold evidence tags into a "+N" chip and tighten vertical rhythm at phone width; expanded rows still show full evidence.
+- [x] **Lab system tone**: `theme.lab` + `SectionLabel variant="lab"` so operator faces read as system, not investor theater. (Admin Ops still carries its own organic legacy treatment — unifying it onto `theme.lab` is a follow-up.)
+- [x] **Paywall QA**: already on the ledger shell with correct demo-vs-live behavior; added `role=button` to the restore link for a11y.
+
 ## Notes
 - Avoid claiming regulated securities in UI copy.
 - AgentMail Svix verification is **on** when `AGENTMAIL_WEBHOOK_SECRET` is set (prod).
