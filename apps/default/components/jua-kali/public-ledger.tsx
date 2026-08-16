@@ -5,7 +5,6 @@ import {
     Pressable,
     ScrollView,
     Share,
-    StyleSheet,
     Text,
     useWindowDimensions,
     View,
@@ -22,6 +21,7 @@ import { useQuery } from "convex/react";
 
 import { api } from "@/convex/_generated/api";
 import { SITE_URL } from "@/lib/site";
+import { styles } from "@/components/jua-kali/ledger/public-ledger.styles";
 import { TermHint } from "@/components/jua-kali/help";
 import { SunMark } from "@/components/jua-kali/sun-mark";
 import {
@@ -35,7 +35,7 @@ import {
 } from "@/components/jua-kali/icons";
 import { Chip } from "@/components/jua-kali/ui";
 import { useCountUp } from "@/components/jua-kali/hooks/use-count-up";
-import { color, font, layout, motion, tabularNums } from "@/components/jua-kali/theme";
+import { color, layout, motion } from "@/components/jua-kali/theme";
 
 function formatKes(value: number) {
     return `KES ${value.toLocaleString()}`;
@@ -429,137 +429,3 @@ function LedgerRow({
     );
 }
 
-const styles = StyleSheet.create({
-    screen: { flex: 1, backgroundColor: color.stone },
-    loadingScreen: {
-        flex: 1,
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: color.stone,
-    },
-    content: { paddingTop: 8, gap: 16 },
-    hero: { alignItems: "center", gap: 8 },
-    titleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-    title: {
-        fontFamily: font.display,
-        fontSize: 34,
-        fontWeight: "700",
-        letterSpacing: -1,
-        color: color.charcoal,
-    },
-    titleCompact: {
-        fontFamily: font.displayMedium,
-        fontSize: 22,
-        fontWeight: "600",
-        letterSpacing: -0.4,
-        color: color.charcoal,
-    },
-    sub: {
-        fontFamily: font.body,
-        fontSize: 13,
-        color: color.mist,
-        textAlign: "center",
-        maxWidth: 380,
-        lineHeight: 18,
-    },
-    total: {
-        fontFamily: font.display,
-        fontSize: 40,
-        fontWeight: "700",
-        letterSpacing: -1.2,
-        color: color.charcoal,
-        marginTop: 4,
-        fontVariant: tabularNums,
-    },
-    totalHint: {
-        fontFamily: font.body,
-        fontSize: 11,
-        color: color.mist,
-        marginTop: -4,
-        textAlign: "center",
-    },
-    stats: { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap", justifyContent: "center" },
-    stat: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.ink, fontVariant: tabularNums },
-    statDot: { color: color.mist },
-    shareRowInner: { flexDirection: "row", alignItems: "center", gap: 5 },
-    shareLink: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.brassDeep },
-    filterRow: { gap: 6, paddingHorizontal: 2, paddingVertical: 2 },
-    feed: {
-        backgroundColor: color.paper,
-        borderWidth: 1,
-        borderColor: color.line,
-        borderRadius: 6,
-        paddingHorizontal: 14,
-    },
-    empty: {
-        fontFamily: font.body,
-        fontSize: 13,
-        color: color.mist,
-        textAlign: "center",
-        paddingVertical: 24,
-        lineHeight: 19,
-    },
-    row: {
-        gap: 4,
-        paddingVertical: 12,
-        borderTopWidth: 1,
-        borderTopColor: color.line,
-    },
-    rowTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-    rowWhen: { flexDirection: "row", alignItems: "center", gap: 5 },
-    typeRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-    type: {
-        fontFamily: font.bodyBold,
-        fontSize: 11,
-        fontWeight: "700",
-        letterSpacing: 0.8,
-        textTransform: "uppercase",
-        color: color.brassDeep,
-    },
-    when: { fontFamily: font.body, fontSize: 11, color: color.mist },
-    summary: { fontFamily: font.body, fontSize: 14, lineHeight: 20, color: color.ink },
-    rowFoot: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
-    venture: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.charcoal },
-    evidenceRow: { flexDirection: "row", gap: 4, flexWrap: "wrap", justifyContent: "flex-end" },
-    evidenceChip: {
-        paddingHorizontal: 7,
-        paddingVertical: 3,
-        borderRadius: 4,
-        backgroundColor: color.brassSoft,
-        borderWidth: 1,
-        borderColor: "rgba(166,124,45,0.25)",
-    },
-    evidenceChipText: {
-        fontFamily: font.bodyBold,
-        fontSize: 9,
-        fontWeight: "700",
-        letterSpacing: 0.4,
-        textTransform: "uppercase",
-        color: color.brassDeep,
-    },
-    // The expanded preview — the record at full size.
-    rowDetail: {
-        gap: 8,
-        marginTop: 4,
-        paddingTop: 10,
-        borderTopWidth: 1,
-        borderTopColor: color.line,
-    },
-    detailLine: { gap: 2 },
-    detailLabel: {
-        fontFamily: font.bodyBold,
-        fontSize: 9,
-        fontWeight: "700",
-        letterSpacing: 0.8,
-        textTransform: "uppercase",
-        color: color.mist,
-    },
-    detailValue: {
-        fontFamily: font.body,
-        fontSize: 14,
-        color: color.ink,
-    },
-    detailValueNum: { fontVariant: tabularNums },
-    evidenceChipBig: { paddingVertical: 5, paddingHorizontal: 9 },
-    evidenceChipTextBig: { fontSize: 10, letterSpacing: 0.6 },
-});
