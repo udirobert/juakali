@@ -54,13 +54,15 @@ export default function RootLayout() {
             "https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;700&display=swap";
         document.head.appendChild(link);
 
-        // Crisper text on macOS — applied once at the root, not per element.
+        // Crisper text on macOS + a visible brass focus ring for keyboard users.
+        // Applied once at the root, not per element.
         const baseId = "juakali-web-base";
         if (!document.getElementById(baseId)) {
             const style = document.createElement("style");
             style.id = baseId;
             style.textContent =
-                "html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }";
+                "html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; } " +
+                ":focus-visible { outline: 2px solid #A67C2D; outline-offset: 2px; border-radius: 2px; }";
             document.head.appendChild(style);
         }
     }, []);

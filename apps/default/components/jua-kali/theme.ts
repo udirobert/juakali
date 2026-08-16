@@ -45,10 +45,25 @@ export const motion = {
     base: 250,
     /** Deliberately authored entrance (the arrival voice). Rare only. */
     slow: 400,
+    /** The two authored moments — landing sun rise, approval ignition. */
+    hero: 600,
     /** Delay between items in an authored stagger. */
     stagger: 60,
     /** Tactile press scale — 0.96; never below 0.95. */
     pressScale: 0.96,
+};
+
+/**
+ * The sun system — the brand's signature. A venture's sun rises as it proves
+ * itself: dawn (pledged, unproven) → rising (KPIs landing) → high noon
+ * (digests published, ledger proof). Colors stay inside the brass family.
+ */
+export const sun = {
+    dawn: color.brassDeep,
+    rising: color.brass,
+    noon: color.brassLight,
+    /** Horizon hairline the hero sun rises over. */
+    horizon: color.lineStrong,
 };
 
 /** fontVariant for any number that updates live — prevents layout jitter. */
@@ -79,6 +94,26 @@ export const font = {
 
 export const layout = {
     maxWidth: 880,
+};
+
+/**
+ * Elevation — reserved for artifact surfaces (digest, proposal) that must read
+ * as "produced documents" rather than flat boxes. Routine cards stay flat with
+ * their 1px line; this is the exception, not the default.
+ */
+export const elevation = {
+    raised: Platform.select({
+        web: {
+            boxShadow: "0 1px 2px rgba(20,24,22,0.05), 0 6px 18px rgba(20,24,22,0.05)",
+        },
+        default: {
+            shadowColor: "#141816",
+            shadowOpacity: 0.07,
+            shadowRadius: 6,
+            shadowOffset: { width: 0, height: 2 },
+            elevation: 2,
+        },
+    }),
 };
 
 export const type = {

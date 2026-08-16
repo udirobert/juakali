@@ -2,8 +2,8 @@ import { useCallback, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { color, font, layout, motion, type } from "@/components/jua-kali/theme";
-import { tapHaptic } from "@/components/jua-kali/haptics";
+import { color, font, layout, type } from "@/components/jua-kali/theme";
+import { Button, Card } from "@/components/jua-kali/ui";
 import {
     configurePurchases,
     purchaseMonthly,
@@ -120,9 +120,9 @@ export function Paywall() {
                         (tier.id === "investor" && alreadyInvestor) ||
                         (tier.id === "mentor" && entitlements.has("pro"));
                     return (
-                        <View
+                        <Card
                             key={tier.id}
-                            style={[styles.card, tier.highlighted && styles.cardHighlight]}
+                            style={tier.highlighted ? styles.cardHighlight : undefined}
                         >
                             <View style={styles.cardHead}>
                                 <Text style={[type.title, styles.cardTitle]}>{tier.name}</Text>
@@ -136,26 +136,17 @@ export function Paywall() {
                                 </View>
                             ))}
                             {tier.highlighted && (
-                                <Pressable
+                                <Button
+                                    label={
+                                        isOwned ? "Active" : live ? "Start Investor" : "Coming in live mode"
+                                    }
                                     onPress={onSubscribe}
-                                    onPressIn={tapHaptic}
                                     disabled={busy !== null || !live || isOwned}
-                                    style={({ pressed }) => [
-                                        styles.cta,
-                                        pressed && styles.ctaPressed,
-                                        (!live || isOwned) && styles.ctaDisabled,
-                                    ]}
-                                >
-                                    {busy === "subscribe" ? (
-                                        <ActivityIndicator color={color.paper} />
-                                    ) : (
-                                        <Text style={styles.ctaText}>
-                                            {isOwned ? "Active" : live ? "Start Investor" : "Coming in live mode"}
-                                        </Text>
-                                    )}
-                                </Pressable>
+                                    busy={busy === "subscribe"}
+                                    style={styles.tierCta}
+                                />
                             )}
-                        </View>
+                        </Card>
                     );
                 })}
             </View>
@@ -195,17 +186,9 @@ const styles = StyleSheet.create({
     },
     demoText: { fontFamily: font.bodyMedium, fontSize: 13, color: color.charcoal, lineHeight: 20 },
     cards: { gap: 14, marginTop: 22 },
-    card: {
-        backgroundColor: color.paper,
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: color.line,
-        padding: 16,
-    },
     cardHighlight: {
         borderColor: color.brass,
         borderWidth: 2,
-        backgroundColor: color.paper,
     },
     cardHead: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between" },
     cardTitle: { fontSize: 22 },
@@ -213,16 +196,7 @@ const styles = StyleSheet.create({
     featureRow: { flexDirection: "row", alignItems: "flex-start", gap: 8, marginTop: 8 },
     bullet: { color: color.brassDeep, fontFamily: font.bodyBold },
     feature: { flex: 1, fontFamily: font.body, fontSize: 14, color: color.ink, lineHeight: 20 },
-    cta: {
-        marginTop: 16,
-        backgroundColor: color.charcoal,
-        borderRadius: 8,
-        paddingVertical: 13,
-        alignItems: "center",
-    },
-    ctaDisabled: { backgroundColor: color.mist },
-    ctaPressed: { transform: [{ scale: motion.pressScale }] },
-    ctaText: { fontFamily: font.bodyBold, fontSize: 15, color: color.paper },
+    tierCta: { marginTop: 16 },
     footer: { gap: 10, marginTop: 26 },
     linkBtn: { alignItems: "center", paddingVertical: 4 },
     link: { fontFamily: font.bodyBold, color: color.brassDeep, fontSize: 14 },

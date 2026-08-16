@@ -5,12 +5,19 @@ import {
     ScrollView,
     StyleSheet,
     Text,
-    TextInput,
     useWindowDimensions,
     View,
+    type ViewProps,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, { FadeIn } from "react-native-reanimated";
+import Animated, {
+    FadeIn,
+    FadeInDown,
+    useAnimatedStyle,
+    useReducedMotion,
+    useSharedValue,
+    withTiming,
+} from "react-native-reanimated";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import type { Id } from "@/convex/_generated/dataModel";
 
@@ -26,9 +33,10 @@ import {
 } from "@/components/jua-kali/session-persist";
 import { useProductMode, SOFT_RETURN_MS } from "@/lib/product-mode";
 import { SoftIdentityBar } from "@/components/jua-kali/soft-identity";
-import { SunMark } from "@/components/jua-kali/sun-mark";
-import { color, font, layout, motion } from "@/components/jua-kali/theme";
-import { tapHaptic } from "@/components/jua-kali/haptics";
+import { LivingSun } from "@/components/jua-kali/living-sun";
+import { IconArrowRight, IconCapital, IconPen, IconTrend } from "@/components/jua-kali/icons";
+import { Button, Card, Chip, Input, SectionLabel } from "@/components/jua-kali/ui";
+import { color, font, layout, motion, sun } from "@/components/jua-kali/theme";
 
 type KpiUnit = "meetings" | "revenue_kes" | "jobs";
 
@@ -190,7 +198,7 @@ function LedgerArtifact() {
     const events = (ledger?.events ?? []) as LedgerArtifactEvent[];
 
     return (
-        <View style={styles.artifact}>
+        <Card variant="artifact" style={styles.artifact}>
             <View style={styles.artifactHead}>
                 <Text style={styles.artifactTitle}>Public ledger</Text>
                 <Text style={styles.artifactLive}>{ledger ? "Live" : "Loading…"}</Text>
@@ -213,6 +221,98 @@ function LedgerArtifact() {
                     </View>
                 ))
             )}
+        </Card>
+    );
+}
+
+/**
+ * The arrival of the brand — a brass sun rising over a horizon hairline.
+ * The one authored moment on the landing: the sun lifts above the line while
+ * its rays ignite from dawn toward morning (progress 0 → 0.35). On web the
+ * stage answers the pointer with a few pixels of parallax.
+ */
+function HeroStage({ compact }: { compact: boolean }) {
+    const reduceMotion = useReducedMotion();
+    const sunSize = compact ? 76 : 92;
+    const [progress, setProgress] = useState(reduceMotion ? 0.35 : 0);
+    const [stageWidth, setStageWidth] = useState(0);
+
+    useEffect(() => {
+        if (reduceMotion) return;
+        const timer = setTimeout(() => setProgress(0.35), 140);
+        return () => clearTimeout(timer);
+    }, [reduceMotion]);
+
+    const rise = useSharedValue(reduceMotion ? 0 : 1);
+    const parallaxX = useSharedValue(0);
+
+    useEffect(() => {
+        if (reduceMotion) return;
+        rise.value = withTiming(0, { duration: motion.hero });
+    }, [rise, reduceMotion]);
+
+    const sunStyle = useAnimatedStyle(() => ({
+        transform: [
+            { translateY: rise.value * sunSize * 0.55 },
+            { translateX: parallaxX.value * 5 },
+        ],
+    }));
+    const lineStyle = useAnimatedStyle(() => ({
+        transform: [{ translateX: parallaxX.value * -3 }],
+    }));
+
+    // Web-only pointer answer — a few pixels, capped by the worklet math above.
+    const onMouseMove = Platform.select({
+        web: (event: { locationX?: number }) => {
+            if (reduceMotion || !stageWidth || event.locationX == null) return;
+            parallaxX.value = (event.locationX / stageWidth - 0.5) * 2;
+        },
+        default: undefined,
+    });
+
+    // Web-only pointer answer — a few pixels, capped by the worklet math above.
+    const webProps = Platform.select({
+        web: { onMouseMove } as unknown as ViewProps,
+        default: {} as ViewProps,
+    });
+
+    return (
+        <View
+            style={[styles.stage, { height: sunSize * 1.55 }]}
+            onLayout={(event) => setStageWidth(event.nativeEvent.layout.width)}
+            {...webProps}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+        >
+            <Animated.View style={[styles.stageLine, lineStyle]} />
+            <Animated.View
+                style={[
+                    styles.stageSun,
+                    sunStyle,
+                    { width: sunSize, height: sunSize, top: sunSize * 0.55 - sunSize * 0.62 },
+                ]}
+            >
+                <LivingSun progress={progress} size={sunSize} />
+            </Animated.View>
+        </View>
+    );
+}
+
+/** The proof strip — three glyph-marked facts on hairlines, not another box. */
+function ProofStrip() {
+    const items = [
+        { icon: <IconCapital size={15} color={color.brassDeep} />, label: "Soft pledges" },
+        { icon: <IconTrend size={15} color={color.brassDeep} />, label: "Weekly KPIs" },
+        { icon: <IconPen size={15} color={color.brassDeep} />, label: "Public digests" },
+    ];
+    return (
+        <View style={styles.proofStrip}>
+            {items.map((item, i) => (
+                <View key={item.label} style={[styles.proofItem, i > 0 && styles.proofItemBorder]}>
+                    {item.icon}
+                    <Text style={styles.proofLabel}>{item.label}</Text>
+                </View>
+            ))}
         </View>
     );
 }
@@ -225,6 +325,7 @@ export function InvestorLanding({
     const insets = useSafeAreaInsets();
     const { width } = useWindowDimensions();
     const compact = width < 420;
+    const reduceMotion = useReducedMotion();
     const { isAuthenticated } = useConvexAuth();
     const startCommitment = useMutation(api.invest.startCommitment);
     const seedInvestDemo = useMutation(api.invest.seedInvestDemo);
@@ -328,10 +429,15 @@ export function InvestorLanding({
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
             >
-                <Animated.View entering={FadeIn.duration(240)} style={styles.frame}>
-                    <SunMark size={compact ? 34 : 42} />
-                    <Text style={styles.brand}>JuaKali</Text>
-                    <Text style={styles.eyebrow}>Invest in public</Text>
+                <Animated.View entering={FadeIn.duration(motion.base)} style={styles.frame}>
+                    <HeroStage compact={compact} />
+                    <Animated.View
+                        entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(120)}
+                        style={styles.brandBlock}
+                    >
+                        <Text style={styles.brand}>JuaKali</Text>
+                        <Text style={styles.eyebrow}>Invest in public</Text>
+                    </Animated.View>
 
                     {requireAuth ? (
                         <View style={styles.authBlock}>
@@ -341,37 +447,46 @@ export function InvestorLanding({
 
                     {mode === "pitch" ? (
                         <>
-                            <Text style={[styles.headline, compact && styles.headlineCompact]}>
+                            <Animated.Text
+                                entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(180)}
+                                style={[styles.headline, compact && styles.headlineCompact]}
+                            >
                                 You’re busy. Your capital shouldn’t be.
-                            </Text>
-                            <Text style={styles.subhead}>
+                            </Animated.Text>
+                            <Animated.Text
+                                entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(240)}
+                                style={styles.subhead}
+                            >
                                 Jua, your agent, mentors each venture weekly — tracking KPIs, writing
                                 digests, nudging follow-ups. Every step lands on a public ledger you
                                 can share.
-                            </Text>
+                            </Animated.Text>
 
-                            <LedgerArtifact />
+                            <Animated.View
+                                entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(300)}
+                                style={styles.artifactBlock}
+                            >
+                                <SectionLabel>The ledger, live</SectionLabel>
+                                <LedgerArtifact />
+                            </Animated.View>
 
-                            <Pressable
-                                onPress={() => void handleExample()}
-                                onPressIn={tapHaptic}
-                                disabled={busy}
-                                style={({ pressed }) => [
-                                    styles.cta,
-                                    pressed && styles.ctaPressed,
-                                    busy && styles.disabled,
-                                ]}
-                                accessibilityRole="button"
-                                accessibilityHint="Loads example deals and opens My deals"
+                            <Animated.View
+                                entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(360)}
+                                style={styles.ctaBlock}
                             >
-                                <Text style={styles.ctaText}>{busy ? "Opening…" : "Watch a deal come alive"}</Text>
-                            </Pressable>
-                            <Pressable
-                                onPress={() => setMode("form")}
-                                accessibilityRole="button"
-                            >
-                                <Text style={styles.secondary}>or start your own commitment →</Text>
-                            </Pressable>
+                                <Button
+                                    label={busy ? "Opening…" : "Watch a deal come alive"}
+                                    onPress={() => void handleExample()}
+                                    disabled={busy}
+                                    icon={<IconArrowRight size={15} color={color.paper} />}
+                                    style={styles.ctaBlockFull}
+                                    accessibilityHint="Loads example deals and opens My deals"
+                                />
+                                <Pressable onPress={() => setMode("form")} accessibilityRole="button">
+                                    <Text style={styles.secondary}>or start your own commitment →</Text>
+                                </Pressable>
+                                <ProofStrip />
+                            </Animated.View>
                         </>
                     ) : null}
 
@@ -381,87 +496,68 @@ export function InvestorLanding({
                             <Text style={styles.formSub}>Three things. The agent handles the rest.</Text>
 
                             <Text style={styles.fieldLabel}>You</Text>
-                            <TextInput
+                            <Input
                                 value={investorName}
                                 onChangeText={setInvestorName}
                                 placeholder="Your name"
-                                placeholderTextColor={color.mist}
-                                style={styles.input}
                             />
-                            <TextInput
+                            <Input
                                 value={investorEmail}
                                 onChangeText={setInvestorEmail}
                                 placeholder="Email (optional)"
-                                placeholderTextColor={color.mist}
                                 keyboardType="email-address"
                                 autoCapitalize="none"
-                                style={styles.input}
                             />
 
                             <Text style={styles.fieldLabel}>The venture</Text>
-                            <TextInput
+                            <Input
                                 value={ventureName}
                                 onChangeText={setVentureName}
                                 placeholder="Business name"
-                                placeholderTextColor={color.mist}
-                                style={styles.input}
                             />
-                            <TextInput
+                            <Input
                                 value={craftText}
                                 onChangeText={setCraftText}
                                 placeholder="Craft (optional — e.g. metalwork, tailoring)"
-                                placeholderTextColor={color.mist}
-                                style={styles.input}
                             />
 
                             <Text style={styles.fieldLabel}>The deal</Text>
                             <View style={styles.chipRow}>
                                 {kpiPresets.map((p) => (
-                                    <Pressable
+                                    <Chip
                                         key={p.unit}
+                                        label={p.chip}
+                                        active={kpiUnit === p.unit}
                                         onPress={() => setKpiUnit(p.unit)}
-                                        style={[styles.chip, kpiUnit === p.unit && styles.chipOn]}
-                                    >
-                                        <Text style={[styles.chipText, kpiUnit === p.unit && styles.chipTextOn]}>
-                                            {p.chip}
-                                        </Text>
-                                    </Pressable>
+                                    />
                                 ))}
                             </View>
                             <View style={styles.row2}>
-                                <TextInput
+                                <Input
                                     value={kpiTarget}
                                     onChangeText={setKpiTarget}
                                     placeholder="KPI target"
-                                    placeholderTextColor={color.mist}
                                     keyboardType="number-pad"
-                                    style={[styles.input, styles.half]}
+                                    style={styles.half}
                                 />
-                                <TextInput
+                                <Input
                                     value={amountKes}
                                     onChangeText={setAmountKes}
                                     placeholder="Soft pledge (KES)"
-                                    placeholderTextColor={color.mist}
                                     keyboardType="number-pad"
-                                    style={[styles.input, styles.half]}
+                                    style={styles.half}
                                 />
                             </View>
 
                             {error ? <Text style={styles.error}>{error}</Text> : null}
 
-                            <Pressable
+                            <Button
+                                label={busy ? "Opening…" : "Open commitment"}
                                 onPress={() => void handleStart()}
-                                onPressIn={tapHaptic}
                                 disabled={busy}
-                                style={({ pressed }) => [
-                                    styles.cta,
-                                    pressed && styles.ctaPressed,
-                                    busy && styles.disabled,
-                                ]}
-                                accessibilityRole="button"
-                            >
-                                <Text style={styles.ctaText}>{busy ? "Opening…" : "Open commitment"}</Text>
-                            </Pressable>
+                                icon={<IconArrowRight size={15} color={color.paper} />}
+                                style={styles.ctaBlockFull}
+                            />
                             <Pressable onPress={() => setMode("pitch")} disabled={busy}>
                                 <Text style={styles.secondary}>← Back</Text>
                             </Pressable>
@@ -508,6 +604,26 @@ const styles = StyleSheet.create({
         justifyContent: "center",
     },
     frame: { width: "100%", gap: 14, alignItems: "center" },
+    // Hero stage — the sun rises over a horizon hairline.
+    stage: {
+        width: "100%",
+        maxWidth: 420,
+        overflow: "hidden",
+        justifyContent: "flex-start",
+    },
+    stageLine: {
+        position: "absolute",
+        left: -10,
+        right: -10,
+        top: "62%",
+        height: 1,
+        backgroundColor: sun.horizon,
+    },
+    stageSun: {
+        position: "absolute",
+        alignSelf: "center",
+    },
+    brandBlock: { alignItems: "center" },
     authBlock: { width: "100%", maxWidth: 400 },
     brand: {
         fontFamily: font.display,
@@ -545,17 +661,13 @@ const styles = StyleSheet.create({
         textAlign: "center",
         maxWidth: 360,
     },
+    artifactBlock: { width: "100%", alignItems: "center", gap: 8 },
     // Live ledger artifact — the pitch is the product itself
     artifact: {
         width: "100%",
         maxWidth: 420,
         gap: 0,
         padding: 14,
-        marginTop: 4,
-        backgroundColor: color.paper,
-        borderWidth: 1,
-        borderColor: color.lineStrong,
-        borderRadius: 6,
     },
     artifactHead: {
         flexDirection: "row",
@@ -611,17 +723,8 @@ const styles = StyleSheet.create({
         color: color.ink,
     },
     artifactWhen: { fontFamily: font.bodyMedium, fontSize: 11, color: color.mist },
-    cta: {
-        width: "100%",
-        maxWidth: 360,
-        backgroundColor: color.charcoal,
-        paddingVertical: 16,
-        borderRadius: 4,
-        alignItems: "center",
-        marginTop: 8,
-    },
-    ctaText: { fontFamily: font.bodyBold, color: color.paper, fontWeight: "700", fontSize: 15 },
-    ctaPressed: { transform: [{ scale: motion.pressScale }] },
+    ctaBlock: { width: "100%", alignItems: "center", gap: 2 },
+    ctaBlockFull: { width: "100%", maxWidth: 360 },
     secondary: {
         fontFamily: font.bodyBold,
         fontSize: 13,
@@ -629,7 +732,24 @@ const styles = StyleSheet.create({
         color: color.mist,
         paddingVertical: 10,
     },
-    disabled: { opacity: 0.5 },
+    // The proof strip — hairline-separated facts, not another box.
+    proofStrip: {
+        flexDirection: "row",
+        marginTop: 18,
+        paddingTop: 14,
+        borderTopWidth: 1,
+        borderTopColor: color.line,
+    },
+    proofItem: { flex: 1, alignItems: "center", gap: 6 },
+    proofItemBorder: { borderLeftWidth: 1, borderLeftColor: color.line },
+    proofLabel: {
+        fontFamily: font.bodyBold,
+        fontSize: 10,
+        fontWeight: "700",
+        letterSpacing: 0.5,
+        textTransform: "uppercase",
+        color: color.mist,
+    },
     footnote: {
         fontFamily: font.body,
         fontSize: 11,
@@ -662,30 +782,8 @@ const styles = StyleSheet.create({
         color: color.brassDeep,
         marginTop: 6,
     },
-    input: {
-        borderWidth: 1,
-        borderColor: color.lineStrong,
-        borderRadius: 4,
-        paddingHorizontal: 12,
-        paddingVertical: 11,
-        color: color.ink,
-        backgroundColor: color.paper,
-        fontFamily: font.body,
-        fontSize: 15,
-    },
     row2: { flexDirection: "row", gap: 8 },
     half: { flex: 1 },
     chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-    chip: {
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: 4,
-        backgroundColor: color.paper,
-        borderWidth: 1,
-        borderColor: color.line,
-    },
-    chipOn: { borderColor: color.brass, backgroundColor: color.brassSoft },
-    chipText: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.ink },
-    chipTextOn: { color: color.charcoal },
     error: { fontFamily: font.body, fontSize: 13, color: color.danger, marginTop: 4 },
 });

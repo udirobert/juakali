@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
     AccessibilityInfo,
     ActivityIndicator,
@@ -12,14 +12,15 @@ import {
     useWindowDimensions,
     View,
 } from "react-native";
+import Svg, { Circle as SvgCircle, Path as SvgPath } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
     FadeInDown,
+    useAnimatedProps,
     useAnimatedStyle,
     useReducedMotion,
     useSharedValue,
     withRepeat,
-    withSpring,
     withTiming,
 } from "react-native-reanimated";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
@@ -29,10 +30,16 @@ import type { FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import { SITE_URL } from "@/lib/site";
 import { HowItWorksCard, TermHint } from "@/components/jua-kali/help";
-import { tapHaptic } from "@/components/jua-kali/haptics";
+import { successHaptic } from "@/components/jua-kali/haptics";
 import { AuthRequiredGate } from "@/components/jua-kali/soft-identity";
 import { SunMark } from "@/components/jua-kali/sun-mark";
+import { LivingSun } from "@/components/jua-kali/living-sun";
+import { IconCheck, IconSend, IconShare, IconX } from "@/components/jua-kali/icons";
+import { Button, Card, Chip, Input } from "@/components/jua-kali/ui";
+import { useCountUp } from "@/components/jua-kali/hooks/use-count-up";
 import { color, font, layout, motion, tabularNums } from "@/components/jua-kali/theme";
+
+const AnimatedPath = Animated.createAnimatedComponent(SvgPath);
 
 type Cockpit = FunctionReturnType<typeof api.invest.investorCockpit>;
 type Commitment = Cockpit["commitments"][number];
@@ -81,16 +88,70 @@ function formatDueLabel(ts: number | null) {
     return `Next digest · ${formatDue(ts)}`;
 }
 
+/**
+ * The KPI line — a real drawn sparkline instead of bars. The line draws
+ * itself in when data arrives or changes; the last point lands in brass.
+ */
 function Sparkline({ values }: { values: number[] }) {
-    if (values.length === 0) return null;
-    const max = Math.max(...values, 1);
+    const reduceMotion = useReducedMotion();
+    const [width, setWidth] = useState(0);
+    const height = 34;
+    const pad = 3;
+
+    const recent = values.slice(-14);
+    const max = Math.max(...recent, 1);
+    const min = Math.min(...recent, 0);
+    const range = max - min || 1;
+
+    const points = recent.map((value, index) => ({
+        x: pad + (recent.length === 1 ? 0 : (index / (recent.length - 1)) * (width - pad * 2)),
+        y: pad + (1 - (value - min) / range) * (height - pad * 2),
+    }));
+
+    const pathD = points
+        .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
+        .join(" ");
+    const pathLength = points.reduce(
+        (acc, p, i) => (i === 0 ? 0 : acc + Math.hypot(p.x - points[i - 1]!.x, p.y - points[i - 1]!.y)),
+        0,
+    );
+
+    const dash = useSharedValue(reduceMotion ? 0 : pathLength);
+    useEffect(() => {
+        if (width <= 0) return;
+        if (reduceMotion) {
+            dash.value = 0;
+            return;
+        }
+        dash.value = pathLength;
+        dash.value = withTiming(0, { duration: 480 });
+    }, [pathLength, width, reduceMotion, dash]);
+
+    const animatedProps = useAnimatedProps(() => ({
+        strokeDashoffset: dash.value,
+    }));
+
+    if (recent.length === 0 || width <= 0) {
+        return <View style={styles.sparkTrack} onLayout={(e) => setWidth(e.nativeEvent.layout.width)} />;
+    }
+    const last = points[points.length - 1]!;
+
     return (
-        <View style={styles.sparkRow}>
-            {values.map((value, index) => (
-                <View key={`${index}-${value}`} style={styles.sparkTrack}>
-                    <View style={[styles.sparkBar, { height: Math.max(3, Math.round((value / max) * 28)) }]} />
-                </View>
-            ))}
+        <View style={styles.sparkTrack} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
+            <Svg width={width} height={height}>
+                <AnimatedPath
+                    d={pathD}
+                    fill="none"
+                    stroke={color.charcoal}
+                    strokeWidth={1.75}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeDasharray={`${pathLength} ${pathLength}`}
+                    strokeDashoffset={pathLength}
+                    animatedProps={animatedProps}
+                />
+                <SvgCircle cx={last.x} cy={last.y} r={2.6} fill={color.brass} />
+            </Svg>
         </View>
     );
 }
@@ -117,38 +178,6 @@ function WaitingShimmer({ active }: { active: boolean }) {
         <View style={styles.shimmerTrack} accessibilityElementsHidden>
             <Animated.View style={[styles.shimmerBar, style]} />
         </View>
-    );
-}
-
-function PressableScale({
-    onPress,
-    disabled,
-    style,
-    children,
-}: {
-    onPress: () => void;
-    disabled?: boolean;
-    style?: object | object[];
-    children: ReactNode;
-}) {
-    const reduceMotion = useReducedMotion();
-    const scale = useSharedValue(1);
-    const anim = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-
-    return (
-        <Pressable
-            disabled={disabled}
-            onPressIn={() => {
-                tapHaptic();
-                if (!reduceMotion) scale.value = withSpring(motion.pressScale, { damping: 20, stiffness: 400 });
-            }}
-            onPressOut={() => {
-                if (!reduceMotion) scale.value = withSpring(1, { damping: 18, stiffness: 320 });
-            }}
-            onPress={onPress}
-        >
-            <Animated.View style={[style, anim, disabled && styles.disabled]}>{children}</Animated.View>
-        </Pressable>
     );
 }
 
@@ -274,6 +303,7 @@ export function InvestorCockpit({
                 setPendingBody(null);
                 setEmailDraft("");
                 setStatusMessage(liveRun.result?.message ?? "Agent run completed.");
+                successHaptic();
                 void AccessibilityInfo.announceForAccessibility("Done. Digest and ledger updated.");
             }
         } else if (liveRun.status === "failed") {
@@ -430,9 +460,11 @@ export function InvestorCockpit({
                         ) : (
                             <Text style={styles.brand}>JuaKali</Text>
                         )}
-                        <PressableScale onPress={() => setShowPledge((v) => !v)} style={styles.btnGhost}>
-                            <Text style={styles.btnGhostText}>{showPledge ? "Close" : "New pledge"}</Text>
-                        </PressableScale>
+                        <Button
+                            label={showPledge ? "Close" : "New pledge"}
+                            variant="ghost"
+                            onPress={() => setShowPledge((v) => !v)}
+                        />
                     </View>
                     {hideBrand ? (
                         <Text style={styles.bridge}>Deals = act · Ledger = public proof</Text>
@@ -441,7 +473,11 @@ export function InvestorCockpit({
                 </View>
 
                 {!empty ? (
-                    <AgentPresence presence={data.agentPresence} nextDigestAt={selectedCommitment?.nextDigestAt ?? null} />
+                    <AgentPresence
+                        presence={data.agentPresence}
+                        nextDigestAt={selectedCommitment?.nextDigestAt ?? null}
+                        working={liveRun?.status === "running"}
+                    />
                 ) : null}
 
                 {(() => {
@@ -483,45 +519,41 @@ export function InvestorCockpit({
 
                 {showPledge ? (
                     <AuthRequiredGate required={requireAuthToAct}>
-                    <Animated.View entering={FadeInDown.duration(180)} style={styles.card}>
-                        <View style={styles.chipRow}>
-                            {data.availableVentures.map((venture) => (
-                                <Pressable
-                                    key={venture.id}
-                                    onPress={() => setSelectedVentureId(venture.id)}
-                                    style={[styles.chip, selectedVenture?.id === venture.id && styles.chipOn]}
-                                >
-                                    <Text style={[styles.chipText, selectedVenture?.id === venture.id && styles.chipTextOn]}>
-                                        {venture.name}
-                                    </Text>
+                    <Animated.View entering={FadeInDown.duration(180)}>
+                        <Card>
+                            <View style={styles.chipRow}>
+                                {data.availableVentures.map((venture) => (
+                                    <Chip
+                                        key={venture.id}
+                                        label={venture.name}
+                                        active={selectedVenture?.id === venture.id}
+                                        onPress={() => setSelectedVentureId(venture.id)}
+                                    />
+                                ))}
+                            </View>
+                            {data.availableVentures.length === 0 ? (
+                                <Text style={styles.status}>No ventures yet — start a commitment from the landing.</Text>
+                            ) : (
+                                <Text style={styles.fieldHint}>Pick a venture · set a soft amount (intent only).</Text>
+                            )}
+                            <Input
+                                value={amountText}
+                                onChangeText={setAmountText}
+                                keyboardType="number-pad"
+                                placeholder="Amount in KES"
+                            />
+                            <Button
+                                label={isPledging ? "…" : "Record soft pledge"}
+                                onPress={handlePledge}
+                                disabled={isPledging || !selectedVenture}
+                                busy={isPledging}
+                            />
+                            {onOpenGlossary ? (
+                                <Pressable onPress={() => onOpenGlossary("soft-pledge")}>
+                                    <Text style={styles.inlineLink}>What is a soft pledge?</Text>
                                 </Pressable>
-                            ))}
-                        </View>
-                        {data.availableVentures.length === 0 ? (
-                            <Text style={styles.status}>No ventures yet — start a commitment from the landing.</Text>
-                        ) : (
-                            <Text style={styles.fieldHint}>Pick a venture · set a soft amount (intent only).</Text>
-                        )}
-                        <TextInput
-                            value={amountText}
-                            onChangeText={setAmountText}
-                            keyboardType="number-pad"
-                            style={styles.input}
-                            placeholder="Amount in KES"
-                            placeholderTextColor={color.mist}
-                        />
-                        <PressableScale
-                            onPress={handlePledge}
-                            disabled={isPledging || !selectedVenture}
-                            style={styles.btnPrimary}
-                        >
-                            <Text style={styles.btnPrimaryText}>{isPledging ? "…" : "Record soft pledge"}</Text>
-                        </PressableScale>
-                        {onOpenGlossary ? (
-                            <Pressable onPress={() => onOpenGlossary("soft-pledge")}>
-                                <Text style={styles.inlineLink}>What is a soft pledge?</Text>
-                            </Pressable>
-                        ) : null}
+                            ) : null}
+                        </Card>
                     </Animated.View>
                     </AuthRequiredGate>
                 ) : null}
@@ -536,16 +568,20 @@ export function InvestorCockpit({
                         <Text style={styles.status}>
                             Load seeded deals so Jua has something to follow — or pledge a venture.
                         </Text>
-                        <PressableScale
+                        <Button
+                            label="New pledge"
                             onPress={() => setShowPledge(true)}
-                            style={styles.btnPrimary}
                             disabled={data.availableVentures.length === 0}
-                        >
-                            <Text style={styles.btnPrimaryText}>New pledge</Text>
-                        </PressableScale>
-                        <PressableScale onPress={handleSeed} disabled={isSeeding} style={styles.btnGhost}>
-                            <Text style={styles.btnGhostText}>{isSeeding ? "…" : "Load seeded deals"}</Text>
-                        </PressableScale>
+                            style={styles.emptyBtn}
+                        />
+                        <Button
+                            label={isSeeding ? "Loading…" : "Load seeded deals"}
+                            variant="ghost"
+                            onPress={handleSeed}
+                            disabled={isSeeding}
+                            busy={isSeeding}
+                            style={styles.emptyBtn}
+                        />
                     </View>
                 ) : (
                     <>
@@ -613,13 +649,16 @@ export function InvestorCockpit({
 /**
  * Presence line: Jua is visibly alive between visits — last worked, runs
  * this week, next digest countdown. All derived from real run/ledger data.
+ * While a run is live, the mark breathes.
  */
 function AgentPresence({
     presence,
     nextDigestAt,
+    working,
 }: {
     presence: Cockpit["agentPresence"];
     nextDigestAt: number | null;
+    working: boolean;
 }) {
     const parts: string[] = [];
     if (presence.lastWorkedAt) parts.push(`last worked ${relativeTime(presence.lastWorkedAt)}`);
@@ -631,7 +670,7 @@ function AgentPresence({
 
     return (
         <View style={styles.presence} accessibilityRole="text">
-            <SunMark size={14} />
+            <LivingSun progress={0.5} size={14} working={working} />
             <Text style={styles.presenceText}>
                 Jua · {parts.join(" · ")}
             </Text>
@@ -664,31 +703,36 @@ function ProposalCard({
     onDismiss: () => void;
 }) {
     return (
-        <Animated.View entering={FadeInDown.duration(180)} style={styles.proposal}>
-            <View style={styles.cardTop}>
-                <View style={styles.titleWithHint}>
-                    <SunMark size={16} />
-                    <Text style={styles.cardTitle}>Jua suggests</Text>
+        <Animated.View entering={FadeInDown.duration(180)}>
+            <Card variant="trust" style={styles.proposal}>
+                <View style={styles.cardTop}>
+                    <View style={styles.titleWithHint}>
+                        <SunMark size={16} />
+                        <Text style={styles.cardTitle}>Jua suggests</Text>
+                    </View>
+                    <Text style={styles.meta}>proposed {relativeTime(proposal.createdAt)}</Text>
                 </View>
-                <Text style={styles.meta}>proposed {relativeTime(proposal.createdAt)}</Text>
-            </View>
-            <Text style={styles.proposalBody}>{proposal.noteBody}</Text>
-            <View style={styles.consequence}>
-                <Text style={styles.consequenceLabel}>If you approve, I will</Text>
-                {["Log a KPI check-in", "Write an investor digest", "Post to the public ledger", "Reply with evidence"].map(
-                    (line) => (
-                        <Text key={line} style={styles.consequenceLine}>
-                            · {line}
-                        </Text>
-                    )
-                )}
-            </View>
-            <PressableScale onPress={onApprove} disabled={busy} style={[styles.btnApprove, busy && styles.disabled]}>
-                <Text style={styles.btnApproveText}>{busy ? "Starting…" : `Approve check-in on ${ventureName}`}</Text>
-            </PressableScale>
-            <Pressable onPress={onDismiss} disabled={busy}>
-                <Text style={styles.discard}>Not now</Text>
-            </Pressable>
+                <Text style={styles.proposalBody}>{proposal.noteBody}</Text>
+                <View style={styles.consequence}>
+                    <Text style={styles.consequenceLabel}>If you approve, I will</Text>
+                    {["Log a KPI check-in", "Write an investor digest", "Post to the public ledger", "Reply with evidence"].map(
+                        (line) => (
+                            <Text key={line} style={styles.consequenceLine}>
+                                · {line}
+                            </Text>
+                        )
+                    )}
+                </View>
+                <Button
+                    label={busy ? "Starting…" : `Approve check-in on ${ventureName}`}
+                    variant="approve"
+                    onPress={onApprove}
+                    disabled={busy}
+                />
+                <Pressable onPress={onDismiss} disabled={busy} hitSlop={6}>
+                    <Text style={styles.discard}>Not now</Text>
+                </Pressable>
+            </Card>
         </Animated.View>
     );
 }
@@ -730,7 +774,7 @@ function AgentArrival({
         reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(index * motion.stagger);
 
     return (
-        <View style={styles.arrival} accessibilityRole="text">
+        <Card variant="trust" style={styles.arrival} accessibilityRole="text">
             <Animated.View entering={enter(0)}>
                 <SunMark size={18} />
             </Animated.View>
@@ -740,7 +784,7 @@ function AgentArrival({
                     <Text style={styles.arrivalWhen}>{relativeTime(latestDigest.createdAt)}</Text>
                 ) : null}
             </Animated.View>
-        </View>
+        </Card>
     );
 }
 
@@ -768,11 +812,15 @@ function Scorecard({
     if (lastCheckIn) commentary.push(`last check-in ${relativeTime(lastCheckIn.createdAt)}`);
 
     return (
-        <View style={styles.card}>
+        <Card>
             <View style={styles.cardTop}>
-                <Text style={styles.cardTitle} numberOfLines={1}>
-                    {venture.name}
-                </Text>
+                <View style={styles.titleWithHint}>
+                    {/* The venture's sun — it rises as the KPI total closes on target. */}
+                    <LivingSun progress={progress} size={18} />
+                    <Text style={styles.cardTitle} numberOfLines={1}>
+                        {venture.name}
+                    </Text>
+                </View>
                 <View style={styles.dueRow}>
                     <Text style={styles.meta}>{formatDueLabel(commitment.nextDigestAt)}</Text>
                 </View>
@@ -814,7 +862,10 @@ function Scorecard({
                     hitSlop={6}
                     accessibilityRole="button"
                 >
-                    <Text style={styles.shareLink}>Share proof</Text>
+                    <View style={styles.shareRowInner}>
+                        <IconShare size={13} color={color.brassDeep} />
+                        <Text style={styles.shareLink}>Share proof</Text>
+                    </View>
                 </Pressable>
             </View>
 
@@ -823,7 +874,7 @@ function Scorecard({
             ) : (
                 <Text style={styles.fieldHint}>No digest yet — approve a note below to generate one.</Text>
             )}
-        </View>
+        </Card>
     );
 }
 
@@ -838,9 +889,13 @@ function Metric({
     termId?: string;
     onOpenGlossary?: (focusId?: string) => void;
 }) {
+    // Headline figures arrive rather than jump; static strings pass through.
+    const numeric = typeof value === "number" ? value : 0;
+    const animated = useCountUp(numeric, 480);
+    const shown = typeof value === "number" ? Math.round(animated) : value;
     return (
         <View style={styles.metric}>
-            <Text style={styles.metricValue}>{value}</Text>
+            <Text style={styles.metricValue}>{shown}</Text>
             <View style={styles.metricLabelRow}>
                 <Text style={styles.metricLabel} numberOfLines={1}>
                     {label}
@@ -894,6 +949,19 @@ function Ritual({
     const showApproveGate = pendingBody != null && agentPhase === "queued";
     const showSteps = liveRun != null && (runIsOurs || inboundActing);
 
+    // The ritual's sun answers the run: rays ignite as steps commit, full
+    // corona at completion. Idle sits at morning.
+    const steps = liveRun?.steps ?? [];
+    const doneCount = steps.filter((step) => step.status === "done").length;
+    const sunProgress =
+        liveRun == null
+            ? 0.3
+            : liveRun.status === "completed"
+              ? 1
+              : steps.length > 0
+                ? 0.3 + 0.7 * (doneCount / steps.length)
+                : 0.35;
+
     const phaseLabel = showApproveGate
         ? "Waiting for your approval"
         : runLive
@@ -907,10 +975,10 @@ function Ritual({
                 : "Ready for a note";
 
     return (
-        <View style={styles.card}>
+        <Card>
             <View style={styles.cardTop}>
                 <View style={styles.titleWithHint}>
-                    <SunMark size={16} />
+                    <LivingSun progress={sunProgress} size={18} working={runLive} />
                     <Text style={styles.cardTitle}>Note to Jua</Text>
                     {onOpenGlossary ? <TermHint termId="queue-approve" onOpenGlossary={onOpenGlossary} /> : null}
                 </View>
@@ -947,10 +1015,8 @@ function Ritual({
                             )
                         )}
                     </View>
-                    <PressableScale onPress={onApprove} style={styles.btnApprove}>
-                        <Text style={styles.btnApproveText}>Approve & run</Text>
-                    </PressableScale>
-                    <Pressable onPress={onDiscard}>
+                    <Button label="Approve & run" variant="approve" onPress={onApprove} />
+                    <Pressable onPress={onDiscard} hitSlop={6}>
                         <Text style={styles.discard}>Discard</Text>
                     </Pressable>
                 </Animated.View>
@@ -965,9 +1031,11 @@ function Ritual({
                         placeholderTextColor={color.mist}
                         maxLength={320}
                     />
-                    <PressableScale onPress={onQueue} style={styles.btnPrimary}>
-                        <Text style={styles.btnPrimaryText}>Send to agent</Text>
-                    </PressableScale>
+                    <Button
+                        label="Send to agent"
+                        onPress={onQueue}
+                        icon={<IconSend size={14} color={color.paper} />}
+                    />
                     {emailInbox ? (
                         <Text style={styles.emailAlt}>
                             Or email {emailInbox} — Jua reads it and runs the same steps.
@@ -995,7 +1063,7 @@ function Ritual({
                       </View>
                   ))
                 : null}
-        </View>
+        </Card>
     );
 }
 
@@ -1023,9 +1091,9 @@ function RunSteps({
                     {step.status === "running" ? (
                         <ActivityIndicator size="small" color={color.brass} />
                     ) : step.status === "done" ? (
-                        <Text style={styles.toolOk}>✓</Text>
+                        <IconCheck size={11} color={color.success} strokeWidth={2.4} />
                     ) : step.status === "failed" ? (
-                        <Text style={styles.toolFail}>✕</Text>
+                        <IconX size={10} color={color.danger} strokeWidth={2.4} />
                     ) : (
                         <View style={styles.toolDot} />
                     )}
@@ -1069,7 +1137,7 @@ function DigestArtifactCard({
     const evidence = digest.evidence.length > 0 ? digest.evidence : ["agent"];
 
     return (
-        <View style={styles.card}>
+        <Card variant="artifact">
             <View style={styles.cardTop}>
                 <View style={styles.titleWithHint}>
                     <SunMark size={16} />
@@ -1114,7 +1182,13 @@ function DigestArtifactCard({
                     </Pressable>
                 ) : null}
             </View>
-        </View>
+
+            {/* The seal — proof this document was produced, not typed. */}
+            <View style={styles.sealRow}>
+                <SunMark size={11} />
+                <Text style={styles.sealText}>Sealed by Jua · JuaKali agent</Text>
+            </View>
+        </Card>
     );
 }
 
@@ -1176,42 +1250,8 @@ const styles = StyleSheet.create({
         color: color.brassDeep,
     },
     heroActions: { flexDirection: "row", gap: 8, justifyContent: "center" },
-    btnPrimary: {
-        backgroundColor: color.charcoal,
-        paddingHorizontal: 18,
-        paddingVertical: 12,
-        borderRadius: 4,
-        minHeight: 44,
-        justifyContent: "center",
-        alignItems: "center",
-    },
-    btnPrimaryText: {
-        fontFamily: font.bodyBold,
-        color: color.paper,
-        fontWeight: "700",
-        fontSize: 13,
-    },
-    btnGhost: {
-        borderWidth: 1,
-        borderColor: color.lineStrong,
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        borderRadius: 4,
-        minHeight: 44,
-        justifyContent: "center",
-        backgroundColor: color.paper,
-    },
-    btnGhostText: { fontFamily: font.bodyBold, color: color.charcoal, fontWeight: "700", fontSize: 13 },
-    disabled: { opacity: 0.45 },
+    emptyBtn: { width: 260 },
     status: { fontFamily: font.body, fontSize: 12, color: color.brassDeep, textAlign: "center" },
-    card: {
-        gap: 12,
-        padding: 16,
-        backgroundColor: color.paper,
-        borderWidth: 1,
-        borderColor: color.line,
-        borderRadius: 6,
-    },
     cardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
     cardTitle: {
         fontFamily: font.displayMedium,
@@ -1222,24 +1262,8 @@ const styles = StyleSheet.create({
     },
     meta: { fontFamily: font.bodyBold, fontSize: 11, fontWeight: "700", color: color.brass },
     metaDanger: { color: color.danger },
-    // Brass is the trust/permission color — the consequential approve action is
-    // visually distinct from ordinary charcoal navigation buttons.
-    btnApprove: {
-        backgroundColor: color.brass,
-        paddingHorizontal: 18,
-        paddingVertical: 13,
-        borderRadius: 4,
-        minHeight: 46,
-        justifyContent: "center",
-        alignItems: "center",
-    },
-    btnApproveText: {
-        fontFamily: font.bodyBold,
-        color: color.paper,
-        fontWeight: "700",
-        fontSize: 14,
-        letterSpacing: 0.3,
-    },
+    // Brass is the trust/permission color — the approve Button variant is the
+    // only place it appears as a fill.
     consequence: {
         gap: 3,
         padding: 10,
@@ -1259,26 +1283,6 @@ const styles = StyleSheet.create({
     },
     consequenceLine: { fontFamily: font.body, fontSize: 12, lineHeight: 17, color: color.ink },
     chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-    chip: {
-        paddingHorizontal: 10,
-        paddingVertical: 8,
-        borderRadius: 4,
-        backgroundColor: color.stone,
-    },
-    chipOn: { backgroundColor: color.brassSoft, borderWidth: 1, borderColor: color.brass },
-    chipText: { fontFamily: font.bodyMedium, fontSize: 12, color: color.ink },
-    chipTextOn: { fontWeight: "700", color: color.charcoal },
-    input: {
-        borderWidth: 1,
-        borderColor: color.lineStrong,
-        borderRadius: 4,
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        color: color.ink,
-        backgroundColor: color.stone,
-        fontFamily: font.body,
-        fontSize: 15,
-    },
     emptyCard: { alignItems: "center", gap: 14, paddingVertical: 28 },
     emptyGlyph: { width: 72, height: 72, alignItems: "center", justifyContent: "center" },
     emptyRing: {
@@ -1367,16 +1371,12 @@ const styles = StyleSheet.create({
         textTransform: "uppercase",
         color: color.brassDeep,
     },
-    // Arrival moment
+    // Arrival moment — a trust card laid out as a voice line.
     arrival: {
         flexDirection: "row",
         alignItems: "flex-start",
         gap: 10,
         padding: 14,
-        backgroundColor: color.paper,
-        borderWidth: 1,
-        borderColor: color.brass,
-        borderRadius: 6,
     },
     arrivalBody: { flex: 1, gap: 2 },
     arrivalVoice: {
@@ -1391,14 +1391,7 @@ const styles = StyleSheet.create({
         color: color.mist,
     },
     // Proposal card
-    proposal: {
-        gap: 10,
-        padding: 16,
-        backgroundColor: color.paper,
-        borderWidth: 1,
-        borderColor: color.brass,
-        borderRadius: 6,
-    },
+    proposal: { gap: 10 },
     proposalBody: {
         fontFamily: font.body,
         fontSize: 14,
@@ -1418,22 +1411,14 @@ const styles = StyleSheet.create({
         justifyContent: "space-between",
         gap: 8,
     },
+    shareRowInner: { flexDirection: "row", alignItems: "center", gap: 5 },
     shareLink: {
         fontFamily: font.bodyBold,
         fontSize: 12,
         fontWeight: "700",
         color: color.brassDeep,
     },
-    sparkRow: { flexDirection: "row", alignItems: "flex-end", gap: 4, height: 32 },
-    sparkTrack: {
-        flex: 1,
-        height: 32,
-        justifyContent: "flex-end",
-        backgroundColor: "rgba(20,24,22,0.04)",
-        borderRadius: 2,
-        overflow: "hidden",
-    },
-    sparkBar: { width: "100%", backgroundColor: color.charcoal, borderRadius: 2 },
+    sparkTrack: { height: 34, justifyContent: "center" },
     insight: {
         gap: 4,
         padding: 12,
@@ -1470,8 +1455,6 @@ const styles = StyleSheet.create({
     },
     toolChipRun: { backgroundColor: color.brassSoft },
     toolChipFail: { backgroundColor: "rgba(139,58,47,0.08)" },
-    toolOk: { color: color.success, fontWeight: "700", fontSize: 12 },
-    toolFail: { color: color.danger, fontWeight: "700", fontSize: 12 },
     toolDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: color.lineStrong },
     toolName: { fontFamily: font.bodyBold, fontSize: 11, fontWeight: "700", color: color.charcoal, flexShrink: 1 },
     runDone: {
@@ -1536,6 +1519,21 @@ const styles = StyleSheet.create({
         letterSpacing: 0.4,
         textTransform: "uppercase",
         color: color.brassDeep,
+    },
+    // The digest seal — the artifact's signature line.
+    sealRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+        justifyContent: "center",
+        paddingTop: 2,
+    },
+    sealText: {
+        fontFamily: font.bodyMedium,
+        fontSize: 10,
+        letterSpacing: 0.5,
+        textTransform: "uppercase",
+        color: color.mist,
     },
     gate: { gap: 10 },
     gateBody: { fontFamily: font.body, fontSize: 14, lineHeight: 20, color: color.ink },

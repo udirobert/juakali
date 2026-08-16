@@ -11,13 +11,31 @@ import {
     View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Animated, {
+    FadeIn,
+    FadeOut,
+    LinearTransition,
+    useAnimatedStyle,
+    useSharedValue,
+    withTiming,
+} from "react-native-reanimated";
 import { useQuery } from "convex/react";
 
 import { api } from "@/convex/_generated/api";
 import { SITE_URL } from "@/lib/site";
 import { TermHint } from "@/components/jua-kali/help";
-import { SunMark } from "@/components/jua-kali/sun-mark";
-import { color, font, layout, tabularNums } from "@/components/jua-kali/theme";
+import { LivingSun } from "@/components/jua-kali/living-sun";
+import {
+    IconBolt,
+    IconCapital,
+    IconChevronDown,
+    IconPen,
+    IconShare,
+    IconTrend,
+} from "@/components/jua-kali/icons";
+import { Chip } from "@/components/jua-kali/ui";
+import { useCountUp } from "@/components/jua-kali/hooks/use-count-up";
+import { color, font, layout, motion, tabularNums } from "@/components/jua-kali/theme";
 
 function formatKes(value: number) {
     return `KES ${value.toLocaleString()}`;
@@ -67,17 +85,17 @@ function typeLabel(type: string) {
     }
 }
 
-/** Ledger glyph per event type — a light signature for rows. */
-function typeGlyph(type: string) {
+/** Ledger glyph per event type — the type's drawn signature. */
+function typeGlyph(type: string, size = 12) {
     switch (type) {
         case "pledge":
-            return "◈";
+            return <IconCapital size={size} color={color.brassDeep} />;
         case "checkin":
-            return "▲";
+            return <IconTrend size={size} color={color.brassDeep} />;
         case "digest":
-            return "✎";
+            return <IconPen size={size} color={color.brassDeep} />;
         default:
-            return "⚡";
+            return <IconBolt size={size} color={color.brassDeep} />;
     }
 }
 
@@ -116,6 +134,8 @@ export function PublicLedger({
     hideTitleChrome?: boolean;
 } = {}) {
     const [slug, setSlug] = useState<string | null>(() => readLedgerSlug());
+    /** The row opened into its full preview — one at a time, in place. */
+    const [expandedId, setExpandedId] = useState<string | null>(null);
     const data = useQuery(api.invest.publicLedger, {
         limit: 40,
         ventureSlug: slug ?? undefined,
@@ -124,6 +144,8 @@ export function PublicLedger({
     const { width } = useWindowDimensions();
     const compact = width < 440;
     const padX = Math.max(14, Math.min(28, (width - layout.maxWidth) / 2 + 16));
+    // Headline figures arrive rather than jump; 0 while the query is in flight.
+    const pledged = useCountUp(data?.totals.pledgedKes ?? 0);
 
     // Keep the URL shareable as the filter changes.
     useEffect(() => {
@@ -175,7 +197,8 @@ export function PublicLedger({
                 showsVerticalScrollIndicator={false}
             >
                 <View style={styles.hero}>
-                    <SunMark size={28} />
+                    {/* High noon on the ledger — this is where proof lives. */}
+                    <LivingSun progress={1} size={28} />
                     {!hideTitleChrome ? (
                         <View style={styles.titleRow}>
                             <Text style={styles.title}>Public ledger</Text>
@@ -190,7 +213,7 @@ export function PublicLedger({
                             ? "Read-only timeline of pledges, KPIs, and digests from My deals."
                             : "Read-only public proof — capital pledges, KPI check-ins, and digests. Act on My deals; proof lands here."}
                     </Text>
-                    <Text style={styles.total}>{formatKes(data.totals.pledgedKes)}</Text>
+                    <Text style={styles.total}>{formatKes(Math.round(pledged))}</Text>
                     <Text style={styles.totalHint}>
                         {selectedVenture ? `${selectedVenture.name} · soft pledges (demo — not escrow)` : "Soft pledges recorded (demo — not escrow)"}
                     </Text>
@@ -218,7 +241,10 @@ export function PublicLedger({
                         </Pressable>
                         <Text style={styles.statDot}>·</Text>
                         <Pressable onPress={() => void handleShare()} hitSlop={6} accessibilityRole="button">
-                            <Text style={styles.shareLink}>Share</Text>
+                            <View style={styles.shareRowInner}>
+                                <IconShare size={13} color={color.brassDeep} />
+                                <Text style={styles.shareLink}>Share</Text>
+                            </View>
                         </Pressable>
                     </View>
                 </View>
@@ -229,32 +255,19 @@ export function PublicLedger({
                         showsHorizontalScrollIndicator={false}
                         contentContainerStyle={styles.filterRow}
                     >
-                        <Pressable
+                        <Chip
+                            label="All"
+                            active={slug === null}
                             onPress={() => toggleFilter(null)}
-                            style={[styles.filterChip, slug === null && styles.filterChipOn]}
-                            accessibilityRole="button"
-                            accessibilityState={{ selected: slug === null }}
-                        >
-                            <Text style={[styles.filterChipText, slug === null && styles.filterChipTextOn]}>
-                                All
-                            </Text>
-                        </Pressable>
-                        {data.ventures.map((venture: LedgerVenture) => {
-                            const on = slug === venture.slug;
-                            return (
-                                <Pressable
-                                    key={venture.slug}
-                                    onPress={() => toggleFilter(on ? null : venture.slug)}
-                                    style={[styles.filterChip, on && styles.filterChipOn]}
-                                    accessibilityRole="button"
-                                    accessibilityState={{ selected: on }}
-                                >
-                                    <Text style={[styles.filterChipText, on && styles.filterChipTextOn]}>
-                                        {venture.name}
-                                    </Text>
-                                </Pressable>
-                            );
-                        })}
+                        />
+                        {data.ventures.map((venture: LedgerVenture) => (
+                            <Chip
+                                key={venture.slug}
+                                label={venture.name}
+                                active={slug === venture.slug}
+                                onPress={() => toggleFilter(slug === venture.slug ? null : venture.slug)}
+                            />
+                        ))}
                     </ScrollView>
                 ) : null}
 
@@ -267,58 +280,146 @@ export function PublicLedger({
                         </Text>
                     ) : (
                         data.events.map((event: LedgerEventRow) => (
-                            <View key={event.id} style={styles.row}>
-                                <View style={styles.rowTop}>
-                                    <View style={styles.typeRow}>
-                                        {/* Decorative signature — the type label carries the meaning. */}
-                                        <Text style={styles.typeGlyph} accessibilityElementsHidden>
-                                            {typeGlyph(event.type)}
-                                        </Text>
-                                        <Text style={styles.type}>{typeLabel(event.type)}</Text>
-                                        {onOpenGlossary ? (
-                                            <TermHint
-                                                termId={typeHint(event.type)}
-                                                onOpenGlossary={onOpenGlossary}
-                                            />
-                                        ) : null}
-                                    </View>
-                                    <Text style={styles.when}>{formatWhen(event.createdAt)}</Text>
-                                </View>
-                                <Text style={styles.summary} numberOfLines={compact ? 2 : 3}>
-                                    {event.summary}
-                                </Text>
-                                <View style={styles.rowFoot}>
-                                    {event.ventureName ? (
-                                        <Pressable
-                                            onPress={() =>
-                                                toggleFilter(slug === event.ventureSlug ? null : event.ventureSlug)
-                                            }
-                                            disabled={!event.ventureSlug}
-                                            hitSlop={4}
-                                            accessibilityRole="button"
-                                            accessibilityLabel={`Filter ledger by ${event.ventureName}`}
-                                        >
-                                            <Text style={styles.venture}>{event.ventureName}</Text>
-                                        </Pressable>
-                                    ) : (
-                                        <View />
-                                    )}
-                                    {event.evidence.length > 0 ? (
-                                        <View style={styles.evidenceRow}>
-                                            {event.evidence.map((tag: string) => (
-                                                <View key={tag} style={styles.evidenceChip}>
-                                                    <Text style={styles.evidenceChipText}>{tag}</Text>
-                                                </View>
-                                            ))}
-                                        </View>
-                                    ) : null}
-                                </View>
-                            </View>
+                            <LedgerRow
+                                key={event.id}
+                                event={event}
+                                compact={compact}
+                                expanded={expandedId === event.id}
+                                onToggle={() =>
+                                    setExpandedId((prev) => (prev === event.id ? null : event.id))
+                                }
+                                onFilterVenture={() =>
+                                    toggleFilter(slug === event.ventureSlug ? null : event.ventureSlug)
+                                }
+                                onOpenGlossary={onOpenGlossary}
+                            />
                         ))
                     )}
                 </View>
             </ScrollView>
         </View>
+    );
+}
+
+/**
+ * A ledger row opens into its full preview without leaving the feed — the
+ * grid-to-preview move, adapted for touch. Collapsed rows stay terse; the
+ * expanded row reveals the full summary, the recorded figures, and evidence
+ * at readable size. One row open at a time.
+ */
+function LedgerRow({
+    event,
+    compact,
+    expanded,
+    onToggle,
+    onFilterVenture,
+    onOpenGlossary,
+}: {
+    event: LedgerEventRow;
+    compact: boolean;
+    expanded: boolean;
+    onToggle: () => void;
+    onFilterVenture: () => void;
+    onOpenGlossary?: (focusId?: string) => void;
+}) {
+    const spin = useSharedValue(expanded ? 1 : 0);
+    useEffect(() => {
+        spin.value = withTiming(expanded ? 1 : 0, { duration: motion.fast });
+    }, [expanded, spin]);
+    const chevronStyle = useAnimatedStyle(() => ({
+        transform: [{ rotate: `${spin.value * 180}deg` }],
+    }));
+
+    return (
+        <Animated.View layout={LinearTransition.duration(motion.base)} style={styles.row}>
+            <Pressable
+                onPress={onToggle}
+                accessibilityRole="button"
+                accessibilityLabel={`${typeLabel(event.type)} — ${event.summary.slice(0, 60)}`}
+                accessibilityState={{ expanded }}
+                accessibilityHint={expanded ? "Collapse details" : "Expand full record"}
+            >
+                <View style={styles.rowTop}>
+                    <View style={styles.typeRow}>
+                        {typeGlyph(event.type)}
+                        <Text style={styles.type}>{typeLabel(event.type)}</Text>
+                        {onOpenGlossary ? (
+                            <TermHint termId={typeHint(event.type)} onOpenGlossary={onOpenGlossary} />
+                        ) : null}
+                    </View>
+                    <View style={styles.rowWhen}>
+                        <Text style={styles.when}>{formatWhen(event.createdAt)}</Text>
+                        <Animated.View style={chevronStyle}>
+                            <IconChevronDown size={13} color={color.mist} />
+                        </Animated.View>
+                    </View>
+                </View>
+                <Text style={styles.summary} numberOfLines={expanded ? undefined : compact ? 2 : 3}>
+                    {event.summary}
+                </Text>
+            </Pressable>
+            <View style={styles.rowFoot}>
+                {event.ventureName ? (
+                    <Pressable
+                        onPress={onFilterVenture}
+                        disabled={!event.ventureSlug}
+                        hitSlop={4}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Filter ledger by ${event.ventureName}`}
+                    >
+                        <Text style={styles.venture}>{event.ventureName}</Text>
+                    </Pressable>
+                ) : (
+                    <View />
+                )}
+                {event.evidence.length > 0 && !expanded ? (
+                    <View style={styles.evidenceRow}>
+                        {event.evidence.map((tag: string) => (
+                            <View key={tag} style={styles.evidenceChip}>
+                                <Text style={styles.evidenceChipText}>{tag}</Text>
+                            </View>
+                        ))}
+                    </View>
+                ) : null}
+            </View>
+
+            {expanded ? (
+                <Animated.View
+                    entering={FadeIn.duration(motion.base)}
+                    exiting={FadeOut.duration(motion.fast)}
+                    style={styles.rowDetail}
+                >
+                    {event.amountKes != null ? (
+                        <View style={styles.detailLine}>
+                            <Text style={styles.detailLabel}>Recorded</Text>
+                            <Text style={styles.detailValue}>{formatKes(event.amountKes)}</Text>
+                        </View>
+                    ) : null}
+                    {event.metric && event.value != null ? (
+                        <View style={styles.detailLine}>
+                            <Text style={styles.detailLabel}>Metric</Text>
+                            <Text style={[styles.detailValue, styles.detailValueNum]}>
+                                {event.metric} · {event.value}
+                            </Text>
+                        </View>
+                    ) : null}
+                    {event.evidence.length > 0 ? (
+                        <View style={styles.detailLine}>
+                            <Text style={styles.detailLabel}>Evidence</Text>
+                            <View style={styles.evidenceRow}>
+                                {event.evidence.map((tag: string) => (
+                                    <View key={tag} style={[styles.evidenceChip, styles.evidenceChipBig]}>
+                                        <Text style={[styles.evidenceChipText, styles.evidenceChipTextBig]}>
+                                            {tag}
+                                        </Text>
+                                    </View>
+                                ))}
+                            </View>
+                        </View>
+                    ) : null}
+                </Animated.View>
+            ) : null}
+        </Animated.View>
     );
 }
 
@@ -374,19 +475,9 @@ const styles = StyleSheet.create({
     stats: { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap", justifyContent: "center" },
     stat: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.ink, fontVariant: tabularNums },
     statDot: { color: color.mist },
+    shareRowInner: { flexDirection: "row", alignItems: "center", gap: 5 },
     shareLink: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.brassDeep },
     filterRow: { gap: 6, paddingHorizontal: 2, paddingVertical: 2 },
-    filterChip: {
-        paddingHorizontal: 12,
-        paddingVertical: 7,
-        borderRadius: 4,
-        backgroundColor: color.paper,
-        borderWidth: 1,
-        borderColor: color.line,
-    },
-    filterChipOn: { borderColor: color.brass, backgroundColor: color.brassSoft },
-    filterChipText: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.ink },
-    filterChipTextOn: { color: color.charcoal },
     feed: {
         backgroundColor: color.paper,
         borderWidth: 1,
@@ -409,8 +500,8 @@ const styles = StyleSheet.create({
         borderTopColor: color.line,
     },
     rowTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+    rowWhen: { flexDirection: "row", alignItems: "center", gap: 5 },
     typeRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-    typeGlyph: { fontSize: 10, color: color.brassDeep },
     type: {
         fontFamily: font.bodyBold,
         fontSize: 11,
@@ -440,4 +531,29 @@ const styles = StyleSheet.create({
         textTransform: "uppercase",
         color: color.brassDeep,
     },
+    // The expanded preview — the record at full size.
+    rowDetail: {
+        gap: 8,
+        marginTop: 4,
+        paddingTop: 10,
+        borderTopWidth: 1,
+        borderTopColor: color.line,
+    },
+    detailLine: { gap: 2 },
+    detailLabel: {
+        fontFamily: font.bodyBold,
+        fontSize: 9,
+        fontWeight: "700",
+        letterSpacing: 0.8,
+        textTransform: "uppercase",
+        color: color.mist,
+    },
+    detailValue: {
+        fontFamily: font.body,
+        fontSize: 14,
+        color: color.ink,
+    },
+    detailValueNum: { fontVariant: tabularNums },
+    evidenceChipBig: { paddingVertical: 5, paddingHorizontal: 9 },
+    evidenceChipTextBig: { fontSize: 10, letterSpacing: 0.6 },
 });
