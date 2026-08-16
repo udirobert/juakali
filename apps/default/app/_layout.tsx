@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { ActivityIndicator, Platform, View } from "react-native";
+import { Platform } from "react-native";
 import { ConvexReactClient } from "convex/react";
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { Stack } from "expo-router";
@@ -43,6 +43,8 @@ export default function RootLayout() {
         IBMPlexSans_700Bold,
     });
 
+    // Fonts load without blocking first paint — text starts on system
+    // fallbacks and swaps to Fraunces/Plex when ready. No boot spinner.
     useEffect(() => {
         if (Platform.OS !== "web" || typeof document === "undefined") return;
         const id = "juakali-fonts";
@@ -67,13 +69,8 @@ export default function RootLayout() {
         }
     }, []);
 
-    if (!frauncesLoaded || !plexLoaded) {
-        return (
-            <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: color.stone }}>
-                <ActivityIndicator color={color.brass} />
-            </View>
-        );
-    }
+    void frauncesLoaded;
+    void plexLoaded;
 
     const ogImage = absoluteUrl(SITE.ogImagePath);
 

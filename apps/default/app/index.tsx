@@ -246,7 +246,6 @@ export default function Index() {
                             compact
                             onPress={() => openGlossary("soft-pledge")}
                         />
-                        <Text style={styles.mobileBridge}>Deals = act · Ledger = proof</Text>
                         <SoftIdentityBar compact />
                     </View>
                     {helpCluster}
@@ -265,7 +264,10 @@ export default function Index() {
             />
 
             <View style={styles.content}>
-                {screen === "home" ? (
+                {/* Keep-alive: Deals and Ledger stay mounted; the inactive tab
+                    hides instead of unmounting, so drafts, scroll, and local
+                    phase survive tab switches. Lab (dev-only) mounts on demand. */}
+                <View style={[styles.screenPane, screen !== "home" && styles.screenHidden]}>
                     <InvestorCockpit
                         initialCommitmentId={focusCommitmentId}
                         showCoach={showCoach}
@@ -278,15 +280,19 @@ export default function Index() {
                         hideBrand={useTopNav}
                         requireAuthToAct={requireAuthToAct}
                     />
-                ) : screen === "ledger" ? (
+                </View>
+                <View style={[styles.screenPane, screen !== "ledger" && styles.screenHidden]}>
                     <PublicLedger onOpenGlossary={openGlossary} hideTitleChrome={useTopNav} />
-                ) : labScreen === "agent" ? (
-                    <AgentChat />
-                ) : labScreen === "funnel" ? (
-                    <Onboarding onEnterDashboard={() => setLabScreen("ops")} />
-                ) : (
-                    <AdminDashboard />
-                )}
+                </View>
+                {screen === "lab" && labUnlocked ? (
+                    labScreen === "agent" ? (
+                        <AgentChat />
+                    ) : labScreen === "funnel" ? (
+                        <Onboarding onEnterDashboard={() => setLabScreen("ops")} />
+                    ) : (
+                        <AdminDashboard />
+                    )
+                ) : null}
             </View>
 
             {!useTopNav ? (
@@ -320,11 +326,12 @@ function TabButton({
     return (
         <Pressable
             onPress={onPress}
-            style={[
+            style={({ pressed }) => [
                 styles.tab,
                 top && styles.tabTop,
                 compact && styles.tabCompact,
                 active && (top ? styles.tabActiveTop : styles.tabActive),
+                pressed && styles.tabPressed,
             ]}
             accessibilityRole="tab"
             accessibilityState={{ selected: active }}
@@ -346,6 +353,8 @@ const styles = StyleSheet.create({
     boot: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: color.stone },
     container: { flex: 1, backgroundColor: color.stone },
     content: { flex: 1 },
+    screenPane: { flex: 1 },
+    screenHidden: { display: "none" },
     topBar: {
         borderBottomWidth: 1,
         borderBottomColor: color.line,
@@ -383,11 +392,6 @@ const styles = StyleSheet.create({
         zIndex: 5,
     },
     mobileLead: { flex: 1, gap: 4 },
-    mobileBridge: {
-        fontFamily: font.bodyMedium,
-        fontSize: 11,
-        color: color.mist,
-    },
     helpWrap: { position: "relative", zIndex: 30 },
     navInner: { width: "100%" },
     navInnerTop: { flex: 1 },
@@ -445,6 +449,7 @@ const styles = StyleSheet.create({
     tabActiveTop: {
         backgroundColor: color.brassSoft,
     },
+    tabPressed: { opacity: 0.6 },
     tabText: {
         fontFamily: font.bodyBold,
         color: color.mist,

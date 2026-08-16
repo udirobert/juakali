@@ -38,13 +38,17 @@ export function PressableScale({
         <Pressable
             disabled={disabled}
             onPressIn={() => {
-                tapHaptic();
                 if (!reduceMotion) scale.value = withSpring(motion.pressScale, { damping: 20, stiffness: 400 });
             }}
             onPressOut={() => {
                 if (!reduceMotion) scale.value = withSpring(1, { damping: 18, stiffness: 320 });
             }}
-            onPress={onPress}
+            onPress={() => {
+                if (disabled) return;
+                // Haptic on commit, not press-in — cancelled presses stay silent.
+                tapHaptic();
+                onPress();
+            }}
             accessibilityRole={accessibilityRole}
             accessibilityLabel={accessibilityLabel}
             accessibilityHint={accessibilityHint}

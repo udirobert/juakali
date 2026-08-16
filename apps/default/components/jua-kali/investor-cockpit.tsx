@@ -36,7 +36,6 @@ import { SunMark } from "@/components/jua-kali/sun-mark";
 import { LivingSun } from "@/components/jua-kali/living-sun";
 import { IconCheck, IconSend, IconShare, IconX } from "@/components/jua-kali/icons";
 import { Button, Card, Chip, Input } from "@/components/jua-kali/ui";
-import { useCountUp } from "@/components/jua-kali/hooks/use-count-up";
 import { color, font, layout, motion, tabularNums } from "@/components/jua-kali/theme";
 
 const AnimatedPath = Animated.createAnimatedComponent(SvgPath);
@@ -44,6 +43,7 @@ const AnimatedPath = Animated.createAnimatedComponent(SvgPath);
 type Cockpit = FunctionReturnType<typeof api.invest.investorCockpit>;
 type Commitment = Cockpit["commitments"][number];
 type AgentRun = NonNullable<FunctionReturnType<typeof api.agentRuns.getAgentRun>>;
+type LatestRun = NonNullable<FunctionReturnType<typeof api.agentRuns.getLatestRun>>;
 type RunStep = AgentRun["steps"][number];
 type AgentPhase = "idle" | "queued" | "acting" | "done" | "failed";
 
@@ -232,29 +232,21 @@ export function InvestorCockpit({
     const [pendingBody, setPendingBody] = useState<string | null>(null);
     const [agentPhase, setAgentPhase] = useState<AgentPhase>("idle");
     const [activeRunId, setActiveRunId] = useState<Id<"agentRuns"> | null>(null);
+    /** The commitment our active run belongs to — known locally, no re-subscribe. */
+    const [activeRunCommitmentId, setActiveRunCommitmentId] = useState<Id<"commitments"> | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [isSeeding, setIsSeeding] = useState(false);
     const [isPledging, setIsPledging] = useState(false);
     const [showPledge, setShowPledge] = useState(false);
-    const [showThread, setShowThread] = useState(false);
-    const [actingSeconds, setActingSeconds] = useState(0);
 
-    /** Live subscription to the run we approved — steps update as each commits. */
-    const activeRun = useQuery(
-        api.agentRuns.getAgentRun,
-        activeRunId ? { runId: activeRunId } : "skip"
-    );
-
-    /** Live subscription to the commitment's latest run — catches inbound AgentMail runs too. */
+    /**
+     * Thin status line only: the commitment's latest run (id/status/trigger).
+     * The heavy per-step subscription lives inside Ritual, so step commits
+     * re-render the ritual card — not the whole cockpit.
+     */
     const inboundRun = useQuery(
         api.agentRuns.getLatestRun,
         selectedCommitmentId ? { commitmentId: selectedCommitmentId } : "skip"
-    );
-    const inboundRunDetail = useQuery(
-        api.agentRuns.getAgentRun,
-        inboundRun && inboundRun.id !== activeRunId && inboundRun.status === "running"
-            ? { runId: inboundRun.id }
-            : "skip"
     );
 
     useEffect(() => {
@@ -270,12 +262,13 @@ export function InvestorCockpit({
 
     // If the selected commitment changes, drop any run state that belongs to the old one.
     useEffect(() => {
-        if (!activeRunId || !selectedCommitment) return;
-        if (activeRun && activeRun.commitmentId !== selectedCommitment.id) {
+        if (!activeRunId || !activeRunCommitmentId || !selectedCommitment) return;
+        if (activeRunCommitmentId !== selectedCommitment.id) {
             setActiveRunId(null);
+            setActiveRunCommitmentId(null);
             setAgentPhase("idle");
         }
-    }, [activeRunId, activeRun, selectedCommitment]);
+    }, [activeRunId, activeRunCommitmentId, selectedCommitment]);
 
     const selectedVenture = useMemo(() => {
         if (!data) return null;
@@ -285,48 +278,25 @@ export function InvestorCockpit({
 
     const empty = data !== undefined && data.commitments.length === 0;
 
-    // The run currently in flight: ours if any, else a live inbound email run.
-    const liveRun = activeRun ?? inboundRunDetail ?? null;
-    const runIsOurs = liveRun != null && activeRun != null && liveRun.id === activeRun.id;
-    const waiting = agentPhase === "queued" || (liveRun?.status === "running" && runIsOurs);
+    /** A live run that isn't ours (e.g. AgentMail) — narrated, never owned. */
+    const liveInbound =
+        inboundRun && inboundRun.status === "running" && inboundRun.id !== activeRunId ? inboundRun : null;
 
-    // Derive UI phase from real run state instead of simulating it.
-    // Completion/failure only updates our local phase for runs we own — an
-    // inbound email run finishing must not clobber a draft the user is typing.
-    useEffect(() => {
-        if (!liveRun) return;
-        if (liveRun.status === "running") {
-            if (runIsOurs) setAgentPhase("acting");
-        } else if (liveRun.status === "completed") {
-            if (runIsOurs) {
-                setAgentPhase("done");
-                setPendingBody(null);
-                setEmailDraft("");
-                setStatusMessage(liveRun.result?.message ?? "Agent run completed.");
-                successHaptic();
-                void AccessibilityInfo.announceForAccessibility("Done. Digest and ledger updated.");
-            }
-        } else if (liveRun.status === "failed") {
-            if (runIsOurs) {
-                setAgentPhase("failed");
-                setStatusMessage(liveRun.error ?? "Agent run failed.");
-            }
-        }
-        // Phase only changes when the run's status (or ownership) changes;
-        // depending on the whole run object would re-fire on every step commit.
-    }, [liveRun?.status, runIsOurs]);
-
-    useEffect(() => {
-        if (liveRun?.status !== "running") {
-            setActingSeconds(0);
-            return;
-        }
-        const started = liveRun.createdAt;
-        const tick = () => setActingSeconds(Math.max(0, Math.floor((Date.now() - started) / 1000)));
-        tick();
-        const id = setInterval(tick, 250);
-        return () => clearInterval(id);
-    }, [liveRun?.status, liveRun?.createdAt]);
+    // Run lifecycle — Ritual streams the run; root only hears transitions,
+    // and only for runs we own. Inbound runs never clobber local drafts.
+    const handleRunRunning = useCallback(() => setAgentPhase("acting"), []);
+    const handleRunCompleted = useCallback((message: string) => {
+        setAgentPhase("done");
+        setPendingBody(null);
+        setEmailDraft("");
+        setStatusMessage(message);
+        successHaptic();
+        void AccessibilityInfo.announceForAccessibility("Done. Digest and ledger updated.");
+    }, []);
+    const handleRunFailed = useCallback((error: string) => {
+        setAgentPhase("failed");
+        setStatusMessage(error);
+    }, []);
 
     async function handleSeed() {
         setIsSeeding(true);
@@ -347,14 +317,18 @@ export function InvestorCockpit({
             setStatusMessage("Enter a positive KES amount.");
             return;
         }
+        // Optimistic close — the form collapses immediately and Convex
+        // confirms behind it; on error the form reopens with the reason.
         setIsPledging(true);
+        setShowPledge(false);
+        setStatusMessage("Pledge recorded — syncing…");
         try {
             const result = await pledgeCommitment({ ventureId: selectedVenture.id, amountKes });
             setSelectedCommitmentId(result.commitmentId);
             setStatusMessage(result.message);
-            setShowPledge(false);
         } catch (error) {
             setStatusMessage(error instanceof Error ? error.message : "Could not pledge.");
+            setShowPledge(true);
         } finally {
             setIsPledging(false);
         }
@@ -383,7 +357,8 @@ export function InvestorCockpit({
     const handleApproveEmail = useCallback(async () => {
         if (!pendingBody || !selectedCommitment) return;
         setAgentPhase("acting");
-        setStatusMessage(null);
+        setStatusMessage("Approved — Jua is working.");
+        setActiveRunCommitmentId(selectedCommitment.id);
         try {
             const result = await startAgentRun({
                 commitmentId: selectedCommitment.id,
@@ -399,9 +374,11 @@ export function InvestorCockpit({
     /** Approve Jua's proactive suggestion — the same durable pipeline streams. */
     const handleApproveProposal = useCallback(
         async (runId: Id<"agentRuns">) => {
+            if (!selectedCommitment) return;
             setAgentPhase("acting");
-            setStatusMessage(null);
+            setStatusMessage("Approved — Jua is working.");
             setActiveRunId(null);
+            setActiveRunCommitmentId(selectedCommitment.id);
             try {
                 const result = await approveProposal({ runId });
                 setActiveRunId(result.runId);
@@ -411,7 +388,7 @@ export function InvestorCockpit({
                 setStatusMessage(error instanceof Error ? error.message : "Could not approve.");
             }
         },
-        [approveProposal]
+        [approveProposal, selectedCommitment]
     );
 
     const handleDismissProposal = useCallback(
@@ -476,7 +453,7 @@ export function InvestorCockpit({
                     <AgentPresence
                         presence={data.agentPresence}
                         nextDigestAt={selectedCommitment?.nextDigestAt ?? null}
-                        working={liveRun?.status === "running"}
+                        working={liveInbound != null || agentPhase === "acting"}
                     />
                 ) : null}
 
@@ -498,8 +475,7 @@ export function InvestorCockpit({
                     if (!empty && selectedCommitment) {
                         return (
                             <AgentArrival
-                                liveRun={liveRun}
-                                runIsOurs={runIsOurs}
+                                inbound={liveInbound}
                                 latestDigest={selectedCommitment.latestDigest}
                                 dealCount={data.commitments.length}
                             />
@@ -616,13 +592,12 @@ export function InvestorCockpit({
                                     onChangeDraft={setEmailDraft}
                                     pendingBody={pendingBody}
                                     agentPhase={agentPhase}
-                                    liveRun={liveRun}
-                                    runIsOurs={runIsOurs}
-                                    waiting={waiting}
-                                    actingSeconds={actingSeconds}
-                                    showThread={showThread}
+                                    activeRunId={activeRunId}
+                                    inboundRun={inboundRun ?? null}
+                                    onRunRunning={handleRunRunning}
+                                    onRunCompleted={handleRunCompleted}
+                                    onRunFailed={handleRunFailed}
                                     emailInbox={agentMail?.configured ? agentMail.inboxEmail ?? null : null}
-                                    onToggleThread={() => setShowThread((v) => !v)}
                                     onQueue={handleQueueEmail}
                                     onApprove={() => void handleApproveEmail()}
                                     onDiscard={handleDiscardQueue}
@@ -670,7 +645,12 @@ function AgentPresence({
 
     return (
         <View style={styles.presence} accessibilityRole="text">
-            <LivingSun progress={0.5} size={14} working={working} />
+            {/* Static mark at rest; it breathes only while Jua is working. */}
+            {working ? (
+                <LivingSun progress={0.5} size={14} working />
+            ) : (
+                <SunMark size={14} />
+            )}
             <Text style={styles.presenceText}>
                 Jua · {parts.join(" · ")}
             </Text>
@@ -743,23 +723,21 @@ function ProposalCard({
  * The one authored entrance on the screen — mark, voice, timestamp stagger in.
  */
 function AgentArrival({
-    liveRun,
-    runIsOurs,
+    inbound,
     latestDigest,
     dealCount,
 }: {
-    liveRun: AgentRun | null;
-    runIsOurs: boolean;
+    /** A live run that isn't ours (AgentMail) — thin status, no steps. */
+    inbound: LatestRun | null;
     latestDigest: Commitment["latestDigest"];
     dealCount: number;
 }) {
     const reduceMotion = useReducedMotion();
-    const inboundActing = liveRun?.status === "running" && !runIsOurs;
 
     let voice: string;
-    if (inboundActing) {
+    if (inbound) {
         voice =
-            liveRun?.trigger === "inbound_email"
+            inbound.trigger === "inbound_email"
                 ? "I'm reading an email that just came in — live steps below."
                 : "I'm working on a run right now — live steps below.";
     } else if (latestDigest) {
@@ -780,7 +758,7 @@ function AgentArrival({
             </Animated.View>
             <Animated.View style={styles.arrivalBody} entering={enter(1)}>
                 <Text style={styles.arrivalVoice}>{voice}</Text>
-                {latestDigest && !inboundActing ? (
+                {latestDigest && !inbound ? (
                     <Text style={styles.arrivalWhen}>{relativeTime(latestDigest.createdAt)}</Text>
                 ) : null}
             </Animated.View>
@@ -815,8 +793,7 @@ function Scorecard({
         <Card>
             <View style={styles.cardTop}>
                 <View style={styles.titleWithHint}>
-                    {/* The venture's sun — it rises as the KPI total closes on target. */}
-                    <LivingSun progress={progress} size={18} />
+                    <SunMark size={16} />
                     <Text style={styles.cardTitle} numberOfLines={1}>
                         {venture.name}
                     </Text>
@@ -889,13 +866,10 @@ function Metric({
     termId?: string;
     onOpenGlossary?: (focusId?: string) => void;
 }) {
-    // Headline figures arrive rather than jump; static strings pass through.
-    const numeric = typeof value === "number" ? value : 0;
-    const animated = useCountUp(numeric, 480);
-    const shown = typeof value === "number" ? Math.round(animated) : value;
+    // Plain figures — the shell stays calm; motion lives on the ritual.
     return (
         <View style={styles.metric}>
-            <Text style={styles.metricValue}>{shown}</Text>
+            <Text style={styles.metricValue}>{value}</Text>
             <View style={styles.metricLabelRow}>
                 <Text style={styles.metricLabel} numberOfLines={1}>
                     {label}
@@ -912,13 +886,12 @@ function Ritual({
     onChangeDraft,
     pendingBody,
     agentPhase,
-    liveRun,
-    runIsOurs,
-    waiting,
-    actingSeconds,
-    showThread,
+    activeRunId,
+    inboundRun,
+    onRunRunning,
+    onRunCompleted,
+    onRunFailed,
     emailInbox,
-    onToggleThread,
     onQueue,
     onApprove,
     onDiscard,
@@ -930,13 +903,14 @@ function Ritual({
     onChangeDraft: (value: string) => void;
     pendingBody: string | null;
     agentPhase: AgentPhase;
-    liveRun: AgentRun | null;
-    runIsOurs: boolean;
-    waiting: boolean;
-    actingSeconds: number;
-    showThread: boolean;
+    /** The run we approved (if any) — this card streams its steps. */
+    activeRunId: Id<"agentRuns"> | null;
+    /** Thin status line for the commitment's latest run (catches AgentMail). */
+    inboundRun: LatestRun | null;
+    onRunRunning: () => void;
+    onRunCompleted: (message: string) => void;
+    onRunFailed: (error: string) => void;
     emailInbox: string | null;
-    onToggleThread: () => void;
     onQueue: () => void;
     onApprove: () => void;
     onDiscard: () => void;
@@ -944,23 +918,63 @@ function Ritual({
     onOpenGlossary?: (focusId?: string) => void;
 }) {
     const emails = commitment.recentEmails;
+    const [showThread, setShowThread] = useState(false);
+    const [actingSeconds, setActingSeconds] = useState(0);
+
+    // The heavy per-step subscription lives here, inside the ritual card —
+    // step commits re-render this card, not the whole cockpit.
+    const ownRun = useQuery(
+        api.agentRuns.getAgentRun,
+        activeRunId ? { runId: activeRunId } : "skip"
+    );
+    const inboundRunId =
+        inboundRun && inboundRun.id !== activeRunId && inboundRun.status === "running"
+            ? inboundRun.id
+            : null;
+    const inboundDetail = useQuery(
+        api.agentRuns.getAgentRun,
+        inboundRunId ? { runId: inboundRunId } : "skip"
+    );
+    const liveRun = ownRun ?? inboundDetail ?? null;
+    const runIsOurs = liveRun != null && ownRun != null && liveRun.id === activeRunId;
     const runLive = liveRun?.status === "running";
+    const waiting = agentPhase === "queued" || (runLive && runIsOurs);
     const inboundActing = !runIsOurs && runLive && agentPhase !== "queued";
     const showApproveGate = pendingBody != null && agentPhase === "queued";
     const showSteps = liveRun != null && (runIsOurs || inboundActing);
 
+    // Lifecycle for runs we own only — inbound runs never clobber root state.
+    // Fires on status transitions, not per step.
+    useEffect(() => {
+        if (!liveRun || !runIsOurs) return;
+        if (liveRun.status === "running") onRunRunning();
+        else if (liveRun.status === "completed")
+            onRunCompleted(liveRun.result?.message ?? "Agent run completed.");
+        else if (liveRun.status === "failed") onRunFailed(liveRun.error ?? "Agent run failed.");
+    }, [liveRun?.status, runIsOurs]);
+
+    useEffect(() => {
+        if (liveRun?.status !== "running") {
+            setActingSeconds(0);
+            return;
+        }
+        const started = liveRun.createdAt;
+        const tick = () => setActingSeconds(Math.max(0, Math.floor((Date.now() - started) / 1000)));
+        tick();
+        const id = setInterval(tick, 250);
+        return () => clearInterval(id);
+    }, [liveRun?.status, liveRun?.createdAt]);
+
     // The ritual's sun answers the run: rays ignite as steps commit, full
-    // corona at completion. Idle sits at morning.
+    // corona at completion. At rest it's the quiet static mark.
     const steps = liveRun?.steps ?? [];
     const doneCount = steps.filter((step) => step.status === "done").length;
     const sunProgress =
-        liveRun == null
-            ? 0.3
-            : liveRun.status === "completed"
-              ? 1
-              : steps.length > 0
-                ? 0.3 + 0.7 * (doneCount / steps.length)
-                : 0.35;
+        liveRun?.status === "completed"
+            ? 1
+            : steps.length > 0
+              ? 0.3 + 0.7 * (doneCount / steps.length)
+              : 0.35;
 
     const phaseLabel = showApproveGate
         ? "Waiting for your approval"
@@ -978,7 +992,11 @@ function Ritual({
         <Card>
             <View style={styles.cardTop}>
                 <View style={styles.titleWithHint}>
-                    <LivingSun progress={sunProgress} size={18} working={runLive} />
+                    {liveRun ? (
+                        <LivingSun progress={sunProgress} size={18} working={runLive} />
+                    ) : (
+                        <SunMark size={16} />
+                    )}
                     <Text style={styles.cardTitle}>Note to Jua</Text>
                     {onOpenGlossary ? <TermHint termId="queue-approve" onOpenGlossary={onOpenGlossary} /> : null}
                 </View>
@@ -1001,12 +1019,12 @@ function Ritual({
 
             {showApproveGate ? (
                 <Animated.View entering={FadeInDown.duration(160)} style={styles.gate}>
-                    <Text style={styles.gateEyebrow}>Queued — approve to run</Text>
+                    <Text style={styles.gateEyebrow}>Ready to run</Text>
                     <Text style={styles.gateBody} numberOfLines={6}>
                         {pendingBody}
                     </Text>
                     <View style={styles.consequence}>
-                        <Text style={styles.consequenceLabel}>Approving will</Text>
+                        <Text style={styles.consequenceLabel}>Jua will</Text>
                         {["Log a KPI check-in", "Write an investor digest", "Post to the public ledger", "Reply with evidence"].map(
                             (line) => (
                                 <Text key={line} style={styles.consequenceLine}>
@@ -1045,7 +1063,7 @@ function Ritual({
             ) : null}
 
             {emails.length > 0 ? (
-                <Pressable onPress={onToggleThread}>
+                <Pressable onPress={() => setShowThread((v) => !v)}>
                     <Text style={styles.threadToggle}>
                         {showThread ? "Hide thread" : `Email thread · ${emails.length}`}
                     </Text>

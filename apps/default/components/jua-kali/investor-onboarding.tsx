@@ -239,7 +239,7 @@ function HeroStage({ compact }: { compact: boolean }) {
 
     useEffect(() => {
         if (reduceMotion) return;
-        const timer = setTimeout(() => setProgress(0.35), 140);
+        const timer = setTimeout(() => setProgress(0.35), 100);
         return () => clearTimeout(timer);
     }, [reduceMotion]);
 
@@ -432,7 +432,7 @@ export function InvestorLanding({
                 <Animated.View entering={FadeIn.duration(motion.base)} style={styles.frame}>
                     <HeroStage compact={compact} />
                     <Animated.View
-                        entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(120)}
+                        entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(40)}
                         style={styles.brandBlock}
                     >
                         <Text style={styles.brand}>JuaKali</Text>
@@ -448,13 +448,13 @@ export function InvestorLanding({
                     {mode === "pitch" ? (
                         <>
                             <Animated.Text
-                                entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(180)}
+                                entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(90)}
                                 style={[styles.headline, compact && styles.headlineCompact]}
                             >
                                 You’re busy. Your capital shouldn’t be.
                             </Animated.Text>
                             <Animated.Text
-                                entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(240)}
+                                entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(140)}
                                 style={styles.subhead}
                             >
                                 Jua, your agent, mentors each venture weekly — tracking KPIs, writing
@@ -463,7 +463,7 @@ export function InvestorLanding({
                             </Animated.Text>
 
                             <Animated.View
-                                entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(300)}
+                                entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(190)}
                                 style={styles.artifactBlock}
                             >
                                 <SectionLabel>The ledger, live</SectionLabel>
@@ -471,7 +471,7 @@ export function InvestorLanding({
                             </Animated.View>
 
                             <Animated.View
-                                entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(360)}
+                                entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(240)}
                                 style={styles.ctaBlock}
                             >
                                 <Button

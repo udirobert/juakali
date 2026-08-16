@@ -14,7 +14,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
     FadeIn,
     FadeOut,
-    LinearTransition,
     useAnimatedStyle,
     useSharedValue,
     withTiming,
@@ -24,7 +23,7 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { SITE_URL } from "@/lib/site";
 import { TermHint } from "@/components/jua-kali/help";
-import { LivingSun } from "@/components/jua-kali/living-sun";
+import { SunMark } from "@/components/jua-kali/sun-mark";
 import {
     IconBolt,
     IconCapital,
@@ -198,7 +197,7 @@ export function PublicLedger({
             >
                 <View style={styles.hero}>
                     {/* High noon on the ledger — this is where proof lives. */}
-                    <LivingSun progress={1} size={28} />
+                    <SunMark size={28} />
                     {!hideTitleChrome ? (
                         <View style={styles.titleRow}>
                             <Text style={styles.title}>Public ledger</Text>
@@ -331,7 +330,9 @@ function LedgerRow({
     }));
 
     return (
-        <Animated.View layout={LinearTransition.duration(motion.base)} style={styles.row}>
+        // No per-row layout transitions: detail fades in and neighbors reflow
+        // immediately. Rows are many — layout animation is the expensive one.
+        <View style={styles.row}>
             <Pressable
                 onPress={onToggle}
                 accessibilityRole="button"
@@ -419,7 +420,7 @@ function LedgerRow({
                     ) : null}
                 </Animated.View>
             ) : null}
-        </Animated.View>
+        </View>
     );
 }
 
