@@ -1,10 +1,14 @@
 import { StyleSheet, Text } from "react-native";
 
-import { color, font } from "@/components/jua-kali/theme";
+import { color, font, lab } from "@/components/jua-kali/theme";
 
-/** The eyebrow — a brass-deep small-caps label that opens a section. */
-export function SectionLabel({ children }: { children: string }) {
-    return <Text style={styles.label}>{children}</Text>;
+/**
+ * The eyebrow — a brass-deep small-caps label that opens a section. The `lab`
+ * variant restyles it in the neutral "system" tone (theme.lab) for operator
+ * faces, so functional tooling reads as system rather than investor theater.
+ */
+export function SectionLabel({ children, variant = "section" }: { children: string; variant?: "section" | "lab" }) {
+    return <Text style={[styles.label, variant === "lab" && styles.labelLab]}>{children}</Text>;
 }
 
 const styles = StyleSheet.create({
@@ -15,5 +19,10 @@ const styles = StyleSheet.create({
         letterSpacing: 1.6,
         textTransform: "uppercase",
         color: color.brassDeep,
+    },
+    labelLab: {
+        color: lab.info,
+        letterSpacing: 1.2,
+        fontVariant: lab.tabular,
     },
 });

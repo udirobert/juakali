@@ -182,3 +182,19 @@ export const type = {
         color: color.mist,
     },
 };
+
+/**
+ * Lab "system" tone — a neutral ink/gray set for operator surfaces (funnel,
+ * ops/Lab) so functional tooling reads as *system*, not investor theater. It
+ * stays inside the palette (no new hue) but trades brass's "trust" meaning for
+ * a cool, tabular ink. Additive: adopted by Lab-facing primitives as needed;
+ * the admin Ops face still carries its own organic legacy treatment.
+ */
+export const lab = {
+    /** Primary system ink — near-charcoal, cooler than warm charcoal. */
+    ink: "#2A322C",
+    /** Neutral text — grayed-out brass meaning; no "approve" implication. */
+    info: "#4A5560",
+    line: color.lineStrong,
+    tabular: tabularNums,
+};
