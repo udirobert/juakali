@@ -229,12 +229,20 @@ async function executeToolCall(name: string, args: Record<string, unknown>): Pro
             });
 
         case "get_dashboard": {
-            const data = await convexQuery<{ analytics: Record<string, unknown> }>("telephony:dashboardData", {});
+            // *ViaMcp variants: public HTTP endpoints (rate-limited), unlike the
+            // session-guarded dashboardData/seedDemoData used by the app UI.
+            const data = await convexQuery<{ analytics: Record<string, unknown> }>(
+                "telephony:dashboardDataViaMcp",
+                {}
+            );
             return data.analytics;
         }
 
         case "list_masters": {
-            const data = await convexQuery<{ masters: Array<Record<string, unknown>> }>("telephony:dashboardData", {});
+            const data = await convexQuery<{ masters: Array<Record<string, unknown>> }>(
+                "telephony:dashboardDataViaMcp",
+                {}
+            );
             return { masters: data.masters };
         }
 
@@ -245,7 +253,7 @@ async function executeToolCall(name: string, args: Record<string, unknown>): Pro
             });
 
         case "seed_demo":
-            return await convexMutation("telephony:seedDemoData", {});
+            return await convexMutation("telephony:seedDemoDataViaMcp", {});
 
         default:
             return { error: `Unknown tool: ${name}` };

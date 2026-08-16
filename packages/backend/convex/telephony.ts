@@ -1,6 +1,6 @@
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { MutationCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 
 import { normalizeKey, normalizePhone, scoreMaster } from "./juaKaliHelpers";
@@ -818,15 +818,32 @@ export const handleUssdWebhook = internalMutation({
     },
 });
 
+const seedDemoReturns = v.object({
+    createdMasters: v.number(),
+    createdMatches: v.number(),
+    message: v.string(),
+});
+
 export const seedDemoData = mutation({
     args: {},
-    returns: v.object({
-        createdMasters: v.number(),
-        createdMatches: v.number(),
-        message: v.string(),
-    }),
+    returns: seedDemoReturns,
     handler: async (ctx) => {
         await assertAuthenticated(ctx);
+        return await seedDemoDataCore(ctx);
+    },
+});
+
+/** Agent/MCP-facing seed (public + rate-limited), mirroring the guarded mutation. */
+export const seedDemoDataViaMcp = mutation({
+    args: {},
+    returns: seedDemoReturns,
+    handler: async (ctx) => {
+        await rateLimiter.limit(ctx, "registerMaster", { key: "seedViaMcp" });
+        return await seedDemoDataCore(ctx);
+    },
+});
+
+async function seedDemoDataCore(ctx: MutationCtx) {
         const now = Date.now();
         const existingMasters = await ctx.db.query("masters").order("desc").take(100);
         const existingSeedNames = new Set(existingMasters.filter((master) => master.source === "seed").map((master) => master.name));
@@ -916,8 +933,7 @@ export const seedDemoData = mutation({
             createdMatches,
             message: createdMasters === 0 && createdMatches === 0 ? "Demo data already exists" : "Demo data seeded",
         };
-    },
-});
+}
 
 export const runApprenticeInterview = mutation({
     args: {
@@ -986,67 +1002,85 @@ export const runApprenticeInterview = mutation({
     },
 });
 
+const dashboardReturns = v.object({
+    masters: v.array(masterSummaryValidator),
+    apprentices: v.array(apprenticeSummaryValidator),
+    voiceIntakes: v.array(
+        v.object({
+            id: v.id("voiceIntakes"),
+            fromPhone: v.union(v.string(), v.null()),
+            recordingUrl: v.union(v.string(), v.null()),
+            transcript: v.union(v.string(), v.null()),
+            processingStatus: v.union(
+                v.literal("queued"),
+                v.literal("processed"),
+                v.literal("failed")
+            ),
+            errorMessage: v.union(v.string(), v.null()),
+            extractedName: v.union(v.string(), v.null()),
+            extractedLocationText: v.union(v.string(), v.null()),
+            extractedCraftText: v.union(v.string(), v.null()),
+            createdAt: v.number(),
+        })
+    ),
+    recentMatches: v.array(
+        v.object({
+            id: v.id("matches"),
+            masterName: v.string(),
+            apprenticePhone: v.string(),
+            craftText: v.string(),
+            locationText: v.string(),
+            score: v.number(),
+            createdAt: v.number(),
+        })
+    ),
+    outboundMessages: v.array(
+        v.object({
+            id: v.id("outboundMessages"),
+            recipientPhone: v.string(),
+            body: v.string(),
+            providerStatus: v.union(
+                v.literal("queued"),
+                v.literal("sent"),
+                v.literal("failed"),
+                v.literal("dead_letter")
+            ),
+            createdAt: v.number(),
+        })
+    ),
+    analytics: v.object({
+        totalMasters: v.number(),
+        totalApprentices: v.number(),
+        totalMatches: v.number(),
+        queuedSms: v.number(),
+        verifiedMasters: v.number(),
+        confirmedConnections: v.number(),
+        awaitingConfirmation: v.number(),
+        mastersByCraft: v.array(countValidator),
+        apprenticesByCraft: v.array(countValidator),
+        signupsByLocation: v.array(countValidator),
+    }),
+});
+
 export const dashboardData = query({
     args: {},
-    returns: v.object({
-        masters: v.array(masterSummaryValidator),
-        apprentices: v.array(apprenticeSummaryValidator),
-        voiceIntakes: v.array(
-            v.object({
-                id: v.id("voiceIntakes"),
-                fromPhone: v.union(v.string(), v.null()),
-                recordingUrl: v.union(v.string(), v.null()),
-                transcript: v.union(v.string(), v.null()),
-                processingStatus: v.union(v.literal("queued"), v.literal("processed"), v.literal("failed")),
-                errorMessage: v.union(v.string(), v.null()),
-                extractedName: v.union(v.string(), v.null()),
-                extractedLocationText: v.union(v.string(), v.null()),
-                extractedCraftText: v.union(v.string(), v.null()),
-                createdAt: v.number(),
-            })
-        ),
-        recentMatches: v.array(
-            v.object({
-                id: v.id("matches"),
-                masterName: v.string(),
-                apprenticePhone: v.string(),
-                craftText: v.string(),
-                locationText: v.string(),
-                score: v.number(),
-                createdAt: v.number(),
-            })
-        ),
-        outboundMessages: v.array(
-            v.object({
-                id: v.id("outboundMessages"),
-                recipientPhone: v.string(),
-                body: v.string(),
-                providerStatus: v.union(
-                    v.literal("queued"),
-                    v.literal("sent"),
-                    v.literal("failed"),
-                    v.literal("dead_letter")
-                ),
-                createdAt: v.number(),
-            })
-        ),
-        analytics: v.object({
-            totalMasters: v.number(),
-            totalApprentices: v.number(),
-            totalMatches: v.number(),
-            queuedSms: v.number(),
-            verifiedMasters: v.number(),
-            confirmedConnections: v.number(),
-            awaitingConfirmation: v.number(),
-            mastersByCraft: v.array(countValidator),
-            apprenticesByCraft: v.array(countValidator),
-            signupsByLocation: v.array(countValidator),
-        }),
-    }),
+    returns: dashboardReturns,
     handler: async (ctx) => {
         await assertAuthenticated(ctx);
         // NB: rateLimiter.limit() writes state, so it can't run in a query;
         // this stats read is guarded by the session check above instead.
+        return await buildDashboardData(ctx);
+    },
+});
+
+/** Agent/MCP-facing read of funnel ops data (public, like the other *ViaMcp endpoints). */
+export const dashboardDataViaMcp = query({
+    args: {},
+    returns: dashboardReturns,
+    handler: async (ctx) => buildDashboardData(ctx),
+});
+
+async function buildDashboardData(ctx: QueryCtx) {
         const masters = await ctx.db.query("masters").order("desc").take(100);
         const apprentices = await ctx.db.query("apprentices").order("desc").take(100);
         const voiceRows = await ctx.db.query("voiceIntakes").order("desc").take(12);
@@ -1140,8 +1174,7 @@ export const dashboardData = query({
                 signupsByLocation: toCounts(signupsByLocation),
             },
         };
-    },
-});
+}
 
 export const registerMasterViaMcp = mutation({
     args: {
