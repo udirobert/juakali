@@ -130,6 +130,8 @@ export const applyWisdom = mutation({
             type: "wisdom",
             ventureId: item.ventureId,
             commitmentId: null,
+            ventureName: venture?.name ?? null,
+            ventureSlug: venture?.publicSlug ?? null,
             summary: `${mentor?.displayName ?? "A mentor"} shared ${kindLabel}${
                 venture ? ` with ${venture.name}` : ""
             } — Jua applied: ${item.parse.application.title}`,

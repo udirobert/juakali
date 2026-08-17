@@ -139,10 +139,22 @@ async function writeLedgerEvent(
         createdAt: number;
     }
 ) {
+    // Denormalized venture metadata: the public ledger reads name/slug off the
+    // event with zero lookups. Ventures have no rename path, so this never
+    // goes stale. One venture read per write is negligible (writes are rare).
+    let ventureName: string | null = null;
+    let ventureSlug: string | null = null;
+    if (args.ventureId) {
+        const venture = await ctx.db.get(args.ventureId);
+        ventureName = venture?.name ?? null;
+        ventureSlug = venture?.publicSlug ?? null;
+    }
     return await ctx.db.insert("ledgerEvents", {
         type: args.type,
         ventureId: args.ventureId ?? null,
         commitmentId: args.commitmentId ?? null,
+        ventureName,
+        ventureSlug,
         summary: args.summary,
         amountKes: args.amountKes ?? null,
         metric: args.metric ?? null,
@@ -531,10 +543,24 @@ export const publicLedger = query({
                   .order("desc")
                   .take(limit * 2)
             : await ctx.db.query("ledgerEvents").withIndex("by_createdAt").order("desc").take(limit * 2);
+        // Legacy rows lack the denormalized metadata; resolve those lazily with
+        // a per-handler cache so a legacy feed never degrades into N+1 reads.
+        const ventureMeta = new Map<string, { name: string; slug: string } | null>();
+        async function metaFor(ventureId: Id<"ventures"> | null | undefined) {
+            if (!ventureId) return null;
+            const key = String(ventureId);
+            let meta = ventureMeta.get(key);
+            if (meta === undefined) {
+                const venture = await ctx.db.get(ventureId);
+                meta = venture ? { name: venture.name, slug: venture.publicSlug } : null;
+                ventureMeta.set(key, meta);
+            }
+            return meta;
+        }
         const events = [];
         for (const row of rows) {
             if (!row.publicVisible) continue;
-            const venture = row.ventureId ? await ctx.db.get(row.ventureId) : null;
+            const meta = await metaFor(row.ventureId);
             events.push({
                 id: row._id,
                 type: row.type,
@@ -543,8 +569,8 @@ export const publicLedger = query({
                 metric: row.metric ?? null,
                 value: row.value ?? null,
                 evidence: row.evidence ?? [],
-                ventureName: venture?.name ?? null,
-                ventureSlug: venture?.publicSlug ?? null,
+                ventureName: row.ventureName ?? meta?.name ?? null,
+                ventureSlug: row.ventureSlug ?? meta?.slug ?? null,
                 createdAt: row.createdAt,
                 correlationId: row.correlationId ?? null,
                 runId: row.runId ?? null,
@@ -554,23 +580,24 @@ export const publicLedger = query({
             if (events.length >= limit) break;
         }
 
-        // Ventures that appear on the public ledger (filter chips) — one scan.
+        // Ventures that appear on the public ledger (filter chips) — one scan;
+        // names/slugs come from the denormalized event fields (cached fallback
+        // for legacy rows), so no per-venture lookups are needed.
         const recentEvents = await ctx.db
             .query("ledgerEvents")
             .withIndex("by_createdAt")
             .order("desc")
             .take(400);
-        const ventureIdsInOrder: Array<Id<"ventures">> = [];
+        const ventures = [];
         const seenVentures = new Set<string>();
         for (const event of recentEvents) {
-            if (!event.publicVisible || !event.ventureId || seenVentures.has(event.ventureId)) continue;
-            seenVentures.add(event.ventureId);
-            ventureIdsInOrder.push(event.ventureId);
-        }
-        const ventures = [];
-        for (const ventureId of ventureIdsInOrder) {
-            const venture = await ctx.db.get(ventureId);
-            if (venture) ventures.push({ id: venture._id, name: venture.name, slug: venture.publicSlug });
+            if (!event.publicVisible || !event.ventureId || seenVentures.has(String(event.ventureId))) continue;
+            seenVentures.add(String(event.ventureId));
+            const meta = await metaFor(event.ventureId);
+            const name = event.ventureName ?? meta?.name ?? null;
+            const slug = event.ventureSlug ?? meta?.slug ?? null;
+            if (!name || !slug) continue;
+            ventures.push({ id: event.ventureId, name, slug });
         }
 
         const commitments = await ctx.db.query("commitments").order("desc").take(200);
@@ -2119,10 +2146,24 @@ export const getPublicLedgerViaMcp = query({
     handler: async (ctx, args) => {
         const limit = Math.min(Math.max(args.limit ?? 40, 1), 100);
         const rows = await ctx.db.query("ledgerEvents").withIndex("by_createdAt").order("desc").take(limit * 2);
+        // Legacy rows lack the denormalized metadata; resolve lazily with a
+        // per-handler cache so a legacy feed never degrades into N+1 reads.
+        const ventureMeta = new Map<string, { name: string; slug: string } | null>();
+        async function metaFor(ventureId: Id<"ventures"> | null | undefined) {
+            if (!ventureId) return null;
+            const key = String(ventureId);
+            let meta = ventureMeta.get(key);
+            if (meta === undefined) {
+                const venture = await ctx.db.get(ventureId);
+                meta = venture ? { name: venture.name, slug: venture.publicSlug } : null;
+                ventureMeta.set(key, meta);
+            }
+            return meta;
+        }
         const events = [];
         for (const row of rows) {
             if (!row.publicVisible) continue;
-            const venture = row.ventureId ? await ctx.db.get(row.ventureId) : null;
+            const meta = await metaFor(row.ventureId);
             events.push({
                 id: row._id,
                 type: row.type,
@@ -2130,8 +2171,8 @@ export const getPublicLedgerViaMcp = query({
                 amountKes: row.amountKes ?? null,
                 metric: row.metric ?? null,
                 value: row.value ?? null,
-                ventureName: venture?.name ?? null,
-                ventureSlug: venture?.publicSlug ?? null,
+                ventureName: row.ventureName ?? meta?.name ?? null,
+                ventureSlug: row.ventureSlug ?? meta?.slug ?? null,
                 createdAt: row.createdAt,
             });
             if (events.length >= limit) break;

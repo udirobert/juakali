@@ -20,6 +20,25 @@ export const backfillInvestorBriefings = migrations.define({
     },
 });
 
+/**
+ * Backfill the denormalized ventureName/ventureSlug on ledger events written
+ * before the public-ledger index existed (run once after deploying:
+ * `npx convex run migrations:backfillLedgerEventVentureMeta`). New events embed
+ * the metadata at write time, and publicLedger falls back to a cached venture
+ * lookup until this runs.
+ */
+export const backfillLedgerEventVentureMeta = migrations.define({
+    table: "ledgerEvents",
+    migrateOne: async (ctx, doc) => {
+        if (doc.ventureName != null && doc.ventureSlug != null) return;
+        if (!doc.ventureId) return;
+        const venture = await ctx.db.get(doc.ventureId);
+        if (!venture) return;
+        if (doc.ventureName === venture.name && doc.ventureSlug === venture.publicSlug) return;
+        return { ventureName: venture.name, ventureSlug: venture.publicSlug };
+    },
+});
+
 // =============================================================================
 // DEFINING MIGRATIONS
 // =============================================================================

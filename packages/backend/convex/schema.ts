@@ -594,6 +594,10 @@ export default defineSchema({
         type: ledgerEventType,
         ventureId: v.optional(v.union(v.id("ventures"), v.null())),
         commitmentId: v.optional(v.union(v.id("commitments"), v.null())),
+        /** Denormalized at write time so the public feed needs zero venture
+         *  lookups. Ventures have no rename path, so these never go stale. */
+        ventureName: v.optional(v.union(v.string(), v.null())),
+        ventureSlug: v.optional(v.union(v.string(), v.null())),
         summary: v.string(),
         amountKes: v.optional(v.union(v.number(), v.null())),
         metric: v.optional(v.union(v.string(), v.null())),

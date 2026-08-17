@@ -178,10 +178,16 @@ async function writeLedgerEvent(
         publicVisible?: boolean;
     }
 ) {
+    // Denormalized venture metadata: the public ledger reads name/slug off the
+    // event with zero lookups. Ventures have no rename path, so this never
+    // goes stale. One venture read per write is negligible (writes are rare).
+    const venture = await ctx.db.get(args.ventureId);
     return await ctx.db.insert("ledgerEvents", {
         type: args.type,
         ventureId: args.ventureId,
         commitmentId: args.commitmentId,
+        ventureName: venture?.name ?? null,
+        ventureSlug: venture?.publicSlug ?? null,
         summary: args.summary,
         amountKes: null,
         metric: args.metric ?? null,
