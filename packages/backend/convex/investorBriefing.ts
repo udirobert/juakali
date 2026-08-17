@@ -344,3 +344,31 @@ export async function syncInvestorsForVenture(ctx: WriteDb, ventureId: Id<"ventu
         await syncInvestorBriefing(ctx, commitment.investorId);
     }
 }
+
+/**
+ * Recompute the global venture browse index (one singleton doc).
+ *
+ * The cockpit's availableVentures list and the landing browse (listVentures)
+ * read this single doc instead of re-scanning every venture plus its KPI
+ * check-ins and pledges on each query evaluation. Call this whenever the
+ * browse list can change: venture creation, KPI records, or pledge writes
+ * (venture status has no mutation path). The list is identical for every
+ * investor, so one doc serves all readers.
+ *
+ * Idempotent like syncInvestorBriefing — recomputes from source tables.
+ */
+export async function syncVentureBrowse(ctx: WriteDb) {
+    const ventures = await ctx.db.query("ventures").order("desc").take(50);
+    const summaries: Doc<"ventureBrowse">["ventures"] = [];
+    for (const venture of ventures) {
+        const summary = await buildVentureSummary(ctx, venture._id);
+        if (summary) summaries.push(summary);
+    }
+    const doc = { ventures: summaries, updatedAt: Date.now() };
+    const existing = await ctx.db.query("ventureBrowse").first();
+    if (existing) {
+        await ctx.db.patch(existing._id, doc);
+    } else {
+        await ctx.db.insert("ventureBrowse", doc);
+    }
+}

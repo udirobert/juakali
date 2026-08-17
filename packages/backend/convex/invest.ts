@@ -22,6 +22,7 @@ import {
     sumVentureKpis,
     syncInvestorBriefing,
     syncInvestorsForVenture,
+    syncVentureBrowse,
     ventureSummaryValidator,
 } from "./investorBriefing";
 import {
@@ -243,6 +244,9 @@ export const createVenture = mutation({
             updatedAt: now,
         });
 
+        // A new venture enters the global browse index.
+        await syncVentureBrowse(ctx);
+
         return {
             ventureId,
             publicSlug,
@@ -348,8 +352,10 @@ export const startCommitment = mutation({
             amountKes: Math.round(args.amountKes),
             createdAt: now,
         });
-        // A new commitment affects the briefing's next-scheduled digest.
+        // A new commitment affects the briefing's next-scheduled digest, and
+        // the new venture + pledge affect the global browse index.
         await syncInvestorBriefing(ctx, investorId);
+        await syncVentureBrowse(ctx);
 
         return {
             investorId,
@@ -577,6 +583,10 @@ export const listVentures = query({
         ventures: v.array(ventureSummaryValidator),
     }),
     handler: async (ctx) => {
+        // The global ventureBrowse index serves the landing browse too — one
+        // doc instead of re-scanning every venture + KPI + pledge per render.
+        const browse = await ctx.db.query("ventureBrowse").first();
+        if (browse) return { ventures: browse.ventures };
         const ventures = await ctx.db.query("ventures").order("desc").take(50);
         const results = [];
         for (const venture of ventures) {
@@ -901,12 +911,20 @@ export const investorCockpit = query({
             agentPresence = built.agentPresence;
         }
 
-        const allVentures = await ctx.db.query("ventures").order("desc").take(30);
-        const availableVentures = [];
-        for (const venture of allVentures) {
-            if (venture.status !== "active") continue;
-            const summary = await buildVentureSummary(ctx, venture._id);
-            if (summary) availableVentures.push(summary);
+        // Browse list: the global ventureBrowse index (one doc, same for every
+        // investor) carries the summaries — the cockpit filters to active
+        // ventures. Fall back to the scan only for pre-backfill deployments.
+        const browse = await ctx.db.query("ventureBrowse").first();
+        let availableVentures: Doc<"ventureBrowse">["ventures"] = [];
+        if (browse) {
+            availableVentures = browse.ventures.filter((venture) => venture.status === "active");
+        } else {
+            const allVentures = await ctx.db.query("ventures").order("desc").take(30);
+            for (const venture of allVentures) {
+                if (venture.status !== "active") continue;
+                const summary = await buildVentureSummary(ctx, venture._id);
+                if (summary) availableVentures.push(summary);
+            }
         }
 
         return {
@@ -1413,8 +1431,10 @@ export const pledgeCommitment = mutation({
             amountKes: Math.round(args.amountKes),
             createdAt: now,
         });
-        // A new commitment affects the briefing's next-scheduled digest.
+        // A new commitment affects the briefing's next-scheduled digest, and
+        // the pledge changes the venture's pledged total in the browse index.
         await syncInvestorBriefing(ctx, investorId);
+        await syncVentureBrowse(ctx);
 
         return {
             commitmentId,
@@ -1487,8 +1507,10 @@ export const logKpiCheckIn = mutation({
             value: args.value,
             createdAt: now,
         });
-        // The cockpit projection's check-ins + venture summary must refresh.
+        // The cockpit projection's check-ins + venture summary must refresh,
+        // and the KPI changes the browse index's kpiLatest/kpiTotal.
         await syncInvestorsForVenture(ctx, ventureId);
+        await syncVentureBrowse(ctx);
 
         return {
             checkInId,
@@ -1898,6 +1920,10 @@ export const seedInvestDemo = mutation({
             }
         }
 
+        // Seeding creates ventures, pledges, and check-ins — refresh the
+        // global browse index so the cockpit's browse list is correct.
+        await syncVentureBrowse(ctx);
+
         const alreadySeeded =
             createdInvestors === 0 &&
             createdVentures === 0 &&
@@ -2118,6 +2144,10 @@ export const listVenturesViaMcp = query({
         ventures: v.array(ventureSummaryValidator),
     }),
     handler: async (ctx) => {
+        // Same as listVentures: read the global browse index, fall back to
+        // the scan only for pre-backfill deployments.
+        const browse = await ctx.db.query("ventureBrowse").first();
+        if (browse) return { ventures: browse.ventures };
         const ventures = await ctx.db.query("ventures").order("desc").take(50);
         const results = [];
         for (const venture of ventures) {
@@ -2327,8 +2357,10 @@ export const logKpiViaMcp = mutation({
             value: args.value,
             createdAt: now,
         });
-        // The cockpit projection's check-ins + venture summary must refresh.
+        // The cockpit projection's check-ins + venture summary must refresh,
+        // and the KPI changes the browse index's kpiLatest/kpiTotal.
         await syncInvestorsForVenture(ctx, ventureId);
+        await syncVentureBrowse(ctx);
 
         return {
             checkInId,

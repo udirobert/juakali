@@ -17,7 +17,7 @@ import {
     buildProactiveActionPlan,
     type AutonomyLevel,
 } from "./actionPlan";
-import { syncInvestorBriefing } from "./investorBriefing";
+import { syncInvestorBriefing, syncVentureBrowse } from "./investorBriefing";
 
 /**
  * Durable "approve & run" pipeline.
@@ -925,6 +925,9 @@ export const stepRecordKpi = internalMutation({
                 },
                 updatedAt: now,
             });
+
+            // A recorded KPI changes the browse index's kpiLatest/kpiTotal.
+            await syncVentureBrowse(ctx);
 
             await advanceRun(ctx, run, "log_kpi_checkin", `${metric} = ${value}`);
             await scheduleNextStep(ctx, run, "log_kpi_checkin");

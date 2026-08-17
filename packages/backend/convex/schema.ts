@@ -476,6 +476,19 @@ export default defineSchema({
     }).index("by_investorId", ["investorId"]),
 
     /**
+     * Global denormalized venture browse index (one doc). Maintained by
+     * syncVentureBrowse on venture creation, KPI record, and pledge writes,
+     * so the cockpit's availableVentures browse list and the landing browse
+     * read one doc instead of re-scanning every venture + KPI + pledge on
+     * each query evaluation. The list is identical for every investor, so a
+     * singleton (not per-investor rows) is the right shape.
+     */
+    ventureBrowse: defineTable({
+        ventures: v.array(ventureSummaryValidator),
+        updatedAt: v.number(),
+    }),
+
+    /**
      * Shared wisdom — a mentor's podcast, article, note, or dictated voice,
      * parsed by Jua into an applicable recommendation for one venture.
      * `applied` items carry measurable outcomes via kpiCheckIns.appliedItemId.

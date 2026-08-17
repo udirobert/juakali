@@ -11,7 +11,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 
 import { assertCanAct } from "./softAuth";
 import { createAgentRun, resumeWaitingRunWithEvidence } from "./agentRuns";
-import { syncInvestorsForVenture } from "./investorBriefing";
+import { syncInvestorsForVenture, syncVentureBrowse } from "./investorBriefing";
 
 const ventureUpdateTag = v.union(
     v.literal("situation"),
@@ -382,8 +382,10 @@ export const logSelfCheckIn = mutation({
             createdAt: now,
             publicVisible: true,
         });
-        // The investors' cockpit check-ins + venture summary must refresh.
+        // The investors' cockpit check-ins + venture summary must refresh,
+        // and the founder's KPI changes the browse index's kpiLatest/kpiTotal.
         await syncInvestorsForVenture(ctx, venture._id);
+        await syncVentureBrowse(ctx);
 
         return { message: `Logged ${args.value} — your mentors will see it move.` };
     },

@@ -1,7 +1,7 @@
 import { Migrations } from "@convex-dev/migrations";
 import { DataModel } from "./_generated/dataModel";
 import { components } from "./_generated/api";
-import { syncInvestorBriefing } from "./investorBriefing";
+import { syncInvestorBriefing, syncVentureBrowse } from "./investorBriefing";
 
 const migrations = new Migrations<DataModel>(components.migrations);
 
@@ -36,6 +36,22 @@ export const backfillLedgerEventVentureMeta = migrations.define({
         if (!venture) return;
         if (doc.ventureName === venture.name && doc.ventureSlug === venture.publicSlug) return;
         return { ventureName: venture.name, ventureSlug: venture.publicSlug };
+    },
+});
+
+/**
+ * Backfill the global ventureBrowse index for deployments that predate it
+ * (run once after deploying: `npx convex run migrations:backfillVentureBrowse`).
+ * New ventures/pledges/KPI records sync the doc at write time; this builds it
+ * once for existing data. Runs over the ventures table but only the first
+ * document does the work — the doc is a singleton.
+ */
+export const backfillVentureBrowse = migrations.define({
+    table: "ventures",
+    migrateOne: async (ctx) => {
+        const existing = await ctx.db.query("ventureBrowse").first();
+        if (existing) return;
+        await syncVentureBrowse(ctx);
     },
 });
 
