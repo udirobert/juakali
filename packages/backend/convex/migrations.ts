@@ -1,10 +1,24 @@
 import { Migrations } from "@convex-dev/migrations";
 import { DataModel } from "./_generated/dataModel";
 import { components } from "./_generated/api";
+import { syncInvestorBriefing } from "./investorBriefing";
 
 const migrations = new Migrations<DataModel>(components.migrations);
 
 export const run = migrations.runner();
+
+/**
+ * Backfill the denormalized investorBriefings index for every existing
+ * investor (run once after deploying the index: `npx convex run migrations:backfillInvestorBriefings`).
+ * New investors converge on their first run/commitment mutation, so this only
+ * catches pre-existing accounts.
+ */
+export const backfillInvestorBriefings = migrations.define({
+    table: "investors",
+    migrateOne: async (ctx, doc) => {
+        await syncInvestorBriefing(ctx, doc._id);
+    },
+});
 
 // =============================================================================
 // DEFINING MIGRATIONS

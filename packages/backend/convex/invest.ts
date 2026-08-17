@@ -16,6 +16,7 @@ import {
     publicationViewForRun,
     publicationViewValidator,
 } from "./agentRuns";
+import { syncInvestorBriefing } from "./investorBriefing";
 import {
     actionPlanViewValidator,
     synthesizeBriefingText,
@@ -397,6 +398,8 @@ export const startCommitment = mutation({
             amountKes: Math.round(args.amountKes),
             createdAt: now,
         });
+        // A new commitment affects the briefing's next-scheduled digest.
+        await syncInvestorBriefing(ctx, investorId);
 
         return {
             investorId,
@@ -911,6 +914,181 @@ function emptyTodayBriefing() {
     };
 }
 
+/**
+ * Build the Today briefing from the denormalized investorBriefings index.
+ * O(1)-ish reads: the index doc, plus the top decision/publication run and its
+ * venture when a card is due. No per-commitment run scans or ledger lookups.
+ */
+async function buildTodayBriefingFromIndex(
+    ctx: DbCtx,
+    investor: Doc<"investors"> | null,
+    briefing: Doc<"investorBriefings">
+) {
+    const greetingName = investor?.displayName?.split(/\s+/)[0] ?? null;
+    const autonomyLevel = investor?.autonomyLevel ?? "ask_every_time";
+
+    const decisions = briefing.decisions;
+    const top = decisions[0];
+    const topAwaiting = decisions.find((d) => d.status === "awaiting_publication");
+
+    // The proposal card only applies to proposed runs; a run awaiting
+    // publication renders the second-step card instead. Guards re-check the
+    // live run status defensively in case the index is momentarily stale.
+    let decision: ReturnType<typeof planViewForRun> = null;
+    if (top && top.status === "proposed") {
+        const run = await ctx.db.get(top.id);
+        if (run && run.status === "proposed") {
+            const venture = await ctx.db.get(run.ventureId);
+            decision = planViewForRun(run, venture?.name ?? top.ventureName);
+        }
+    }
+    let publication: ReturnType<typeof publicationViewForRun> = null;
+    if (topAwaiting) {
+        const run = await ctx.db.get(topAwaiting.id);
+        if (run && run.status === "awaiting_publication") {
+            const venture = await ctx.db.get(run.ventureId);
+            publication = publicationViewForRun(run, venture?.name ?? topAwaiting.ventureName);
+        }
+    }
+
+    const needsDecision = decisions.length;
+    const venturesMoved = briefing.movedVentureIds.length;
+    const blocked = briefing.blockedCount;
+
+    return {
+        greetingName,
+        briefingText: synthesizeBriefingText({
+            firstName: greetingName,
+            needsDecision,
+            venturesMoved,
+            blocked,
+            decisionVenture: decision?.ventureName ?? null,
+        }),
+        decision,
+        publication,
+        completed: briefing.completed.slice(0, 8).map((item) => ({
+            title: item.title ?? item.subject,
+            proofEventId: item.proofEventId ?? null,
+            commitmentId: item.commitmentId,
+            runId: item.id,
+            at: item.updatedAt,
+        })),
+        nextScheduled: briefing.nextScheduled,
+        stats: { needsDecision, venturesMoved, blocked },
+        autonomyLevel,
+    };
+}
+
+/**
+ * Legacy scan path for investors without a briefing index yet (pre-backfill).
+ * Kept so Today stays correct until syncInvestorBriefing has run for every
+ * investor; the indexed path above is the common case.
+ */
+async function buildTodayBriefingFromScan(
+    ctx: DbCtx,
+    investorId: Id<"investors">,
+    investor: Doc<"investors"> | null
+) {
+    const greetingName = investor?.displayName?.split(/\s+/)[0] ?? null;
+    const autonomyLevel = investor?.autonomyLevel ?? "ask_every_time";
+
+    const commitments = await ctx.db
+        .query("commitments")
+        .withIndex("by_investorId", (q) => q.eq("investorId", investorId!))
+        .order("desc")
+        .take(30);
+
+    const proposals: Array<{ run: Doc<"agentRuns">; ventureName: string }> = [];
+    const completed: Array<{
+        title: string;
+        proofEventId: Id<"ledgerEvents"> | null;
+        commitmentId: Id<"commitments"> | null;
+        runId: Id<"agentRuns"> | null;
+        at: number;
+    }> = [];
+    let nextScheduled: { label: string; at: number } | null = null;
+    const movedVentureIds = new Set<string>();
+    let blocked = 0;
+    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+    for (const commitment of commitments) {
+        const venture = await ctx.db.get(commitment.ventureId);
+        const ventureName = venture?.name ?? "Venture";
+        if (commitment.nextDigestAt != null) {
+            if (!nextScheduled || commitment.nextDigestAt < nextScheduled.at) {
+                nextScheduled = {
+                    label: `Jua checks for responses for ${ventureName}`,
+                    at: commitment.nextDigestAt,
+                };
+            }
+        }
+
+        const runs = await ctx.db
+            .query("agentRuns")
+            .withIndex("by_commitmentId", (q) => q.eq("commitmentId", commitment._id))
+            .order("desc")
+            .take(15);
+
+        for (const run of runs) {
+            if (run.status === "proposed" && run.actionPlan) {
+                proposals.push({ run, ventureName });
+            } else if (run.status === "awaiting_publication") {
+                proposals.push({ run, ventureName });
+            } else if (run.status === "failed") {
+                blocked += 1;
+            } else if (run.status === "completed" && run.updatedAt >= weekAgo) {
+                movedVentureIds.add(String(commitment.ventureId));
+                const ledger = await ctx.db
+                    .query("ledgerEvents")
+                    .withIndex("by_runId", (q) => q.eq("runId", run._id))
+                    .order("desc")
+                    .first();
+                completed.push({
+                    title: run.result?.message || run.subject || `${ventureName} updated`,
+                    proofEventId: ledger?._id ?? null,
+                    commitmentId: commitment._id,
+                    runId: run._id,
+                    at: run.updatedAt,
+                });
+            }
+        }
+    }
+
+    proposals.sort((a, b) => a.run.createdAt - b.run.createdAt);
+    completed.sort((a, b) => b.at - a.at);
+
+    const top = proposals[0];
+    const topAwaiting = proposals.find((p) => p.run.status === "awaiting_publication");
+    // The proposal card only applies to proposed runs; a run awaiting
+    // publication renders the second-step card instead.
+    const decision =
+        top && top.run.status === "proposed" ? planFromRun(top.run, top.ventureName) : null;
+    // Second-step approval surfaces the exact KPI + verbatim summary.
+    const publication =
+        topAwaiting && topAwaiting.run.status === "awaiting_publication"
+            ? publicationViewForRun(topAwaiting.run, topAwaiting.ventureName)
+            : null;
+    const needsDecision = proposals.length;
+    const venturesMoved = movedVentureIds.size;
+
+    return {
+        greetingName,
+        briefingText: synthesizeBriefingText({
+            firstName: greetingName,
+            needsDecision,
+            venturesMoved,
+            blocked,
+            decisionVenture: decision?.ventureName ?? null,
+        }),
+        decision,
+        publication,
+        completed: completed.slice(0, 8),
+        nextScheduled,
+        stats: { needsDecision, venturesMoved, blocked },
+        autonomyLevel,
+    };
+}
+
 /** Agent-led Today briefing: what happened, what needs a decision, what's next. */
 export const todayBriefing = query({
     args: {
@@ -958,104 +1136,15 @@ export const todayBriefing = query({
         }
         const investorId = linkedInvestor._id;
         const investor = await ctx.db.get(investorId);
-        const greetingName = investor?.displayName?.split(/\s+/)[0] ?? null;
-        const autonomyLevel = investor?.autonomyLevel ?? "ask_every_time";
 
-        const commitments = await ctx.db
-            .query("commitments")
+        // Primary path: the denormalized briefing index. Fall back to the scan
+        // only for investors whose index hasn't been built yet (pre-backfill).
+        const briefing = await ctx.db
+            .query("investorBriefings")
             .withIndex("by_investorId", (q) => q.eq("investorId", investorId!))
-            .order("desc")
-            .take(30);
-
-        const proposals: Array<{ run: Doc<"agentRuns">; ventureName: string; kpiLabel: string }> = [];
-        const completed: Array<{
-            title: string;
-            proofEventId: Id<"ledgerEvents"> | null;
-            commitmentId: Id<"commitments"> | null;
-            runId: Id<"agentRuns"> | null;
-            at: number;
-        }> = [];
-        let nextScheduled: { label: string; at: number } | null = null;
-        const movedVentureIds = new Set<string>();
-        let blocked = 0;
-        const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-
-        for (const commitment of commitments) {
-            const venture = await ctx.db.get(commitment.ventureId);
-            const ventureName = venture?.name ?? "Venture";
-            if (commitment.nextDigestAt != null) {
-                if (!nextScheduled || commitment.nextDigestAt < nextScheduled.at) {
-                    nextScheduled = {
-                        label: `Jua checks for responses for ${ventureName}`,
-                        at: commitment.nextDigestAt,
-                    };
-                }
-            }
-
-            const runs = await ctx.db
-                .query("agentRuns")
-                .withIndex("by_commitmentId", (q) => q.eq("commitmentId", commitment._id))
-                .order("desc")
-                .take(15);
-
-            for (const run of runs) {
-                if (run.status === "proposed" && run.actionPlan) {
-                    proposals.push({ run, ventureName, kpiLabel: venture?.kpiLabel ?? "KPI" });
-                } else if (run.status === "awaiting_publication") {
-                    proposals.push({ run, ventureName, kpiLabel: venture?.kpiLabel ?? "KPI" });
-                } else if (run.status === "failed") {
-                    blocked += 1;
-                } else if (run.status === "completed" && run.updatedAt >= weekAgo) {
-                    movedVentureIds.add(String(commitment.ventureId));
-                    const ledger = await ctx.db
-                        .query("ledgerEvents")
-                        .withIndex("by_runId", (q) => q.eq("runId", run._id))
-                        .order("desc")
-                        .first();
-                    completed.push({
-                        title: run.result?.message || run.subject || `${ventureName} updated`,
-                        proofEventId: ledger?._id ?? null,
-                        commitmentId: commitment._id,
-                        runId: run._id,
-                        at: run.updatedAt,
-                    });
-                }
-            }
-        }
-
-        proposals.sort((a, b) => a.run.createdAt - b.run.createdAt);
-        completed.sort((a, b) => b.at - a.at);
-
-        const top = proposals[0];
-        const topAwaiting = proposals.find((p) => p.run.status === "awaiting_publication");
-        // The proposal card only applies to proposed runs; a run awaiting
-        // publication renders the second-step card instead.
-        const decision =
-            top && top.run.status === "proposed" ? planFromRun(top.run, top.ventureName) : null;
-        // Second-step approval surfaces the exact KPI + verbatim summary.
-        const publication =
-            topAwaiting && topAwaiting.run.status === "awaiting_publication"
-                ? publicationViewForRun(topAwaiting.run, topAwaiting.ventureName)
-                : null;
-        const needsDecision = proposals.length;
-        const venturesMoved = movedVentureIds.size;
-
-        return {
-            greetingName,
-            briefingText: synthesizeBriefingText({
-                firstName: greetingName,
-                needsDecision,
-                venturesMoved,
-                blocked,
-                decisionVenture: decision?.ventureName ?? null,
-            }),
-            decision,
-            publication,
-            completed: completed.slice(0, 8),
-            nextScheduled,
-            stats: { needsDecision, venturesMoved, blocked },
-            autonomyLevel,
-        };
+            .first();
+        if (!briefing) return await buildTodayBriefingFromScan(ctx, investorId, investor);
+        return await buildTodayBriefingFromIndex(ctx, investor, briefing);
     },
 });
 
@@ -1293,6 +1382,8 @@ export const pledgeCommitment = mutation({
             amountKes: Math.round(args.amountKes),
             createdAt: now,
         });
+        // A new commitment affects the briefing's next-scheduled digest.
+        await syncInvestorBriefing(ctx, investorId);
 
         return {
             commitmentId,
@@ -1957,6 +2048,7 @@ export const handleAgentMailInbound = mutation({
                 updatedAt: now,
             });
             commitment = await ctx.db.get(commitmentId);
+            await syncInvestorBriefing(ctx, investorId);
         }
 
         if (!commitment) {
@@ -2128,6 +2220,8 @@ export const pledgeViaMcp = mutation({
             amountKes: Math.round(args.amountKes),
             createdAt: now,
         });
+        // A new commitment affects the briefing's next-scheduled digest.
+        await syncInvestorBriefing(ctx, investorId);
 
         return {
             commitmentId,

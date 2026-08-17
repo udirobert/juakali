@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { internalMutation, mutation, query } from "./_generated/server";
-import type { MutationCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { rateLimiter } from "./rateLimit";
@@ -17,6 +17,7 @@ import {
     buildProactiveActionPlan,
     type AutonomyLevel,
 } from "./actionPlan";
+import { syncInvestorBriefing } from "./investorBriefing";
 
 /**
  * Durable "approve & run" pipeline.
@@ -293,6 +294,8 @@ async function failRunInline(
         return step;
     });
     await ctx.db.patch(run._id, { status: "failed", steps, error, updatedAt: Date.now() });
+    // A failed run enters the index's "failed" bucket (blocked stat).
+    await syncInvestorBriefing(ctx, run.investorId);
 }
 
 /** Map a step tool to its internal executor so steps can be scheduled by name. */
@@ -479,6 +482,8 @@ export async function resumeWaitingRunWithEvidence(
         pipeline: { ...waiting.pipeline, evidenceId },
         updatedAt: now,
     });
+    // Evidence moves the run into the "decisions" bucket for the second approval.
+    await syncInvestorBriefing(ctx, waiting.investorId);
     return waiting._id;
 }
 
@@ -551,6 +556,9 @@ export async function createAgentRun(    ctx: MutationCtx,
         createdAt: now,
         updatedAt: now,
     });
+
+    // A new executing run enters the "active" bucket of the briefing index.
+    await syncInvestorBriefing(ctx, investor._id);
 
     await ctx.scheduler.runAfter(0, internal.agentRuns.stepRecordKpi, { runId });
 
@@ -707,6 +715,7 @@ export const stepSendFounderRequest = internalMutation({
                     status: "waiting_for_response",
                     updatedAt: Date.now(),
                 });
+                await syncInvestorBriefing(ctx, run.investorId);
                 return { ok: true };
             }
 
@@ -765,6 +774,7 @@ export const stepSendFounderRequest = internalMutation({
                 steps,
                 updatedAt: Date.now(),
             });
+            await syncInvestorBriefing(ctx, run.investorId);
             return { ok: true };
         } catch (e) {
             const error = e instanceof Error ? e.message : "Request step failed";
@@ -828,6 +838,7 @@ export const stepRecordKpi = internalMutation({
                         steps,
                         updatedAt: now,
                     });
+                    await syncInvestorBriefing(ctx, run.investorId);
                     return { ok: true };
                 }
 
@@ -1138,6 +1149,8 @@ export const stepSendReply = internalMutation({
                 },
                 updatedAt: Date.now(),
             });
+            // Completion moves the run into the index's "completed" bucket.
+            await syncInvestorBriefing(ctx, run.investorId);
             return { ok: true };
         } catch (e) {
             const error = e instanceof Error ? e.message : "Reply step failed";
@@ -1176,6 +1189,7 @@ export const recoverStaleRuns = internalMutation({
                     error: "Timed out — run recovered by background sweep",
                     updatedAt: Date.now(),
                 });
+                await syncInvestorBriefing(ctx, run.investorId);
             }
             failed++;
         }
@@ -1213,7 +1227,7 @@ export async function createProposalForCommitment(
         "I want to follow up, log the result as a KPI check-in, write you a digest, and post it to the public ledger.",
         "Approve and I'll get to work; dismiss if now is not the time.",
     ].join("\n");
-    return await ctx.db.insert("agentRuns", {
+    const runId = await ctx.db.insert("agentRuns", {
         commitmentId: commitment._id,
         ventureId: venture._id,
         investorId: commitment.investorId,
@@ -1234,6 +1248,9 @@ export async function createProposalForCommitment(
         createdAt: now,
         updatedAt: now,
     });
+    // A new proposal enters the "decisions" bucket of the briefing index.
+    await syncInvestorBriefing(ctx, commitment.investorId);
+    return runId;
 }
 
 /**
@@ -1573,6 +1590,8 @@ export const approveProposal = mutation({
             correlationId: run.correlationId ?? `run_${now}_${run.commitmentId}`,
             updatedAt: now,
         });
+        // Approval leaves the decisions bucket (run is now executing).
+        await syncInvestorBriefing(ctx, run.investorId);
 
         await scheduleStepByTool(ctx, run, resumeStep.tool);
         return { runId: run._id, commitmentId: run.commitmentId, ventureId: run.ventureId };
@@ -1636,6 +1655,8 @@ export const publishApproval = mutation({
             approvedSummary: approvedSummary ?? undefined,
             updatedAt: Date.now(),
         });
+        // Publication approval leaves the decisions bucket (run is executing).
+        await syncInvestorBriefing(ctx, run.investorId);
 
         await scheduleStepByTool(ctx, run, resumeStep.tool);
         return { runId: run._id, commitmentId: run.commitmentId, ventureId: run.ventureId };
@@ -1710,6 +1731,8 @@ export const submitFounderEvidence = mutation({
             autoStarted: false,
             pipeline: { ...run.pipeline, evidenceId },
         });
+        // Evidence moves the run into the decisions bucket for the second approval.
+        await syncInvestorBriefing(ctx, run.investorId);
         return {
             ok: true,
             message: `Evidence received (${metric} = ${args.value}). Review the exact KPI and public summary, then approve publication.`,
@@ -1822,6 +1845,8 @@ export const retryFailedRun = mutation({
             // Keep correlationId, actionPlan, approvedSummary, pipeline intact.
             updatedAt: now,
         });
+        // Retry leaves the failed bucket (blocked stat updates).
+        await syncInvestorBriefing(ctx, failed.investorId);
 
         await scheduleStepByTool(ctx, failed, resumeTool);
         return { runId: failed._id, commitmentId: failed.commitmentId, ventureId: failed.ventureId };
@@ -1838,6 +1863,60 @@ const activityItemValidator = v.object({
     error: v.union(v.string(), v.null()),
     updatedAt: v.number(),
 });
+
+/**
+ * Legacy scan path for investors without a briefing index yet (pre-backfill).
+ * Kept so the activity feed stays correct until syncInvestorBriefing has run
+ * for every investor.
+ */
+async function buildActivityFromScan(
+    ctx: { db: QueryCtx["db"] },
+    investorId: Id<"investors">,
+    limit: number
+) {
+    const runs = await ctx.db
+        .query("agentRuns")
+        .withIndex("by_investorId", (q) => q.eq("investorId", investorId))
+        .order("desc")
+        .take(80);
+
+    const active: Doc<"agentRuns">[] = [];
+    const waiting: Doc<"agentRuns">[] = [];
+    const completed: Doc<"agentRuns">[] = [];
+    const blocked: Doc<"agentRuns">[] = [];
+    const failed: Doc<"agentRuns">[] = [];
+
+    for (const run of runs) {
+        if (run.status === "running") active.push(run);
+        else if (run.status === "waiting_for_response") waiting.push(run);
+        else if (run.status === "proposed" || run.status === "awaiting_publication") {
+            blocked.push(run);
+        } else if (run.status === "failed") failed.push(run);
+        else if (run.status === "completed") completed.push(run);
+    }
+
+    const toItem = async (run: Doc<"agentRuns">) => {
+        const venture = await ctx.db.get(run.ventureId);
+        return {
+            id: run._id,
+            commitmentId: run.commitmentId,
+            ventureName: venture?.name ?? "Venture",
+            status: run.status,
+            trigger: run.trigger,
+            subject: run.subject,
+            error: run.error ?? null,
+            updatedAt: run.updatedAt,
+        };
+    };
+
+    return {
+        active: (await Promise.all(active.slice(0, limit).map(toItem))).filter(Boolean),
+        waiting: (await Promise.all(waiting.slice(0, limit).map(toItem))).filter(Boolean),
+        completed: (await Promise.all(completed.slice(0, limit).map(toItem))).filter(Boolean),
+        blocked: (await Promise.all(blocked.slice(0, limit).map(toItem))).filter(Boolean),
+        failed: (await Promise.all(failed.slice(0, limit).map(toItem))).filter(Boolean),
+    };
+}
 
 /** Investor activity center: active, waiting, completed, blocked, failed. */
 export const activityForInvestor = query({
@@ -1870,44 +1949,32 @@ export const activityForInvestor = query({
             return { active: [], waiting: [], completed: [], blocked: [], failed: [] };
         }
 
-        const runs = await ctx.db
-            .query("agentRuns")
+        // Primary path: the denormalized briefing index (O(1) reads).
+        const briefing = await ctx.db
+            .query("investorBriefings")
             .withIndex("by_investorId", (q) => q.eq("investorId", investorId!))
-            .order("desc")
-            .take(80);
+            .first();
+        if (!briefing) return await buildActivityFromScan(ctx, investorId, limit);
 
-        const active = [];
-        const waiting = [];
-        const completed = [];
-        const blocked = [];
-        const failed = [];
-
-        for (const run of runs) {
-            const venture = await ctx.db.get(run.ventureId);
-            const item = {
-                id: run._id,
-                commitmentId: run.commitmentId,
-                ventureName: venture?.name ?? "Venture",
-                status: run.status,
-                trigger: run.trigger,
-                subject: run.subject,
-                error: run.error ?? null,
-                updatedAt: run.updatedAt,
-            };
-            if (run.status === "running") active.push(item);
-            else if (run.status === "waiting_for_response") waiting.push(item);
-            else if (run.status === "proposed" || run.status === "awaiting_publication") {
-                blocked.push(item);
-            } else if (run.status === "failed") failed.push(item);
-            else if (run.status === "completed") completed.push(item);
-        }
+        // Map the stored rows to the exact activity item shape (strips the
+        // optional title/proofEventId/createdAt fields the index carries).
+        const toItem = (item: (typeof briefing.decisions)[number]) => ({
+            id: item.id,
+            commitmentId: item.commitmentId,
+            ventureName: item.ventureName,
+            status: item.status,
+            trigger: item.trigger,
+            subject: item.subject,
+            error: item.error,
+            updatedAt: item.updatedAt,
+        });
 
         return {
-            active: active.slice(0, limit),
-            waiting: waiting.slice(0, limit),
-            completed: completed.slice(0, limit),
-            blocked: blocked.slice(0, limit),
-            failed: failed.slice(0, limit),
+            active: briefing.active.slice(0, limit).map(toItem),
+            waiting: briefing.waiting.slice(0, limit).map(toItem),
+            completed: briefing.completed.slice(0, limit).map(toItem),
+            blocked: briefing.decisions.slice(0, limit).map(toItem),
+            failed: briefing.failed.slice(0, limit).map(toItem),
         };
     },
 });
@@ -1922,6 +1989,8 @@ export const dismissProposal = mutation({
         if (!run || run.status !== "proposed") return { ok: false };
         await assertInvestorOwnsRun(ctx, run);
         await ctx.db.patch(run._id, { status: "dismissed", updatedAt: Date.now() });
+        // Dismissal leaves the decisions bucket.
+        await syncInvestorBriefing(ctx, run.investorId);
         return { ok: true };
     },
 });

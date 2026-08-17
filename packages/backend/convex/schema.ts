@@ -44,6 +44,39 @@ const sharedKind = v.union(
     v.literal("voice")
 );
 
+const briefingActivityStatus = v.union(
+    v.literal("proposed"),
+    v.literal("running"),
+    v.literal("waiting_for_response"),
+    v.literal("awaiting_publication"),
+    v.literal("completed"),
+    v.literal("failed"),
+    v.literal("dismissed")
+);
+const briefingActivityTrigger = v.union(
+    v.literal("approved_note"),
+    v.literal("inbound_email"),
+    v.literal("proactive"),
+    v.literal("entrepreneur_note")
+);
+/** One denormalized activity row inside an investor's briefing index. */
+const briefingActivityItem = v.object({
+    id: v.id("agentRuns"),
+    commitmentId: v.id("commitments"),
+    ventureName: v.string(),
+    status: briefingActivityStatus,
+    trigger: briefingActivityTrigger,
+    subject: v.string(),
+    error: v.union(v.string(), v.null()),
+    updatedAt: v.number(),
+    /** Decisions only: when the run was created (oldest decision surfaces first). */
+    createdAt: v.optional(v.number()),
+    /** Completed runs only: the human-facing result line. */
+    title: v.optional(v.string()),
+    /** Completed runs only: the public proof ledger event for this run. */
+    proofEventId: v.optional(v.union(v.id("ledgerEvents"), v.null())),
+});
+
 export default defineSchema({
     ...authTables,
 
@@ -355,6 +388,33 @@ export default defineSchema({
     })
         .index("by_userId", ["userId"])
         .index("by_ventureId", ["ventureId"]),
+
+    /**
+     * Denormalized per-investor activity/briefing index. Maintained by
+     * syncInvestorBriefing on every run lifecycle transition (and commitment
+     * change), so the Today briefing and activity feed read this single doc
+     * instead of re-scanning every commitment's runs and per-run ledger events
+     * on each query evaluation.
+     */
+    investorBriefings: defineTable({
+        investorId: v.id("investors"),
+        /** Runs awaiting a decision (proposed + awaiting_publication), oldest first. */
+        decisions: v.array(briefingActivityItem),
+        /** Currently executing runs. */
+        active: v.array(briefingActivityItem),
+        /** Runs parked waiting for founder evidence. */
+        waiting: v.array(briefingActivityItem),
+        /** Failed runs needing recovery. */
+        failed: v.array(briefingActivityItem),
+        /** Recently completed runs (last 7 days), newest first. */
+        completed: v.array(briefingActivityItem),
+        /** Venture ids with a completed run in the last 7 days. */
+        movedVentureIds: v.array(v.id("ventures")),
+        /** Count of failed runs (the "blocked" stat). */
+        blockedCount: v.number(),
+        nextScheduled: v.union(v.object({ label: v.string(), at: v.number() }), v.null()),
+        updatedAt: v.number(),
+    }).index("by_investorId", ["investorId"]),
 
     /**
      * Shared wisdom — a mentor's podcast, article, note, or dictated voice,
