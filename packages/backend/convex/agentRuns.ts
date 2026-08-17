@@ -15,7 +15,6 @@ import {
     actionPlanValidator,
     actionPlanViewValidator,
     buildProactiveActionPlan,
-    DEFAULT_PLAN_STEPS,
     type AutonomyLevel,
 } from "./actionPlan";
 
@@ -413,6 +412,8 @@ export async function resumeWaitingRunWithEvidence(
     ctx: MutationCtx,
     args: {
         ventureId: Id<"ventures">;
+        /** Optional only when the founder flow has an unambiguous commitment. */
+        commitmentId?: Id<"commitments">;
         metric: string | null;
         value: number | null;
         note: string;
@@ -426,8 +427,16 @@ export async function resumeWaitingRunWithEvidence(
         .withIndex("by_ventureId", (q) => q.eq("ventureId", args.ventureId))
         .order("desc")
         .take(20);
-    const waiting = runs.find((run) => run.status === "waiting_for_response");
-    if (!waiting) return null;
+    const waitingRuns = runs.filter(
+        (run) =>
+            run.status === "waiting_for_response" &&
+            (args.commitmentId == null || run.commitmentId === args.commitmentId)
+    );
+    // Never guess when several investors have an open request for the same
+    // venture. A founder update without an explicit commitment must not answer
+    // another investor's request.
+    if (waitingRuns.length !== 1) return null;
+    const waiting = waitingRuns[0]!;
 
     const now = Date.now();
     const venture = await ctx.db.get(args.ventureId);
@@ -1351,7 +1360,7 @@ export const getOpenProposal = query({
             .withIndex("by_commitmentId", (q) => q.eq("commitmentId", args.commitmentId))
             .order("desc")
             .take(20);
-        const proposal = recentRuns.find((run) => run.status === "proposed");
+        const proposal = recentRuns.find((run) => run.status === "proposed" && run.actionPlan);
         if (!proposal || !(await canReadInvestorRun(ctx, proposal))) return null;
         return {
             id: proposal._id,
@@ -1377,7 +1386,7 @@ export const getProposalDetail = query({
         if (!run || run.status !== "proposed" || !(await canReadInvestorRun(ctx, run))) return null;
 
         const venture = await ctx.db.get(run.ventureId);
-        return planViewForRun(run, venture?.name ?? "Venture", venture?.kpiLabel ?? "KPI");
+        return planViewForRun(run, venture?.name ?? "Venture");
     },
 });
 
@@ -1390,22 +1399,9 @@ export const getProposalDetail = query({
  * the field existed lack one; those are rebuilt deterministically from the
  * run's own age and the venture's real metric label (never a stale constant).
  */
-export function planViewForRun(
-    run: Doc<"agentRuns">,
-    ventureName: string,
-    kpiLabel: string
-) {
-    const plan =
-        run.actionPlan ??
-        buildProactiveActionPlan({
-            ventureName,
-            daysStale: Math.max(
-                0,
-                Math.floor((Date.now() - run.createdAt) / (24 * 60 * 60 * 1000))
-            ),
-            metricLabel: kpiLabel || "KPI",
-            lastCheckInAt: null,
-        });
+export function planViewForRun(run: Doc<"agentRuns">, ventureName: string) {
+    const plan = run.actionPlan;
+    if (!plan) return null;
     return {
         id: run._id,
         commitmentId: run.commitmentId,
@@ -1416,7 +1412,7 @@ export function planViewForRun(
         createdAt: run.createdAt,
         reason: plan.reason,
         sources: plan.sources,
-        planSteps: plan.planSteps.length ? plan.planSteps : DEFAULT_PLAN_STEPS,
+        planSteps: plan.planSteps,
         preview: plan.preview,
         permissions: plan.permissions,
         recovery: plan.recovery,
@@ -1444,6 +1440,9 @@ export const approveProposal = mutation({
         if (!run) throw new Error("Proposal not found");
         if (run.status !== "proposed") throw new Error("Proposal is no longer pending");
         await assertInvestorOwnsRun(ctx, run);
+        if (!run.actionPlan) {
+            throw new Error("Proposal has no persisted action plan and cannot be approved");
+        }
 
         const investor = await ctx.db.get(run.investorId);
         if (investor?.autonomyLevel === "pause_all") {

@@ -121,6 +121,18 @@ export const DEFAULT_PLAN_STEPS: ActionPlan["planSteps"] = [
     },
 ];
 
+/** Full proactive contract, including the private request that precedes
+ * evidence-backed public effects. */
+export const PROACTIVE_PLAN_STEPS: ActionPlan["planSteps"] = [
+    {
+        tool: "send_founder_request",
+        label: "Request check-in",
+        visibility: "private",
+        effect: "Ask the founder for a sourced KPI update; do not record or publish a number yet.",
+    },
+    ...DEFAULT_PLAN_STEPS,
+];
+
 export function buildProactiveActionPlan(args: {
     ventureName: string;
     daysStale: number;
@@ -160,7 +172,7 @@ export function buildProactiveActionPlan(args: {
                 refId: null,
             },
         ],
-        planSteps: DEFAULT_PLAN_STEPS,
+        planSteps: PROACTIVE_PLAN_STEPS,
         preview: {
             messageDraft,
             publicSummary,

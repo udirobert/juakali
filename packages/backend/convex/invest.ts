@@ -695,38 +695,50 @@ export const investorCockpit = query({
         }),
     }),
     handler: async (ctx, args) => {
-        let investorId = args.investorId ?? null;
-        let focusCommitmentId: typeof args.commitmentId | null = args.commitmentId ?? null;
+        // This query contains private commitments, emails, notes, and run
+        // state. Never resolve an anonymous caller to the demo/default
+        // investor, and never let an opaque commitment/investor id grant access.
+        const userId = await getAuthUserId(ctx);
+        const linkedInvestor = userId
+            ? await ctx.db
+                  .query("investors")
+                  .withIndex("by_userId", (q) => q.eq("userId", userId))
+                  .first()
+            : null;
+        let investorId: Id<"investors"> | null = linkedInvestor?._id ?? null;
+        let focusCommitmentId: Id<"commitments"> | null = null;
 
-        if (!investorId && args.commitmentId) {
+        if (args.investorId) {
+            if (!linkedInvestor || args.investorId !== linkedInvestor._id) {
+                investorId = null;
+            } else {
+                investorId = args.investorId;
+            }
+        } else if (args.commitmentId) {
             const commitment = await ctx.db.get(args.commitmentId);
-            if (commitment) {
-                investorId = commitment.investorId;
+            if (!linkedInvestor || !commitment || commitment.investorId !== linkedInvestor._id) {
+                investorId = null;
+            } else {
+                investorId = linkedInvestor._id;
                 focusCommitmentId = commitment._id;
             }
-        }
-
-        if (!investorId && args.ventureSlug) {
+        } else if (args.ventureSlug && linkedInvestor) {
             const slug = normalizeKey(args.ventureSlug);
             const venture = await ctx.db
                 .query("ventures")
                 .withIndex("by_publicSlug", (q) => q.eq("publicSlug", slug))
                 .first();
             if (venture) {
-                const commitment = await ctx.db
+                const commitments = await ctx.db
                     .query("commitments")
                     .withIndex("by_ventureId", (q) => q.eq("ventureId", venture._id))
                     .order("desc")
-                    .first();
-                if (commitment) {
-                    investorId = commitment.investorId;
-                    focusCommitmentId = commitment._id;
-                }
+                    .take(20);
+                const commitment = commitments.find(
+                    (row) => row.investorId === linkedInvestor._id
+                );
+                if (commitment) focusCommitmentId = commitment._id;
             }
-        }
-
-        if (!investorId) {
-            investorId = await resolveDefaultInvestorId(ctx);
         }
 
         const investorDoc = investorId ? await ctx.db.get(investorId) : null;
@@ -784,7 +796,7 @@ export const investorCockpit = query({
                 createdAt: number;
             } | null = null;
             for (const run of proposalRuns) {
-                if (run.status === "proposed") {
+                if (run.status === "proposed" && run.actionPlan) {
                     openProposal ??= {
                         id: run._id,
                         noteBody: run.noteBody,
@@ -867,10 +879,10 @@ export const investorCockpit = query({
     },
 });
 
-function planFromRun(run: Doc<"agentRuns">, ventureName: string, kpiLabel: string) {
+function planFromRun(run: Doc<"agentRuns">, ventureName: string) {
     // Single representation of the approval contract — shared with
     // agentRuns.getProposalDetail so inline and standalone approvals match.
-    return planViewForRun(run, ventureName, kpiLabel);
+    return planViewForRun(run, ventureName);
 }
 
 /** Empty private briefing for callers who have not linked an investor identity. */
@@ -978,7 +990,7 @@ export const todayBriefing = query({
                 .take(15);
 
             for (const run of runs) {
-                if (run.status === "proposed") {
+                if (run.status === "proposed" && run.actionPlan) {
                     proposals.push({ run, ventureName, kpiLabel: venture?.kpiLabel ?? "KPI" });
                 } else if (run.status === "failed") {
                     blocked += 1;
@@ -1004,7 +1016,7 @@ export const todayBriefing = query({
         completed.sort((a, b) => b.at - a.at);
 
         const top = proposals[0];
-        const decision = top ? planFromRun(top.run, top.ventureName, top.kpiLabel) : null;
+        const decision = top ? planFromRun(top.run, top.ventureName) : null;
         const needsDecision = proposals.length;
         const venturesMoved = movedVentureIds.size;
 

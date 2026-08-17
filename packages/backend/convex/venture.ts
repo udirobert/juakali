@@ -187,10 +187,20 @@ export const postVentureUpdate = mutation({
         if (!venture) throw new Error("Venture not found");
 
         // Any active commitment on this venture carries the run (demo keeps ≥1).
-        const commitment = await ctx.db
+        const commitments = await ctx.db
             .query("commitments")
             .withIndex("by_ventureId", (q) => q.eq("ventureId", venture._id))
-            .first();
+            .take(10);
+        // A founder update cannot safely answer a private investor request when
+        // multiple investors share this venture. Avoid attaching it to an
+        // arbitrary commitment; the no-commitment branch posts a neutral public
+        // founder update instead.
+        if (commitments.length > 1) {
+            throw new Error(
+                "This venture has multiple investor relationships. Select the investor request before submitting KPI evidence."
+            );
+        }
+        const commitment = commitments[0] ?? null;
 
         const tagLabel = args.tag.charAt(0).toUpperCase() + args.tag.slice(1);
         const now = Date.now();
@@ -218,6 +228,7 @@ export const postVentureUpdate = mutation({
         if (args.kpiValue != null) {
             const resumedRunId = await resumeWaitingRunWithEvidence(ctx, {
                 ventureId: venture._id,
+                commitmentId: commitment._id,
                 metric: null,
                 value: args.kpiValue,
                 note: `${tagLabel} from the founder: ${body}`,
