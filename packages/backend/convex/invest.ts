@@ -16,7 +16,14 @@ import {
     publicationViewForRun,
     publicationViewValidator,
 } from "./agentRuns";
-import { syncInvestorBriefing } from "./investorBriefing";
+import {
+    buildVentureSummary,
+    kpiUnitValidator,
+    sumVentureKpis,
+    syncInvestorBriefing,
+    syncInvestorsForVenture,
+    ventureSummaryValidator,
+} from "./investorBriefing";
 import {
     actionPlanViewValidator,
     synthesizeBriefingText,
@@ -25,7 +32,6 @@ import {
 
 type DbCtx = { db: QueryCtx["db"] };
 
-const kpiUnitValidator = v.union(v.literal("meetings"), v.literal("revenue_kes"), v.literal("jobs"));
 const commitmentStatusValidator = v.union(
     v.literal("pledged"),
     v.literal("active"),
@@ -47,25 +53,6 @@ const ledgerTypeValidator = v.union(
     v.literal("wisdom")
 );
 
-const ventureSummaryValidator = v.object({
-    id: v.id("ventures"),
-    name: v.string(),
-    craftText: v.string(),
-    locationText: v.string(),
-    summary: v.string(),
-    kpiLabel: v.string(),
-    kpiUnit: kpiUnitValidator,
-    kpiTarget: v.number(),
-    kpiLatest: v.number(),
-    kpiTotal: v.number(),
-    peerMedian: v.union(v.number(), v.null()),
-    agentEmail: v.union(v.string(), v.null()),
-    sparkline: v.array(v.number()),
-    publicSlug: v.string(),
-    status: v.union(v.literal("active"), v.literal("paused"), v.literal("graduated")),
-    pledgedKes: v.number(),
-});
-
 function nextFridayEightEAT(fromMs: number = Date.now()) {
     const d = new Date(fromMs);
     const day = d.getUTCDay();
@@ -73,55 +60,6 @@ function nextFridayEightEAT(fromMs: number = Date.now()) {
     const daysUntilFri = (5 - day + 7) % 7 || 7;
     const next = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + daysUntilFri, 5, 0, 0));
     return next.getTime();
-}
-
-async function buildVentureSummary(ctx: DbCtx, ventureId: Id<"ventures">) {
-    const venture = await ctx.db.get(ventureId);
-    if (!venture) return null;
-    const { kpiTotal, kpiLatest, checkIns } = await sumVentureKpis(ctx, venture._id);
-    const pledgedKes = await pledgedForVenture(ctx, venture._id);
-    const sparkline = checkIns
-        .slice()
-        .reverse()
-        .slice(-4)
-        .map((row) => row.value);
-    return {
-        id: venture._id,
-        name: venture.name,
-        craftText: venture.craftText,
-        locationText: venture.locationText,
-        summary: venture.summary,
-        kpiLabel: venture.kpiLabel,
-        kpiUnit: venture.kpiUnit,
-        kpiTarget: venture.kpiTarget,
-        kpiLatest,
-        kpiTotal,
-        peerMedian: venture.peerMedian ?? null,
-        agentEmail: venture.agentEmail ?? null,
-        sparkline,
-        publicSlug: venture.publicSlug,
-        status: venture.status,
-        pledgedKes,
-    };
-}
-
-async function sumVentureKpis(ctx: DbCtx, ventureId: Id<"ventures">) {
-    const checkIns = await ctx.db
-        .query("kpiCheckIns")
-        .withIndex("by_ventureId", (q) => q.eq("ventureId", ventureId))
-        .take(200);
-    checkIns.sort((a, b) => b.createdAt - a.createdAt);
-    const kpiTotal = checkIns.reduce((sum, row) => sum + row.value, 0);
-    const kpiLatest = checkIns.length > 0 ? checkIns[0]!.value : 0;
-    return { kpiTotal, kpiLatest, checkIns };
-}
-
-async function pledgedForVenture(ctx: DbCtx, ventureId: Id<"ventures">) {
-    const commitments = await ctx.db
-        .query("commitments")
-        .withIndex("by_ventureId", (q) => q.eq("ventureId", ventureId))
-        .take(100);
-    return commitments.reduce((sum, row) => sum + row.amountKes, 0);
 }
 
 async function writeLedgerEvent(
@@ -649,6 +587,140 @@ export const listVentures = query({
     },
 });
 
+/**
+ * Assemble one cockpit commitment row from a commitment doc + its projection
+ * (either from the briefing index or from the scan fallback). Keeps the two
+ * paths producing the identical shape.
+ */
+function commitmentFromProjection(
+    row: Doc<"commitments">,
+    proj: Doc<"investorBriefings">["cockpit"][number]
+) {
+    return {
+        id: row._id,
+        amountKes: row.amountKes,
+        shareBps: row.shareBps,
+        capMultiple: row.capMultiple,
+        status: row.status,
+        thesis: row.thesis,
+        nextDigestAt: row.nextDigestAt ?? null,
+        digestCadence: row.digestCadence ?? null,
+        createdAt: row.createdAt,
+        venture: proj.venture,
+        latestDigest: proj.latestDigest,
+        recentCheckIns: proj.recentCheckIns,
+        recentEmails: proj.recentEmails,
+        openProposal: proj.openProposal,
+    };
+}
+
+/**
+ * Legacy scan path for investors without a briefing index yet (pre-backfill).
+ * Kept so the cockpit stays correct until syncInvestorBriefing has run for
+ * every investor; the indexed path above is the common case.
+ */
+async function buildCockpitFromScan(
+    ctx: DbCtx,
+    investorId: Id<"investors">,
+    commitmentRows: Doc<"commitments">[]
+): Promise<{
+    commitments: ReturnType<typeof commitmentFromProjection>[];
+    agentPresence: { lastWorkedAt: number | null; runsThisWeek: number; openProposals: number };
+}> {
+    const now = Date.now();
+    const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
+    let lastWorkedAt: number | null = null;
+    let runsThisWeek = 0;
+    let openProposals = 0;
+    const commitments: ReturnType<typeof commitmentFromProjection>[] = [];
+
+    for (const row of commitmentRows) {
+        const venture = await buildVentureSummary(ctx, row.ventureId);
+        if (!venture) continue;
+        const { checkIns } = await sumVentureKpis(ctx, row.ventureId);
+        const digests = await ctx.db
+            .query("agentDigests")
+            .withIndex("by_commitmentId", (q) => q.eq("commitmentId", row._id))
+            .order("desc")
+            .take(1);
+        const latest = digests[0];
+        const emails = await ctx.db
+            .query("agentEmails")
+            .withIndex("by_commitmentId", (q) => q.eq("commitmentId", row._id))
+            .order("desc")
+            .take(8);
+        emails.sort((a, b) => a.createdAt - b.createdAt);
+        const proposalRuns = await ctx.db
+            .query("agentRuns")
+            .withIndex("by_commitmentId", (q) => q.eq("commitmentId", row._id))
+            .order("desc")
+            .take(20);
+        let openProposal: {
+            id: Id<"agentRuns">;
+            noteBody: string;
+            subject: string;
+            createdAt: number;
+        } | null = null;
+        for (const run of proposalRuns) {
+            if (run.status === "proposed" && run.actionPlan) {
+                openProposal ??= {
+                    id: run._id,
+                    noteBody: run.noteBody,
+                    subject: run.subject,
+                    createdAt: run.createdAt,
+                };
+                openProposals += 1;
+            }
+            if (run.status !== "dismissed") {
+                // Presence = real work: proposals alone don't count as "worked".
+                if (
+                    run.status !== "proposed" &&
+                    (lastWorkedAt === null || run.updatedAt > lastWorkedAt)
+                ) {
+                    lastWorkedAt = run.updatedAt;
+                }
+                if (run.createdAt >= weekAgo && run.status !== "proposed") runsThisWeek += 1;
+            }
+        }
+        commitments.push(
+            commitmentFromProjection(row, {
+                commitmentId: row._id,
+                venture,
+                latestDigest: latest
+                    ? {
+                          id: latest._id,
+                          summary: latest.summary,
+                          insights: latest.insights,
+                          nextAction: latest.nextAction ?? null,
+                          evidence: latest.evidence ?? [],
+                          createdAt: latest.createdAt,
+                      }
+                    : null,
+                recentCheckIns: checkIns.slice(0, 5).map((checkIn) => ({
+                    id: checkIn._id,
+                    periodLabel: checkIn.periodLabel,
+                    metric: checkIn.metric,
+                    value: checkIn.value,
+                    note: checkIn.note,
+                    source: checkIn.source,
+                    createdAt: checkIn.createdAt,
+                })),
+                recentEmails: emails.map((email) => ({
+                    id: email._id,
+                    direction: email.direction,
+                    fromAddress: email.fromAddress,
+                    toAddress: email.toAddress,
+                    subject: email.subject,
+                    body: email.body,
+                    createdAt: email.createdAt,
+                })),
+                openProposal,
+            })
+        );
+    }
+    return { commitments, agentPresence: { lastWorkedAt, runsThisWeek, openProposals } };
+}
+
 export const investorCockpit = query({
     args: {
         investorId: v.optional(v.id("investors")),
@@ -794,103 +866,39 @@ export const investorCockpit = query({
                   .take(30)
             : [];
 
-        const commitments = [];
-        const now = Date.now();
-        const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
-        let lastWorkedAt: number | null = null;
-        let runsThisWeek = 0;
-        let openProposals = 0;
+        // Primary path: the denormalized briefing index carries the full
+        // per-commitment cockpit projection (venture summary, latest digest,
+        // recent check-ins/emails, open proposal) plus presence. Only the
+        // commitment's own fields are read from the commitment rows.
+        const briefing = investorId
+            ? await ctx.db
+                  .query("investorBriefings")
+                  .withIndex("by_investorId", (q) => q.eq("investorId", investorId!))
+                  .first()
+            : null;
 
-        for (const row of commitmentRows) {
-            const ventureSummary = await buildVentureSummary(ctx, row.ventureId);
-            if (!ventureSummary) continue;
-            const { checkIns } = await sumVentureKpis(ctx, row.ventureId);
-            const digests = await ctx.db
-                .query("agentDigests")
-                .withIndex("by_commitmentId", (q) => q.eq("commitmentId", row._id))
-                .order("desc")
-                .take(1);
-            const latest = digests[0];
-            const emails = await ctx.db
-                .query("agentEmails")
-                .withIndex("by_commitmentId", (q) => q.eq("commitmentId", row._id))
-                .order("desc")
-                .take(8);
-            emails.sort((a, b) => a.createdAt - b.createdAt);
+        let commitments: ReturnType<typeof commitmentFromProjection>[] = [];
+        let agentPresence: {
+            lastWorkedAt: number | null;
+            runsThisWeek: number;
+            openProposals: number;
+        } = { lastWorkedAt: null, runsThisWeek: 0, openProposals: 0 };
 
-            // Jua's initiative: the pending proactive proposal for this deal,
-            // plus presence stats (bounded scan per commitment).
-            const proposalRuns = await ctx.db
-                .query("agentRuns")
-                .withIndex("by_commitmentId", (q) => q.eq("commitmentId", row._id))
-                .order("desc")
-                .take(20);
-            let openProposal: {
-                id: Id<"agentRuns">;
-                noteBody: string;
-                subject: string;
-                createdAt: number;
-            } | null = null;
-            for (const run of proposalRuns) {
-                if (run.status === "proposed" && run.actionPlan) {
-                    openProposal ??= {
-                        id: run._id,
-                        noteBody: run.noteBody,
-                        subject: run.subject,
-                        createdAt: run.createdAt,
-                    };
-                    openProposals += 1;
-                }
-                if (run.status !== "dismissed") {
-                    // Presence = real work: proposals alone don't count as "worked".
-                    if (run.status !== "proposed" && (lastWorkedAt === null || run.updatedAt > lastWorkedAt)) {
-                        lastWorkedAt = run.updatedAt;
-                    }
-                    if (run.createdAt >= weekAgo && run.status !== "proposed") runsThisWeek += 1;
-                }
+        if (briefing) {
+            const cockpitByCommitment = new Map(
+                briefing.cockpit.map((row) => [String(row.commitmentId), row] as const)
+            );
+            commitments = [];
+            for (const row of commitmentRows) {
+                const proj = cockpitByCommitment.get(String(row._id));
+                if (!proj) continue;
+                commitments.push(commitmentFromProjection(row, proj));
             }
-
-            commitments.push({
-                id: row._id,
-                amountKes: row.amountKes,
-                shareBps: row.shareBps,
-                capMultiple: row.capMultiple,
-                status: row.status,
-                thesis: row.thesis,
-                nextDigestAt: row.nextDigestAt ?? null,
-                digestCadence: row.digestCadence ?? null,
-                createdAt: row.createdAt,
-                venture: ventureSummary,
-                latestDigest: latest
-                    ? {
-                          id: latest._id,
-                          summary: latest.summary,
-                          insights: latest.insights,
-                          nextAction: latest.nextAction ?? null,
-                          evidence: latest.evidence ?? [],
-                          createdAt: latest.createdAt,
-                      }
-                    : null,
-                recentCheckIns: checkIns.slice(0, 5).map((checkIn) => ({
-                    id: checkIn._id,
-                    periodLabel: checkIn.periodLabel,
-                    metric: checkIn.metric,
-                    value: checkIn.value,
-                    note: checkIn.note,
-                    source: checkIn.source,
-                    createdAt: checkIn.createdAt,
-                })),
-                recentEmails: emails.map((email) => ({
-                    id: email._id,
-                    direction: email.direction,
-                    fromAddress: email.fromAddress,
-                    toAddress: email.toAddress,
-                    subject: email.subject,
-                    body: email.body,
-                    createdAt: email.createdAt,
-                })),
-                openProposal,
-            });
+            agentPresence = briefing.presence;
+        } else if (investorId) {
+            const built = await buildCockpitFromScan(ctx, investorId, commitmentRows);
+            commitments = built.commitments;
+            agentPresence = built.agentPresence;
         }
 
         const allVentures = await ctx.db.query("ventures").order("desc").take(30);
@@ -906,11 +914,7 @@ export const investorCockpit = query({
             focusCommitmentId: focusCommitmentId ?? commitments[0]?.id ?? null,
             commitments,
             availableVentures,
-            agentPresence: {
-                lastWorkedAt,
-                runsThisWeek,
-                openProposals,
-            },
+            agentPresence,
         };
     },
 });
@@ -1483,6 +1487,8 @@ export const logKpiCheckIn = mutation({
             value: args.value,
             createdAt: now,
         });
+        // The cockpit projection's check-ins + venture summary must refresh.
+        await syncInvestorsForVenture(ctx, ventureId);
 
         return {
             checkInId,
@@ -1562,6 +1568,8 @@ export const createDigest = mutation({
             summary: `Investor digest for ${venture.name}: ${args.summary.trim()}`,
             createdAt: now,
         });
+        // The cockpit projection's latest digest must refresh.
+        await syncInvestorBriefing(ctx, commitment.investorId);
 
         return {
             digestId,
@@ -2319,6 +2327,8 @@ export const logKpiViaMcp = mutation({
             value: args.value,
             createdAt: now,
         });
+        // The cockpit projection's check-ins + venture summary must refresh.
+        await syncInvestorsForVenture(ctx, ventureId);
 
         return {
             checkInId,
@@ -2390,6 +2400,8 @@ export const createDigestViaMcp = mutation({
             summary: `Investor digest for ${venture.name}: ${args.summary.trim()}`,
             createdAt: now,
         });
+        // The cockpit projection's latest digest must refresh.
+        await syncInvestorBriefing(ctx, commitment.investorId);
 
         return {
             digestId,

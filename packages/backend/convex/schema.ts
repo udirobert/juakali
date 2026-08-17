@@ -2,6 +2,7 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { authTables } from "@convex-dev/auth/server";
 import { actionPlanValidator, autonomyLevelValidator } from "./actionPlan";
+import { ventureSummaryValidator } from "./investorBriefing";
 
 const language = v.union(v.literal("sw"), v.literal("en"), v.literal("mixed"), v.literal("unknown"));
 const telephonyProvider = v.union(v.literal("twilio"), v.literal("africas_talking"), v.literal("mock"));
@@ -75,6 +76,60 @@ const briefingActivityItem = v.object({
     title: v.optional(v.string()),
     /** Completed runs only: the public proof ledger event for this run. */
     proofEventId: v.optional(v.union(v.id("ledgerEvents"), v.null())),
+});
+
+/** One commitment's cockpit projection inside the investor briefing index. */
+const cockpitCommitmentValidator = v.object({
+    commitmentId: v.id("commitments"),
+    venture: ventureSummaryValidator,
+    latestDigest: v.union(
+        v.object({
+            id: v.id("agentDigests"),
+            summary: v.string(),
+            insights: v.string(),
+            nextAction: v.union(v.string(), v.null()),
+            evidence: v.array(v.string()),
+            createdAt: v.number(),
+        }),
+        v.null()
+    ),
+    recentCheckIns: v.array(
+        v.object({
+            id: v.id("kpiCheckIns"),
+            periodLabel: v.string(),
+            metric: v.string(),
+            value: v.number(),
+            note: v.string(),
+            source: kpiSource,
+            createdAt: v.number(),
+        })
+    ),
+    recentEmails: v.array(
+        v.object({
+            id: v.id("agentEmails"),
+            direction: v.union(v.literal("inbound"), v.literal("outbound")),
+            fromAddress: v.string(),
+            toAddress: v.string(),
+            subject: v.string(),
+            body: v.string(),
+            createdAt: v.number(),
+        })
+    ),
+    openProposal: v.union(
+        v.object({
+            id: v.id("agentRuns"),
+            noteBody: v.string(),
+            subject: v.string(),
+            createdAt: v.number(),
+        }),
+        v.null()
+    ),
+});
+
+const briefingPresenceValidator = v.object({
+    lastWorkedAt: v.union(v.number(), v.null()),
+    runsThisWeek: v.number(),
+    openProposals: v.number(),
 });
 
 export default defineSchema({
@@ -413,6 +468,10 @@ export default defineSchema({
         /** Count of failed runs (the "blocked" stat). */
         blockedCount: v.number(),
         nextScheduled: v.union(v.object({ label: v.string(), at: v.number() }), v.null()),
+        /** Per-commitment cockpit projection so investorCockpit reads one doc. */
+        cockpit: v.array(cockpitCommitmentValidator),
+        /** Presence stats for the cockpit's agent-presence block. */
+        presence: briefingPresenceValidator,
         updatedAt: v.number(),
     }).index("by_investorId", ["investorId"]),
 
