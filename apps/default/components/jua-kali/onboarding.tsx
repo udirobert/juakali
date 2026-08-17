@@ -689,7 +689,7 @@ const styles = StyleSheet.create({
     blobOne: { left: -120, top: 60, width: 260, height: 220, borderTopLeftRadius: 150, borderTopRightRadius: 90, borderBottomLeftRadius: 80, borderBottomRightRadius: 150, backgroundColor: "rgba(156,175,136,0.4)", transform: [{ rotate: "-12deg" }] },
     blobTwo: { right: -150, top: -30, width: 320, height: 240, borderTopLeftRadius: 95, borderTopRightRadius: 170, borderBottomLeftRadius: 160, borderBottomRightRadius: 80, backgroundColor: "rgba(224,122,95,0.2)", transform: [{ rotate: "10deg" }] },
     blobThree: { right: -100, bottom: 40, width: 320, height: 280, borderTopLeftRadius: 170, borderTopRightRadius: 110, borderBottomLeftRadius: 110, borderBottomRightRadius: 180, backgroundColor: "rgba(156,175,136,0.22)", transform: [{ rotate: "16deg" }] },
-    noise: { ...StyleSheet.absoluteFillObject, opacity: 0.16, backgroundColor: "rgba(255,255,255,0.22)" },
+    noise: { ...StyleSheet.absoluteFill, opacity: 0.16, backgroundColor: "rgba(255,255,255,0.22)" },
 
     proofBand: { flex: 1, justifyContent: "center", gap: 12, minHeight: 0, marginTop: 2 },
     testimonialCard: { alignSelf: "flex-start", maxWidth: "94%", paddingHorizontal: 15, paddingVertical: 12, gap: 0 },

@@ -446,7 +446,7 @@ const styles = StyleSheet.create({
         fontWeight: "300",
     },
     noiseOverlay: {
-        ...StyleSheet.absoluteFillObject,
+        ...StyleSheet.absoluteFill,
         opacity: 0.18,
         backgroundColor: "rgba(255,255,255,0.22)",
     },
@@ -606,7 +606,7 @@ const styles = StyleSheet.create({
         transform: [{ rotate: "3deg" }, { translateY: 18 }],
     },
     figureNoise: {
-        ...StyleSheet.absoluteFillObject,
+        ...StyleSheet.absoluteFill,
         backgroundColor: "rgba(255,255,255,0.12)",
     },
     figureNumber: {

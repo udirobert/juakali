@@ -131,7 +131,7 @@ export const styles = StyleSheet.create({
     },
     welcomeActions: { flexDirection: "row", alignItems: "center", gap: 12 },
     sheetRoot: { flex: 1, justifyContent: "flex-end", alignItems: "center" },
-    sheetDim: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(20,24,22,0.4)" },
+    sheetDim: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(20,24,22,0.4)" },
     sheet: {
         width: "100%",
         backgroundColor: color.paper,
