@@ -199,8 +199,14 @@ async function writeLedgerEvent(
 
 function evidenceTags(run: Doc<"agentRuns">): string[] {
     const primary = run.source === "email_paste" ? "email" : run.source;
+    const provenance =
+        run.evidenceSource === "founder_update"
+            ? "founder-update"
+            : run.evidenceSource === "investor_entered"
+              ? "investor-entered"
+              : null;
     const tags = run.trigger === "proactive" ? ["proactive", primary] : [primary];
-    return Array.from(new Set([...tags, "agent"]));
+    return Array.from(new Set([...tags, ...(provenance ? [provenance] : []), "agent"]));
 }
 
 /** First-person origin line for ledger/digest/reply copy. */
@@ -468,7 +474,7 @@ export async function resumeWaitingRunWithEvidence(
             metricOverride: metric,
             valueOverride: args.value,
             noteBody: note,
-            source: "self",
+            evidenceSource: "founder_update",
             pipeline: { ...waiting.pipeline, evidenceId },
             updatedAt: now,
         });
@@ -488,7 +494,7 @@ export async function resumeWaitingRunWithEvidence(
         metricOverride: metric,
         valueOverride: args.value,
         noteBody: note,
-        source: "self",
+        evidenceSource: "founder_update",
         pipeline: { ...waiting.pipeline, evidenceId },
         updatedAt: now,
     });
@@ -512,6 +518,7 @@ export async function createAgentRun(    ctx: MutationCtx,
         fromAddressOverride?: string;
         toAddressOverride?: string;
         source: "agent" | "sms" | "manual" | "email_paste" | "self";
+        evidenceSource?: "founder_update" | "investor_entered";
     }
 ) {
     const body = args.noteBody.trim();
@@ -556,6 +563,7 @@ export async function createAgentRun(    ctx: MutationCtx,
         fromAddress,
         toAddress,
         source: args.source,
+        evidenceSource: args.evidenceSource ?? null,
         steps: initialSteps(),
         actionPlan: undefined,
         correlationId,
@@ -623,6 +631,11 @@ export const getAgentRun = query({
             steps: v.array(runStepValidator),
             /** The canonical persisted action plan (single source of truth). */
             actionPlan: v.union(actionPlanValidator, v.null()),
+            evidenceSource: v.union(
+                v.literal("founder_update"),
+                v.literal("investor_entered"),
+                v.null()
+            ),
             approvedSummary: v.union(v.string(), v.null()),
             result: v.union(runResultValidator, v.null()),
             error: v.union(v.string(), v.null()),
@@ -646,6 +659,7 @@ export const getAgentRun = query({
             toAddress: run.toAddress,
             steps: run.steps,
             actionPlan: run.actionPlan ?? null,
+            evidenceSource: run.evidenceSource ?? null,
             approvedSummary: run.approvedSummary ?? null,
             result: run.result ?? null,
             error: run.error ?? null,
@@ -874,6 +888,7 @@ export const stepRecordKpi = internalMutation({
                 value,
                 note: run.noteBody.slice(0, 160),
                 source: run.source,
+                evidenceSource: run.evidenceSource ?? null,
                 evidenceId: run.pipeline?.evidenceId ?? null,
                 appliedItemId,
                 createdAt: now,
@@ -1557,7 +1572,7 @@ export const submitFounderEvidence = mutation({
             metricOverride: metric,
             valueOverride: args.value,
             noteBody: args.note?.trim() || run.noteBody,
-            source: "self" as const,
+            evidenceSource: "investor_entered" as const,
             updatedAt: now,
         };
 

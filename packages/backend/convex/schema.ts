@@ -329,6 +329,10 @@ export default defineSchema({
         value: v.number(),
         note: v.string(),
         source: kpiSource,
+        /** Evidence provenance is distinct from the pipeline transport source. */
+        evidenceSource: v.optional(
+            v.union(v.literal("founder_update"), v.literal("investor_entered"), v.null())
+        ),
         /** Immutable founder/investor evidence that supports this check-in. */
         evidenceId: v.optional(v.union(v.id("founderEvidence"), v.null())),
         /** Set when this check-in measures a piece of applied mentor wisdom. */
@@ -433,6 +437,10 @@ export default defineSchema({
         fromAddress: v.string(),
         toAddress: v.string(),
         source: kpiSource,
+        /** Provenance of the evidence consumed by this run, if any. */
+        evidenceSource: v.optional(
+            v.union(v.literal("founder_update"), v.literal("investor_entered"), v.null())
+        ),
         steps: v.array(
             v.object({
                 tool: v.string(),

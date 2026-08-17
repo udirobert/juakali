@@ -5,6 +5,7 @@
  * self-report KPIs that carry the measurable outcomes.
  */
 import { mutation, query } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
@@ -158,6 +159,50 @@ export const myVenture = query({
     },
 });
 
+/** Open investor check-in requests visible to the owner of this venture. */
+export const openFounderRequests = query({
+    args: {},
+    returns: v.array(
+        v.object({
+            runId: v.id("agentRuns"),
+            commitmentId: v.id("commitments"),
+            investorName: v.string(),
+            requestBody: v.string(),
+            subject: v.string(),
+            createdAt: v.number(),
+        })
+    ),
+    handler: async (ctx) => {
+        const userId = await getAuthUserId(ctx);
+        if (!userId) return [];
+        const owner = await ctx.db
+            .query("ventureOwners")
+            .withIndex("by_userId", (q) => q.eq("userId", userId))
+            .first();
+        if (!owner) return [];
+
+        const runs = await ctx.db
+            .query("agentRuns")
+            .withIndex("by_ventureId", (q) => q.eq("ventureId", owner.ventureId))
+            .order("desc")
+            .take(30);
+        const open = [];
+        for (const run of runs) {
+            if (run.status !== "waiting_for_response") continue;
+            const investor = await ctx.db.get(run.investorId);
+            open.push({
+                runId: run._id,
+                commitmentId: run.commitmentId,
+                investorName: investor?.displayName ?? "Investor",
+                requestBody: run.noteBody,
+                subject: run.subject,
+                createdAt: run.createdAt,
+            });
+        }
+        return open;
+    },
+});
+
 /**
  * Share an update — situation, problem, opportunity, or win. Jua moderates:
  * it runs the same durable pipeline (KPI → digest → ledger → reply) so
@@ -168,6 +213,8 @@ export const postVentureUpdate = mutation({
         body: v.string(),
         tag: ventureUpdateTag,
         kpiValue: v.optional(v.number()),
+        /** Required when a venture has multiple investor relationships. */
+        commitmentId: v.optional(v.id("commitments")),
     },
     returns: v.object({ message: v.string(), runId: v.union(v.id("agentRuns"), v.null()) }),
     handler: async (ctx, args) => {
@@ -186,21 +233,21 @@ export const postVentureUpdate = mutation({
         const venture = await ctx.db.get(owner.ventureId);
         if (!venture) throw new Error("Venture not found");
 
-        // Any active commitment on this venture carries the run (demo keeps ≥1).
         const commitments = await ctx.db
             .query("commitments")
             .withIndex("by_ventureId", (q) => q.eq("ventureId", venture._id))
             .take(10);
-        // A founder update cannot safely answer a private investor request when
-        // multiple investors share this venture. Avoid attaching it to an
-        // arbitrary commitment; the no-commitment branch posts a neutral public
-        // founder update instead.
-        if (commitments.length > 1) {
+        let commitment: Doc<"commitments"> | null = commitments[0] ?? null;
+        if (args.commitmentId) {
+            commitment = commitments.find((row) => row._id === args.commitmentId) ?? null;
+            if (!commitment) {
+                throw new Error("Selected investor request does not belong to your venture.");
+            }
+        } else if (commitments.length > 1) {
             throw new Error(
                 "This venture has multiple investor relationships. Select the investor request before submitting KPI evidence."
             );
         }
-        const commitment = commitments[0] ?? null;
 
         const tagLabel = args.tag.charAt(0).toUpperCase() + args.tag.slice(1);
         const now = Date.now();
@@ -250,6 +297,7 @@ export const postVentureUpdate = mutation({
             trigger: "entrepreneur_note",
             fromAddressOverride: venture.agentEmail ?? `${venture.publicSlug}@agent.juakali.demo`,
             source: "self",
+            evidenceSource: args.kpiValue != null ? "founder_update" : undefined,
         });
 
         await ctx.db.insert("ledgerEvents", {

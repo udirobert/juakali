@@ -194,7 +194,11 @@ describe("proactive approval does not manufacture KPI evidence", () => {
         expect(state.run?.status).toBe("completed");
         expect(state.checkIns).toHaveLength(1);
         expect(state.checkIns[0]?.value).toBe(4);
-        expect(state.checkIns[0]?.source).toBe("self");
+        // Transport source stays "agent"; provenance is tracked separately and
+        // must not be collapsed into "self" (which would imply founder proof).
+        expect(state.checkIns[0]?.source).toBe("agent");
+        expect(state.checkIns[0]?.evidenceSource).toBe("investor_entered");
+        expect(state.run?.evidenceSource).toBe("investor_entered");
     });
 
     test("submitFounderEvidence rejects non-positive values", async () => {
@@ -423,29 +427,58 @@ describe("retry is idempotent and preserves the approved contract", () => {
         expect(checkInsAfter).toBe(1); // no duplicate
     });
 
-    test("retry preserves correlationId and actionPlan", async () => {
+    test("retryFailedRun preserves actionPlan, approvedSummary, and correlationId", async () => {
         const t = initTest();
         const { investorId, asUser } = await createInvestor(t, "alice@test.com");
         const { ventureId, commitmentId } = await createVentureWithCommitment(t, investorId);
         const proposalId = await seedProposal(t, commitmentId, ventureId);
 
-        const before = await t.run(async (ctx) => {
-            const run = await ctx.db.get(proposalId);
-            return { correlationId: run?.correlationId, hasPlan: Boolean(run?.actionPlan) };
+        const approvedText = "Jua confirmed 4 completed jobs with the founder.";
+        await asUser.mutation(api.agentRuns.approveProposal, {
+            runId: proposalId,
+            publicSummary: approvedText,
         });
-        expect(before.hasPlan).toBe(true);
-
-        await asUser.mutation(api.agentRuns.approveProposal, { runId: proposalId });
         await drain(t);
 
-        // Fail the run while waiting (simulate), then retry path is not applicable
-        // to waiting runs; instead verify the approved run kept its lineage.
-        const after = await t.run(async (ctx) => {
+        const before = await t.run(async (ctx) => {
             const run = await ctx.db.get(proposalId);
-            return { correlationId: run?.correlationId, hasPlan: Boolean(run?.actionPlan) };
+            return {
+                correlationId: run?.correlationId,
+                approvedSummary: run?.approvedSummary,
+                whyNow: run?.actionPlan?.reason.whyNow,
+                planSteps: run?.actionPlan?.planSteps.length ?? 0,
+            };
         });
-        expect(after.correlationId).toBe(before.correlationId);
-        expect(after.hasPlan).toBe(true);
+        expect(before.correlationId).toBeTruthy();
+        expect(before.approvedSummary).toBe(approvedText);
+        expect(before.planSteps).toBeGreaterThan(0);
+
+        // Force the waiting run to a failed state (e.g. the founder request
+        // step failed after approval), then retry it for real.
+        await t.run(async (ctx) => {
+            const run = await ctx.db.get(proposalId);
+            if (!run) throw new Error("run missing");
+            const steps = run.steps.map((s) =>
+                s.tool === "send_founder_request"
+                    ? { ...s, status: "failed" as const, detail: "outbox down" }
+                    : s.status === "pending"
+                      ? { ...s, status: "failed" as const, detail: "Skipped — earlier step failed" }
+                      : s
+            );
+            await ctx.db.patch(proposalId, { status: "failed", steps, error: "outbox down" });
+        });
+
+        const retried = await asUser.mutation(api.agentRuns.retryFailedRun, { runId: proposalId });
+        expect(retried.runId).toBe(proposalId);
+        await drain(t);
+
+        const after = await t.run(async (ctx) => ctx.db.get(proposalId));
+        expect(after?.correlationId).toBe(before.correlationId);
+        expect(after?.approvedSummary).toBe(approvedText);
+        expect(after?.actionPlan?.reason.whyNow).toBe(before.whyNow);
+        expect(after?.actionPlan?.planSteps.length).toBe(before.planSteps);
+        // The retried run re-parked waiting for evidence; no public effect yet.
+        expect(after?.status).toBe("waiting_for_response");
     });
 });
 

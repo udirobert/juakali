@@ -95,6 +95,11 @@ export default function RunScreen() {
                 <View style={{ flex: 1 }}>
                     <Text style={styles.title}>{run.subject}</Text>
                     <Text style={styles.meta}>{run.status} · {run.trigger}</Text>
+                    {run.evidenceSource ? (
+                        <Text style={styles.meta}>
+                            Source: {run.evidenceSource === "investor_entered" ? "entered by investor; founder verification not captured" : "submitted directly by founder"}
+                        </Text>
+                    ) : null}
                 </View>
             </View>
 
@@ -112,10 +117,10 @@ export default function RunScreen() {
             {run.status === "waiting_for_response" ? (
                 <AuthRequiredGate required={requireAuthToAct}>
                     <View style={styles.evidence}>
-                        <SectionLabel>Founder evidence</SectionLabel>
+                        <SectionLabel>Evidence from the founder</SectionLabel>
                         <Text style={styles.body}>
-                            Jua requested a check-in. Record the founder's sourced number to
-                            continue — nothing is logged without real evidence.
+                            Jua requested a check-in. Enter a number received from the founder to
+                            continue — nothing is logged without a real response.
                         </Text>
                         <Input
                             value={evidenceValue}
@@ -132,7 +137,7 @@ export default function RunScreen() {
                             style={styles.input}
                         />
                         <Button
-                            label={submitting ? "Submitting…" : "Submit evidence"}
+                            label={submitting ? "Submitting…" : "Record received number"}
                             onPress={() => void handleSubmitEvidence()}
                             disabled={submitting}
                         />

@@ -11,11 +11,18 @@ import { color, type } from "@/components/jua-kali/theme";
 
 const CHAIN_LABELS: Record<string, string> = {
     pledge: "Investor intent",
-    checkin: "Founder / KPI evidence",
+    checkin: "KPI evidence",
     digest: "Jua digest",
     action: "Agent execution",
     wisdom: "Mentor wisdom",
 };
+
+function chainLabel(link: { type: string; evidence: string[] }): string {
+    if (link.evidence.includes("investor-entered")) return "Investor-entered KPI evidence";
+    if (link.evidence.includes("founder-update")) return "Founder-submitted KPI evidence";
+    if (link.evidence.includes("self") && link.type === "checkin") return "Founder self-report";
+    return CHAIN_LABELS[link.type] ?? link.type;
+}
 
 export default function ProofEventScreen() {
     const { eventId } = useLocalSearchParams<{ eventId: string }>();
@@ -68,7 +75,7 @@ export default function ProofEventScreen() {
                     <Text style={styles.chainN}>{index + 1}</Text>
                     <View style={{ flex: 1 }}>
                         <Text style={styles.chainType}>
-                            {CHAIN_LABELS[link.type] ?? link.type}
+                            {chainLabel(link)}
                             {link.causedBy ? " · caused by previous" : " · related activity"}
                         </Text>
                         <Text style={styles.body}>{link.summary}</Text>

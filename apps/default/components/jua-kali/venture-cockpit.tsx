@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
     ActivityIndicator,
     Pressable,
@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMutation, useQuery } from "convex/react";
 
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { SITE_URL } from "@/lib/site";
 import { SoftIdentityBar } from "@/components/jua-kali/soft-identity";
 import { LivingSun } from "@/components/jua-kali/living-sun";
@@ -54,6 +55,7 @@ export function VentureCockpit({ onOpenLedger }: { onOpenLedger?: () => void }) 
     const padX = Math.max(14, Math.min(28, (width - layout.maxWidth) / 2 + 16));
 
     const venture = useQuery(api.venture.myVenture);
+    const openRequests = useQuery(api.venture.openFounderRequests);
     const claimVenture = useMutation(api.venture.claimVenture);
     const postUpdate = useMutation(api.venture.postVentureUpdate);
     const logCheckIn = useMutation(api.venture.logSelfCheckIn);
@@ -66,9 +68,15 @@ export function VentureCockpit({ onOpenLedger }: { onOpenLedger?: () => void }) 
     const [status, setStatus] = useState<string | null>(null);
     const [sending, setSending] = useState(false);
     const [phase, setPhase] = useState<CheckInPhase>("prompt");
+    const [selectedCommitmentId, setSelectedCommitmentId] = useState<Id<"commitments"> | null>(null);
     const dictation = useDictation((transcript) =>
         setBody((prev) => (prev ? `${prev} ${transcript}` : transcript)),
     );
+
+    useEffect(() => {
+        if (!openRequests || openRequests.length !== 1) return;
+        setSelectedCommitmentId((current) => current ?? openRequests[0]!.commitmentId);
+    }, [openRequests]);
 
     async function handleClaim() {
         setClaiming(true);
@@ -95,10 +103,15 @@ export function VentureCockpit({ onOpenLedger }: { onOpenLedger?: () => void }) 
         setSending(true);
         setStatus(null);
         try {
+            if (openRequests && openRequests.length > 1 && !selectedCommitmentId) {
+                setStatus("Select which investor request this update answers.");
+                return;
+            }
             const result = await postUpdate({
                 body: text,
                 tag,
                 kpiValue: Number.isFinite(kpiValue) && kpiValue && kpiValue > 0 ? kpiValue : undefined,
+                commitmentId: selectedCommitmentId ?? undefined,
             });
             setStatus(result.message);
             setBody("");
@@ -234,6 +247,38 @@ export function VentureCockpit({ onOpenLedger }: { onOpenLedger?: () => void }) 
                     </View>
                     {status ? <Text style={styles.status}>{status}</Text> : null}
                 </Card>
+
+                {openRequests && openRequests.length > 0 ? (
+                    <Card>
+                        <View style={styles.titleRow}>
+                            <IconLedger size={15} color={color.brassDeep} />
+                            <Text style={styles.cardTitle}>Open investor requests</Text>
+                        </View>
+                        <Text style={styles.hint}>
+                            Choose the request before sending a KPI update. This keeps your response attached to the right investor.
+                        </Text>
+                        {openRequests.map((request) => (
+                            <Pressable
+                                key={request.runId}
+                                onPress={() => setSelectedCommitmentId(request.commitmentId)}
+                                style={[
+                                    styles.requestRow,
+                                    selectedCommitmentId === request.commitmentId && styles.requestRowSelected,
+                                ]}
+                                accessibilityRole="button"
+                                accessibilityState={{ selected: selectedCommitmentId === request.commitmentId }}
+                            >
+                                <View style={{ flex: 1, gap: 2 }}>
+                                    <Text style={styles.requestInvestor}>{request.investorName}</Text>
+                                    <Text style={styles.hint} numberOfLines={2}>{request.requestBody}</Text>
+                                </View>
+                                <Text style={styles.requestMark}>
+                                    {selectedCommitmentId === request.commitmentId ? "Selected" : "Select"}
+                                </Text>
+                            </Pressable>
+                        ))}
+                    </Card>
+                ) : null}
 
                 {/* Conversational check-in — form remains as fallback. */}
                 <Card>
