@@ -4,6 +4,7 @@ import { action, internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
+import { env } from "./env";
 
 interface QueuedMessage {
     id: Id<"outboundMessages">;
@@ -12,14 +13,23 @@ interface QueuedMessage {
     provider: "twilio" | "africas_talking" | "mock";
 }
 
+const configuredEnv: Record<string, string | undefined> = {
+    TWILIO_ACCOUNT_SID: env.TWILIO_ACCOUNT_SID,
+    TWILIO_AUTH_TOKEN: env.TWILIO_AUTH_TOKEN,
+    TWILIO_FROM_NUMBER: env.TWILIO_FROM_NUMBER,
+    AFRICAS_TALKING_USERNAME: env.AFRICAS_TALKING_USERNAME,
+    AFRICAS_TALKING_API_KEY: env.AFRICAS_TALKING_API_KEY,
+    AFRICAS_TALKING_SENDER_ID: env.AFRICAS_TALKING_SENDER_ID,
+};
+
 function requiredEnv(name: string): string {
-    const value = process.env[name];
+    const value = configuredEnv[name];
     if (!value) throw new Error(`${name} environment variable is required but not set`);
     return value;
 }
 
 function optionalEnv(name: string): string | null {
-    const value = process.env[name];
+    const value = configuredEnv[name];
     return value && value.trim().length > 0 ? value : null;
 }
 

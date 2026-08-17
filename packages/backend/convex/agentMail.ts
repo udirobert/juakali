@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import { Webhook } from "svix";
 import { action, internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { env } from "./env";
 
 const API = "https://api.agentmail.to";
 
@@ -26,14 +27,14 @@ type StatusResult = {
 
 function apiKey(): string {
      
-    const key = process.env.AGENTMAIL_API_KEY;
+    const key = env.AGENTMAIL_API_KEY;
     if (!key) throw new Error("AGENTMAIL_API_KEY is not set on this Convex deployment");
     return key;
 }
 
 function siteUrl(): string {
      
-    const site = (process.env.CONVEX_SITE_URL ?? "").replace(/\/$/, "");
+    const site = (env.CONVEX_SITE_URL ?? "").replace(/\/$/, "");
     if (!site) throw new Error("CONVEX_SITE_URL missing");
     return site;
 }
@@ -197,8 +198,8 @@ export const status = action({
     }),
     handler: async (ctx): Promise<StatusResult> => {
          
-        const apiKeyConfigured = Boolean(process.env.AGENTMAIL_API_KEY);
-        const envSecret = Boolean(process.env.AGENTMAIL_WEBHOOK_SECRET);
+        const apiKeyConfigured = Boolean(env.AGENTMAIL_API_KEY);
+        const envSecret = Boolean(env.AGENTMAIL_WEBHOOK_SECRET);
          
         const config: StoredConfig = await ctx.runQuery(internal.agentMailStore.getConfig, {});
         const storedSecret: boolean = await ctx.runQuery(internal.agentMailStore.hasWebhookSecret, {});
@@ -258,7 +259,7 @@ export const verifyAndParse = internalAction({
     returns: v.any(),
     handler: async (ctx, args) => {
          
-        let secret = process.env.AGENTMAIL_WEBHOOK_SECRET ?? "";
+        let secret = env.AGENTMAIL_WEBHOOK_SECRET ?? "";
          
         if (!secret) {
             secret = (await ctx.runQuery(internal.agentMailStore.getWebhookSecret, {})) ?? "";

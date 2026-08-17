@@ -3,6 +3,7 @@ import { httpAction } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { auth } from "./auth";
 import shareLedger from "./httpShareLedger";
+import { env } from "./env";
 
 const http = httpRouter();
 
@@ -13,8 +14,8 @@ http.route({
     method: "POST",
     handler: httpAction(async (ctx, request) => {
          
-        const inboxOn = process.env.SOFT_AUTH_INBOX === "1";
-        const expected = process.env.SOFT_AUTH_INBOX_SECRET;
+        const inboxOn = env.SOFT_AUTH_INBOX === "1";
+        const expected = env.SOFT_AUTH_INBOX_SECRET;
          
         if (!inboxOn) {
             return new Response(JSON.stringify({ ok: false, error: "Inbox disabled" }), {
@@ -201,7 +202,7 @@ http.route({
     path: "/webhooks/revenuecat",
     method: "POST",
     handler: httpAction(async (ctx, request) => {
-        const expected = process.env.REVENUECAT_WEBHOOK_SECRET;
+        const expected = env.REVENUECAT_WEBHOOK_SECRET;
         if (!expected) {
             return new Response(JSON.stringify({ ok: false, error: "Not configured" }), {
                 status: 503,
@@ -283,7 +284,7 @@ http.route({
 
         let json: unknown;
          
-        const envSecret = process.env.AGENTMAIL_WEBHOOK_SECRET;
+        const envSecret = env.AGENTMAIL_WEBHOOK_SECRET;
          
         const storedSecret = await ctx.runQuery(internal.agentMailStore.getWebhookSecret, {});
         const mustVerify = Boolean(envSecret || storedSecret);

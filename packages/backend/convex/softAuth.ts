@@ -4,14 +4,15 @@ import { internalMutation, mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { rateLimiter } from "./rateLimit";
+import { env } from "./env";
 
  
 export function softAuthInboxEnabled() {
-    return process.env.SOFT_AUTH_INBOX === "1";
+    return env.SOFT_AUTH_INBOX === "1";
 }
 
 export function requireAuthToActEnabled() {
-    return process.env.REQUIRE_AUTH_TO_ACT === "1";
+    return env.REQUIRE_AUTH_TO_ACT === "1";
 }
  
 
@@ -161,7 +162,7 @@ export const softAuthConfig = query({
         return {
             inboxPeek: softAuthInboxEnabled(),
             requireAuthToAct: requireAuthToActEnabled(),
-            resendConfigured: Boolean(process.env.AUTH_RESEND_KEY),
+            resendConfigured: Boolean(env.AUTH_RESEND_KEY),
         };
          
     },

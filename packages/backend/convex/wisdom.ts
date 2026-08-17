@@ -17,6 +17,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 
 import { assertCanAct } from "./softAuth";
 import { rateLimiter } from "./rateLimit";
+import { env } from "./env";
 
 const sharedKindValidator = v.union(
     v.literal("article"),
@@ -326,7 +327,7 @@ async function parseWithGemini(content: string, venture: {
     kpiLabel: string;
     kpiTarget: number;
 }): Promise<ParsePayload | null> {
-    const apiKey = process.env.GOOGLE_API_KEY;
+    const apiKey = env.GOOGLE_API_KEY;
     if (!apiKey) return null;
 
     const response = await fetch(

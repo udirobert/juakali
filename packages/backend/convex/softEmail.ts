@@ -1,9 +1,10 @@
 import { Email } from "@convex-dev/auth/providers/Email";
+import { env } from "./env";
 
 /**
  * Soft identity: email magic link.
- * Uses process.env (not ./env) so auth config can load without requiring
- * optional AUTH_* / SOFT_* vars to be provisioned on every deployment.
+ * Uses the typed env helper so optional AUTH_* / SOFT_* vars remain
+ * deployment-safe while still being declared centrally.
  *
  * - With AUTH_RESEND_KEY: sends via Resend API
  * - With SOFT_AUTH_INBOX=1: posts to /soft-auth/inbox for demo peek UI
@@ -15,11 +16,11 @@ export const SoftEmail = Email({
     async sendVerificationRequest({ identifier: email, url }) {
         const normalized = email.trim().toLowerCase();
          
-        const site = (process.env.CONVEX_SITE_URL ?? "").replace(/\/$/, "");
-        const inboxOn = process.env.SOFT_AUTH_INBOX === "1";
-        const resendKey = process.env.AUTH_RESEND_KEY;
-        const inboxSecret = process.env.SOFT_AUTH_INBOX_SECRET ?? "";
-        const from = process.env.AUTH_EMAIL_FROM ?? "JuaKali <onboarding@resend.dev>";
+        const site = (env.CONVEX_SITE_URL ?? "").replace(/\/$/, "");
+        const inboxOn = env.SOFT_AUTH_INBOX === "1";
+        const resendKey = env.AUTH_RESEND_KEY;
+        const inboxSecret = env.SOFT_AUTH_INBOX_SECRET ?? "";
+        const from = env.AUTH_EMAIL_FROM ?? "JuaKali <onboarding@resend.dev>";
          
 
         if (inboxOn && site) {

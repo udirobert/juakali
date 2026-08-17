@@ -50,9 +50,24 @@ const fullSchema = {
     // Public-facing site URL used by Convex Auth for OAuth redirect callbacks.
     SITE_URL: v.string(),
 
-    // Soft identity vars (AUTH_RESEND_KEY, SOFT_AUTH_INBOX, REQUIRE_AUTH_TO_ACT, …)
-    // stay on process.env — do not add them here. Auth config loads ./env, and
-    // unset optional keys in this schema break Convex Auth push validation.
+    // ---- Optional integrations and feature flags ---------------------------
+    // These remain optional so local/demo deployments can boot without every
+    // provider configured, while all call sites still use the typed env object.
+    AGENTMAIL_API_KEY: v.optional(v.string()),
+    AGENTMAIL_WEBHOOK_SECRET: v.optional(v.string()),
+    AUTH_EMAIL_FROM: v.optional(v.string()),
+    AUTH_RESEND_KEY: v.optional(v.string()),
+    SOFT_AUTH_INBOX: v.optional(v.string()),
+    SOFT_AUTH_INBOX_SECRET: v.optional(v.string()),
+    REQUIRE_AUTH_TO_ACT: v.optional(v.string()),
+    REVENUECAT_WEBHOOK_SECRET: v.optional(v.string()),
+    GOOGLE_API_KEY: v.optional(v.string()),
+    TWILIO_ACCOUNT_SID: v.optional(v.string()),
+    TWILIO_AUTH_TOKEN: v.optional(v.string()),
+    TWILIO_FROM_NUMBER: v.optional(v.string()),
+    AFRICAS_TALKING_USERNAME: v.optional(v.string()),
+    AFRICAS_TALKING_API_KEY: v.optional(v.string()),
+    AFRICAS_TALKING_SENDER_ID: v.optional(v.string()),
 
     // ---- User-managed examples (uncomment + adapt as you add features) -----
     // Required string -- backend won't boot without it once provisioning is

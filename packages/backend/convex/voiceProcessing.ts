@@ -1,6 +1,7 @@
 import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import { env } from "./env";
 
 import {
     type ExtractedMasterProfile,
@@ -52,7 +53,7 @@ function parseExtractedProfile(value: unknown, transcript: string, fallbackPhone
 }
 
 function requireApiKey(): string {
-    const apiKey = process.env.GOOGLE_API_KEY;
+    const apiKey = env.GOOGLE_API_KEY;
     if (!apiKey) throw new Error("GOOGLE_API_KEY environment variable is required but not set");
     return apiKey;
 }

@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
+import { env } from "./env";
 
 /** Public-safe AgentMail wiring status (no secrets). */
 export const publicStatus = query({
@@ -17,7 +18,7 @@ export const publicStatus = query({
             .withIndex("by_key", (q) => q.eq("key", "default"))
             .first();
          
-        const site = (process.env.CONVEX_SITE_URL ?? "").replace(/\/$/, "");
+        const site = (env.CONVEX_SITE_URL ?? "").replace(/\/$/, "");
          
         return {
             configured: Boolean(row?.inboxId),
