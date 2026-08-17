@@ -6,7 +6,7 @@ import { useMutation, useQuery } from "convex/react";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { Approval } from "@/components/jua-kali/approval";
+import { Approval, PublicationApproval } from "@/components/jua-kali/approval";
 import { LivingSun } from "@/components/jua-kali/living-sun";
 import { AuthRequiredGate, useRequireAuthToAct } from "@/components/jua-kali/soft-identity";
 import { Button, Input, SectionLabel } from "@/components/jua-kali/ui";
@@ -19,6 +19,10 @@ export default function RunScreen() {
         runId ? { runId: runId as Id<"agentRuns"> } : "skip"
     );
     const submitEvidence = useMutation(api.agentRuns.submitFounderEvidence);
+    const decision = useQuery(
+        api.agentRuns.getRunDecision,
+        runId ? { runId: runId as Id<"agentRuns"> } : "skip"
+    );
     const requireAuthToAct = useRequireAuthToAct();
     const insets = useSafeAreaInsets();
     const router = useRouter();
@@ -50,8 +54,8 @@ export default function RunScreen() {
               ? "verified"
               : run.status === "failed"
                 ? "blocked"
-                : run.status === "waiting_for_response"
-                  ? "observing"
+                : run.status === "awaiting_publication"
+                  ? "executing"
                   : "observing";
 
     async function handleSubmitEvidence() {
@@ -113,6 +117,15 @@ export default function RunScreen() {
                     </View>
                 </View>
             ))}
+
+            {run.status === "awaiting_publication" && decision?.kind === "publication" ? (
+                <AuthRequiredGate required={requireAuthToAct}>
+                    <PublicationApproval
+                        publication={decision.publication}
+                        onPublished={(id) => router.replace(`/runs/${id}`)}
+                    />
+                </AuthRequiredGate>
+            ) : null}
 
             {run.status === "waiting_for_response" ? (
                 <AuthRequiredGate required={requireAuthToAct}>

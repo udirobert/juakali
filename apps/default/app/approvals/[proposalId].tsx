@@ -4,29 +4,30 @@ import { useQuery } from "convex/react";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { Approval, type ActionPlanView } from "@/components/jua-kali/approval";
+import { Approval, PublicationApproval, type ActionPlanView } from "@/components/jua-kali/approval";
 import { AuthRequiredGate, useRequireAuthToAct } from "@/components/jua-kali/soft-identity";
 import { color, type } from "@/components/jua-kali/theme";
 
 export default function ApprovalScreen() {
     const { proposalId } = useLocalSearchParams<{ proposalId: string }>();
-    // Canonical persisted plan — the single representation of this approval
-    // contract, identical to what Today renders (no reconstructed fallback).
-    const plan = useQuery(
-        api.agentRuns.getProposalDetail,
+    // Canonical decision — the single representation of this approval contract,
+    // identical to what Today renders (no reconstructed fallback). Covers both
+    // the first approval (proposal plan) and the second (publication approval).
+    const decision = useQuery(
+        api.agentRuns.getRunDecision,
         proposalId ? { runId: proposalId as Id<"agentRuns"> } : "skip"
     );
     const requireAuthToAct = useRequireAuthToAct();
     const router = useRouter();
 
-    if (plan === undefined) {
+    if (decision === undefined) {
         return (
             <View style={styles.boot}>
                 <ActivityIndicator color={color.brass} />
             </View>
         );
     }
-    if (!plan) {
+    if (!decision) {
         return (
             <View style={styles.boot}>
                 {/* Header is drawn by the Stack (below) — no manual inset here. */}
@@ -39,8 +40,6 @@ export default function ApprovalScreen() {
         );
     }
 
-    const approvalPlan: ActionPlanView = plan;
-
     return (
         <ScrollView
             contentContainerStyle={styles.scroll}
@@ -48,17 +47,29 @@ export default function ApprovalScreen() {
         >
             {/* Single source of chrome: the Stack header. No manual Back control
                 or safe-area padding here, so there is no duplicate inset. */}
-            <Stack.Screen options={{ headerShown: true, title: "Approval" }} />
+            <Stack.Screen
+                options={{
+                    headerShown: true,
+                    title: decision.kind === "publication" ? "Approve publication" : "Approval",
+                }}
+            />
             <AuthRequiredGate required={requireAuthToAct}>
-                <Approval.Provider plan={approvalPlan}>
-                    <Approval.Card>
-                        <Approval.Preview />
-                        <Approval.Actions
-                            onApproved={(runId) => router.replace(`/runs/${runId}`)}
-                            onDismissed={() => router.replace("/(tabs)/today")}
-                        />
-                    </Approval.Card>
-                </Approval.Provider>
+                {decision.kind === "publication" ? (
+                    <PublicationApproval
+                        publication={decision.publication}
+                        onPublished={(runId) => router.replace(`/runs/${runId}`)}
+                    />
+                ) : (
+                    <Approval.Provider plan={decision.plan as ActionPlanView}>
+                        <Approval.Card>
+                            <Approval.Preview />
+                            <Approval.Actions
+                                onApproved={(runId) => router.replace(`/runs/${runId}`)}
+                                onDismissed={() => router.replace("/(tabs)/today")}
+                            />
+                        </Approval.Card>
+                    </Approval.Provider>
+                )}
             </AuthRequiredGate>
         </ScrollView>
     );

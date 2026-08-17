@@ -165,7 +165,7 @@ describe("proactive approval does not manufacture KPI evidence", () => {
         expect(state.publicEvents).toHaveLength(0);
     });
 
-    test("KPI is recorded only after sourced founder evidence is submitted", async () => {
+    test("KPI is recorded only after the second (publication) approval", async () => {
         const t = initTest();
         const { investorId, asUser } = await createInvestor(t, "alice@test.com");
         const { ventureId, commitmentId } = await createVentureWithCommitment(t, investorId);
@@ -182,13 +182,42 @@ describe("proactive approval does not manufacture KPI evidence", () => {
         });
         await drain(t);
 
-        const state = await t.run(async (ctx) => {
+        // Evidence parks the run — nothing recorded or published yet.
+        let state = await t.run(async (ctx) => {
             const run = await ctx.db.get(proposalId);
             const checkIns = await ctx.db
                 .query("kpiCheckIns")
                 .withIndex("by_ventureId", (q) => q.eq("ventureId", ventureId))
                 .collect();
-            return { run, checkIns };
+            const publicEvents = await ctx.db
+                .query("ledgerEvents")
+                .withIndex("by_publicVisible_and_createdAt", (q) => q.eq("publicVisible", true))
+                .collect();
+            return { run, checkIns, publicEvents };
+        });
+        expect(state.run?.status).toBe("awaiting_publication");
+        expect(state.checkIns).toHaveLength(0);
+        expect(state.publicEvents).toHaveLength(0);
+
+        // Second approval — approve the exact KPI + public summary.
+        const approvedText = "Jua confirmed 4 completed jobs with the founder for Test Venture.";
+        await asUser.mutation(api.agentRuns.publishApproval, {
+            runId: proposalId,
+            publicSummary: approvedText,
+        });
+        await drain(t);
+
+        state = await t.run(async (ctx) => {
+            const run = await ctx.db.get(proposalId);
+            const checkIns = await ctx.db
+                .query("kpiCheckIns")
+                .withIndex("by_ventureId", (q) => q.eq("ventureId", ventureId))
+                .collect();
+            const publicEvents = await ctx.db
+                .query("ledgerEvents")
+                .withIndex("by_publicVisible_and_createdAt", (q) => q.eq("publicVisible", true))
+                .collect();
+            return { run, checkIns, publicEvents };
         });
 
         expect(state.run?.status).toBe("completed");
@@ -199,6 +228,9 @@ describe("proactive approval does not manufacture KPI evidence", () => {
         expect(state.checkIns[0]?.source).toBe("agent");
         expect(state.checkIns[0]?.evidenceSource).toBe("investor_entered");
         expect(state.run?.evidenceSource).toBe("investor_entered");
+        // The exact approved summary is what got published.
+        const actionEvent = state.publicEvents.find((e) => e.type === "action");
+        expect(actionEvent?.summary).toBe(approvedText);
     });
 
     test("submitFounderEvidence rejects non-positive values", async () => {
@@ -348,10 +380,16 @@ describe("approved publicSummary is published verbatim", () => {
         });
         await drain(t);
 
-        // Submit evidence so the pipeline reaches the ledger step.
+        // Submit evidence, then approve publication so the pipeline reaches
+        // the ledger step with the exact approved summary.
         await asUser.mutation(api.agentRuns.submitFounderEvidence, {
             runId: proposalId,
             value: 4,
+        });
+        await drain(t);
+        await asUser.mutation(api.agentRuns.publishApproval, {
+            runId: proposalId,
+            publicSummary: approvedText,
         });
         await drain(t);
 
@@ -545,7 +583,8 @@ describe("auto_low_risk autonomy", () => {
             return run!._id;
         });
 
-        // Founder submits evidence — must NOT auto-publish; parks as proposed.
+        // Founder submits evidence — must NOT auto-publish; parks awaiting the
+        // second approval (publication consent).
         await asUser.mutation(api.agentRuns.submitFounderEvidence, { runId, value: 3 });
         await drain(t);
 
@@ -562,13 +601,13 @@ describe("auto_low_risk autonomy", () => {
             return { run, checkIns, publicEvents };
         });
 
-        expect(state.run?.status).toBe("proposed");
+        expect(state.run?.status).toBe("awaiting_publication");
         expect(state.run?.autoStarted).toBe(false);
         expect(state.checkIns).toHaveLength(0);
         expect(state.publicEvents).toHaveLength(0);
 
-        // Explicit approval now records + publishes.
-        await asUser.mutation(api.agentRuns.approveProposal, { runId });
+        // Second approval now records + publishes.
+        await asUser.mutation(api.agentRuns.publishApproval, { runId });
         await drain(t);
 
         const final = await t.run(async (ctx) => {

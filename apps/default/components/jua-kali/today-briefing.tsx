@@ -13,7 +13,7 @@ import { useQuery } from "convex/react";
 import { useRouter } from "expo-router";
 
 import { api } from "@/convex/_generated/api";
-import { Approval, type ActionPlanView } from "@/components/jua-kali/approval";
+import { Approval, PublicationApproval, type ActionPlanView } from "@/components/jua-kali/approval";
 import { LivingSun } from "@/components/jua-kali/living-sun";
 import { HowItWorksCard } from "@/components/jua-kali/help";
 import { AuthRequiredGate, useRequireAuthToAct } from "@/components/jua-kali/soft-identity";
@@ -143,6 +143,15 @@ export function TodayBriefing({
                     </AuthRequiredGate>
                 ) : null}
 
+                {briefing.publication ? (
+                    <AuthRequiredGate required={requireAuthToAct}>
+                        <PublicationApproval
+                            publication={briefing.publication}
+                            onPublished={(runId) => router.push(`/runs/${runId}`)}
+                        />
+                    </AuthRequiredGate>
+                ) : null}
+
                 {failedRuns.map((failed) => (
                     <AuthRequiredGate key={failed.id} required={requireAuthToAct}>
                         <Approval.Recovery
@@ -238,9 +247,13 @@ export function TodayBriefing({
                                 style={styles.activityRow}
                             >
                                 <Text style={styles.activityTitle}>
-                                    Needs decision · {row.ventureName}
+                                    {row.status === "awaiting_publication"
+                                        ? `Approve publication · ${row.ventureName}`
+                                        : `Needs decision · ${row.ventureName}`}
                                 </Text>
-                                <Text style={styles.link}>Review</Text>
+                                <Text style={styles.link}>
+                                    {row.status === "awaiting_publication" ? "Review" : "Review"}
+                                </Text>
                             </Pressable>
                         ))}
                     </View>

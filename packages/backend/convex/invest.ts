@@ -9,7 +9,13 @@ import {
     assertCanAct,
     assertInvestorOwnsInvestor,
 } from "./softAuth";
-import { createAgentRun, createProposalForCommitment, planViewForRun } from "./agentRuns";
+import {
+    createAgentRun,
+    createProposalForCommitment,
+    planViewForRun,
+    publicationViewForRun,
+    publicationViewValidator,
+} from "./agentRuns";
 import {
     actionPlanViewValidator,
     synthesizeBriefingText,
@@ -897,6 +903,7 @@ function emptyTodayBriefing() {
             decisionVenture: null,
         }),
         decision: null,
+        publication: null,
         completed: [],
         nextScheduled: null,
         stats: { needsDecision: 0, venturesMoved: 0, blocked: 0 },
@@ -929,6 +936,8 @@ export const todayBriefing = query({
             }),
             v.null()
         ),
+        /** Second-step approval: evidence arrived, exact KPI + summary to publish. */
+        publication: v.union(publicationViewValidator, v.null()),
         stats: v.object({
             needsDecision: v.number(),
             venturesMoved: v.number(),
@@ -992,6 +1001,8 @@ export const todayBriefing = query({
             for (const run of runs) {
                 if (run.status === "proposed" && run.actionPlan) {
                     proposals.push({ run, ventureName, kpiLabel: venture?.kpiLabel ?? "KPI" });
+                } else if (run.status === "awaiting_publication") {
+                    proposals.push({ run, ventureName, kpiLabel: venture?.kpiLabel ?? "KPI" });
                 } else if (run.status === "failed") {
                     blocked += 1;
                 } else if (run.status === "completed" && run.updatedAt >= weekAgo) {
@@ -1016,7 +1027,16 @@ export const todayBriefing = query({
         completed.sort((a, b) => b.at - a.at);
 
         const top = proposals[0];
-        const decision = top ? planFromRun(top.run, top.ventureName) : null;
+        const topAwaiting = proposals.find((p) => p.run.status === "awaiting_publication");
+        // The proposal card only applies to proposed runs; a run awaiting
+        // publication renders the second-step card instead.
+        const decision =
+            top && top.run.status === "proposed" ? planFromRun(top.run, top.ventureName) : null;
+        // Second-step approval surfaces the exact KPI + verbatim summary.
+        const publication =
+            topAwaiting && topAwaiting.run.status === "awaiting_publication"
+                ? publicationViewForRun(topAwaiting.run, topAwaiting.ventureName)
+                : null;
         const needsDecision = proposals.length;
         const venturesMoved = movedVentureIds.size;
 
@@ -1030,6 +1050,7 @@ export const todayBriefing = query({
                 decisionVenture: decision?.ventureName ?? null,
             }),
             decision,
+            publication,
             completed: completed.slice(0, 8),
             nextScheduled,
             stats: { needsDecision, venturesMoved, blocked },

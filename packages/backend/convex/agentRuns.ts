@@ -100,6 +100,7 @@ export const runStatusValidator = v.union(
     v.literal("proposed"),
     v.literal("running"),
     v.literal("waiting_for_response"),
+    v.literal("awaiting_publication"),
     v.literal("completed"),
     v.literal("failed"),
     v.literal("dismissed")
@@ -465,32 +466,12 @@ export async function resumeWaitingRunWithEvidence(
         submittedByUserId: args.submittedByUserId,
     });
 
-    // Founder evidence on an auto-started run still needs explicit approval
-    // before any public effect: park it back as a proposal.
-    if (waiting.autoStarted) {
-        await ctx.db.patch(waiting._id, {
-            status: "proposed",
-            autoStarted: false,
-            metricOverride: metric,
-            valueOverride: args.value,
-            noteBody: note,
-            evidenceSource: "founder_update",
-            pipeline: { ...waiting.pipeline, evidenceId },
-            updatedAt: now,
-        });
-        return waiting._id;
-    }
-
-    // Explicitly-approved run: resume the pipeline at the KPI step.
-    const order = stepOrderFor(waiting);
-    const kpiIdx = order.findIndex((s) => s.tool === "log_kpi_checkin");
-    const steps = waiting.steps.map((step, i) =>
-        i === kpiIdx ? { ...step, status: "running" as const, detail: null } : step
-    );
-
+    // Two-step consent: evidence is recorded on the run but NOTHING is logged
+    // or published until the investor approves the exact KPI + public summary.
+    // Park the run in awaiting_publication; publishApproval resumes it.
     await ctx.db.patch(waiting._id, {
-        status: "running",
-        steps,
+        status: "awaiting_publication",
+        autoStarted: false,
         metricOverride: metric,
         valueOverride: args.value,
         noteBody: note,
@@ -498,8 +479,6 @@ export async function resumeWaitingRunWithEvidence(
         pipeline: { ...waiting.pipeline, evidenceId },
         updatedAt: now,
     });
-
-    await ctx.scheduler.runAfter(0, internal.agentRuns.stepRecordKpi, { runId: waiting._id });
     return waiting._id;
 }
 
@@ -637,6 +616,9 @@ export const getAgentRun = query({
                 v.null()
             ),
             approvedSummary: v.union(v.string(), v.null()),
+            /** Exact KPI the evidence produced (for the second approval). */
+            kpiMetric: v.union(v.string(), v.null()),
+            kpiValue: v.union(v.number(), v.null()),
             result: v.union(runResultValidator, v.null()),
             error: v.union(v.string(), v.null()),
             createdAt: v.number(),
@@ -661,6 +643,8 @@ export const getAgentRun = query({
             actionPlan: run.actionPlan ?? null,
             evidenceSource: run.evidenceSource ?? null,
             approvedSummary: run.approvedSummary ?? null,
+            kpiMetric: run.pipeline?.kpiMetric ?? null,
+            kpiValue: run.pipeline?.kpiValue ?? run.valueOverride ?? null,
             result: run.result ?? null,
             error: run.error ?? null,
             createdAt: run.createdAt,
@@ -1435,6 +1419,84 @@ export function planViewForRun(run: Doc<"agentRuns">, ventureName: string) {
     };
 }
 
+/**
+ * Publication-approval view — the exact KPI and verbatim public summary an
+ * investor consents to in the second step before anything is recorded or
+ * published. Built only from persisted evidence on the run.
+ */
+export function publicationViewForRun(run: Doc<"agentRuns">, ventureName: string) {
+    const metric = run.pipeline?.kpiMetric ?? run.metricOverride?.trim();
+    const value = run.pipeline?.kpiValue ?? run.valueOverride;
+    if (!metric || value == null || !Number.isFinite(value)) return null;
+    return {
+        id: run._id,
+        commitmentId: run.commitmentId,
+        ventureName,
+        subject: run.subject,
+        metric,
+        value,
+        publicSummary:
+            run.approvedSummary ||
+            run.actionPlan?.preview.publicSummary ||
+            `Jua recorded ${metric} = ${value} for ${ventureName} with the founder's evidence.`,
+        evidenceSource: run.evidenceSource ?? null,
+        createdAt: run.createdAt,
+    };
+}
+
+export const publicationViewValidator = v.object({
+    id: v.id("agentRuns"),
+    commitmentId: v.id("commitments"),
+    ventureName: v.string(),
+    subject: v.string(),
+    metric: v.string(),
+    value: v.number(),
+    publicSummary: v.string(),
+    evidenceSource: v.union(
+        v.literal("founder_update"),
+        v.literal("investor_entered"),
+        v.null()
+    ),
+    createdAt: v.number(),
+});
+
+/**
+ * The single decision entry point for a run: either a pending proposal plan
+ * (first approval) or the publication-approval view (second approval). Used by
+ * Today and the standalone approval route so both steps render the persisted
+ * contract and never diverge.
+ */
+export const getRunDecision = query({
+    args: { runId: v.id("agentRuns") },
+    returns: v.union(
+        v.null(),
+        v.object({
+            kind: v.literal("proposal"),
+            plan: actionPlanViewValidator,
+        }),
+        v.object({
+            kind: v.literal("publication"),
+            publication: publicationViewValidator,
+        })
+    ),
+    handler: async (ctx, args) => {
+        const run = await ctx.db.get(args.runId);
+        if (!run || !(await canReadInvestorRun(ctx, run))) return null;
+        const venture = await ctx.db.get(run.ventureId);
+        const ventureName = venture?.name ?? "Venture";
+
+        if (run.status === "awaiting_publication") {
+            const publication = publicationViewForRun(run, ventureName);
+            if (!publication) return null;
+            return { kind: "publication" as const, publication };
+        }
+
+        if (run.status !== "proposed" || !run.actionPlan) return null;
+        // planViewForRun is non-null here because run.actionPlan is present.
+        return { kind: "proposal" as const, plan: planViewForRun(run, ventureName)! };
+    },
+});
+
 /** Approve a proposal → same durable pipeline as an approved note. */
 export const approveProposal = mutation({
     args: {
@@ -1518,6 +1580,69 @@ export const approveProposal = mutation({
 });
 
 /**
+ * The SECOND approval in a proactive check-in: approve the exact KPI and
+ * public summary that evidence produced, then record + publish.
+ *
+ * The first approval only authorized sending the private check-in request.
+ * Once founder evidence arrives the run parks in `awaiting_publication`; this
+ * mutation is the explicit consent to log the KPI, write the digest, and post
+ * to the public ledger. Nothing is recorded or published before it runs.
+ */
+export const publishApproval = mutation({
+    args: {
+        runId: v.id("agentRuns"),
+        /** Optional final edit to the verbatim public summary. */
+        publicSummary: v.optional(v.string()),
+    },
+    returns: v.object({
+        runId: v.id("agentRuns"),
+        commitmentId: v.id("commitments"),
+        ventureId: v.id("ventures"),
+    }),
+    handler: async (ctx, args) => {
+        await assertCanAct(ctx);
+        await rateLimiter.limit(ctx, "investMutate", { key: "agentRun" });
+        const run = await ctx.db.get(args.runId);
+        if (!run) throw new Error("Run not found");
+        if (run.status !== "awaiting_publication") {
+            throw new Error("This run is not waiting for publication approval");
+        }
+        await assertInvestorOwnsRun(ctx, run);
+
+        const investor = await ctx.db.get(run.investorId);
+        if (investor?.autonomyLevel === "pause_all") {
+            throw new Error("Automation is paused. Change autonomy in Account to publish.");
+        }
+        if (!run.pipeline?.evidenceId) {
+            throw new Error("No sourced evidence on file — nothing to publish");
+        }
+
+        const resumeStep = firstUncommittedStep(run);
+        if (!resumeStep) throw new Error("Nothing left to approve");
+        const steps = run.steps.map((step) =>
+            step.tool === resumeStep.tool && step.status !== "done"
+                ? { ...step, status: "running" as const, detail: null }
+                : step
+        );
+
+        // Capture the verbatim public summary the investor now consents to.
+        const publicSummary = args.publicSummary?.trim();
+        const approvedSummary =
+            publicSummary || run.approvedSummary || run.actionPlan?.preview.publicSummary || null;
+
+        await ctx.db.patch(run._id, {
+            status: "running",
+            steps,
+            approvedSummary: approvedSummary ?? undefined,
+            updatedAt: Date.now(),
+        });
+
+        await scheduleStepByTool(ctx, run, resumeStep.tool);
+        return { runId: run._id, commitmentId: run.commitmentId, ventureId: run.ventureId };
+    },
+});
+
+/**
  * Submit sourced founder evidence for a run parked in `waiting_for_response`.
  * This is the ONLY path that records a KPI for a proactive check-in: the
  * founder responds with a real number, Jua validates it, then the pipeline
@@ -1576,41 +1701,19 @@ export const submitFounderEvidence = mutation({
             updatedAt: now,
         };
 
-        // auto_low_risk guarantee: an auto-started run may only have sent the
-        // PRIVATE request. Recording a KPI and posting to the public ledger are
-        // public effects, so they require explicit approval. Park the run back
-        // as a proposal; approveProposal resumes from the first uncommitted
-        // (public) step once the investor consents.
-        if (run.autoStarted) {
-            await ctx.db.patch(run._id, {
-                ...evidencePatch,
-                status: "proposed",
-                autoStarted: false,
-                pipeline: { ...run.pipeline, evidenceId },
-            });
-            return {
-                ok: true,
-                message: `Evidence received (${metric} = ${args.value}). Approve to record it and post to the public ledger.`,
-            };
-        }
-
-        // Explicitly-approved run: resume the pipeline at the KPI step. Mark it
-        // running so the UI streams truthfully.
-        const order = stepOrderFor(run);
-        const kpiIdx = order.findIndex((s) => s.tool === "log_kpi_checkin");
-        const steps = run.steps.map((step, i) =>
-            i === kpiIdx ? { ...step, status: "running" as const, detail: null } : step
-        );
-
+        // Two-step consent: evidence is recorded on the run but NOTHING is
+        // logged or published until the investor approves the exact KPI and
+        // public summary. Park in awaiting_publication; publishApproval resumes.
         await ctx.db.patch(run._id, {
             ...evidencePatch,
-            status: "running",
-            steps,
+            status: "awaiting_publication",
+            autoStarted: false,
             pipeline: { ...run.pipeline, evidenceId },
         });
-
-        await ctx.scheduler.runAfter(0, internal.agentRuns.stepRecordKpi, { runId: run._id });
-        return { ok: true, message: `Evidence received — recording ${metric} = ${args.value}.` };
+        return {
+            ok: true,
+            message: `Evidence received (${metric} = ${args.value}). Review the exact KPI and public summary, then approve publication.`,
+        };
     },
 });
 
@@ -1793,8 +1896,9 @@ export const activityForInvestor = query({
             };
             if (run.status === "running") active.push(item);
             else if (run.status === "waiting_for_response") waiting.push(item);
-            else if (run.status === "proposed") blocked.push(item);
-            else if (run.status === "failed") failed.push(item);
+            else if (run.status === "proposed" || run.status === "awaiting_publication") {
+                blocked.push(item);
+            } else if (run.status === "failed") failed.push(item);
             else if (run.status === "completed") completed.push(item);
         }
 

@@ -202,16 +202,32 @@ describe("founder request targeting", () => {
         });
         await drain(t);
 
-        // Only Alice's run resumed; Bob's request is untouched.
+        // Only Alice's run parked awaiting publication; Bob's is untouched.
         expect(result.runId).toBe(aliceRun);
         const aliceState = await t.run(async (ctx) => ctx.db.get(aliceRun));
         const bobState = await t.run(async (ctx) => ctx.db.get(bobRun));
-        expect(aliceState?.status).toBe("completed");
+        expect(aliceState?.status).toBe("awaiting_publication");
         expect(aliceState?.evidenceSource).toBe("founder_update");
         expect(bobState?.status).toBe("waiting_for_response");
 
+        // Nothing recorded until the investor approves publication.
+        let checkIns = await t.run(async (ctx) =>
+            ctx.db
+                .query("kpiCheckIns")
+                .withIndex("by_ventureId", (q) => q.eq("ventureId", ventureId))
+                .collect()
+        );
+        expect(checkIns).toHaveLength(0);
+
+        // Second approval — the investor publishes the founder's evidence.
+        await alice.asUser.mutation(api.agentRuns.publishApproval, { runId: aliceRun });
+        await drain(t);
+
+        const aliceFinal = await t.run(async (ctx) => ctx.db.get(aliceRun));
+        expect(aliceFinal?.status).toBe("completed");
+
         // The check-in records founder provenance (not investor-entered).
-        const checkIns = await t.run(async (ctx) =>
+        checkIns = await t.run(async (ctx) =>
             ctx.db
                 .query("kpiCheckIns")
                 .withIndex("by_ventureId", (q) => q.eq("ventureId", ventureId))
@@ -259,18 +275,27 @@ describe("evidence provenance", () => {
         await drain(t);
 
         const run = await t.run(async (ctx) => ctx.db.get(runId));
+        // Evidence parks the run; provenance is set but nothing is recorded.
+        expect(run?.status).toBe("awaiting_publication");
+        expect(run?.evidenceSource).toBe("investor_entered");
+
+        // The immutable evidence record carries the same provenance.
+        const evidence = await t.run(async (ctx) =>
+            ctx.db.query("founderEvidence").withIndex("by_runId", (q) => q.eq("runId", runId)).first()
+        );
+        expect(evidence?.source).toBe("investor_entered");
+
+        // After the second approval, the check-in keeps investor-entered
+        // provenance (never collapsed into founder).
+        await alice.asUser.mutation(api.agentRuns.publishApproval, { runId });
+        await drain(t);
         const checkIns = await t.run(async (ctx) =>
             ctx.db
                 .query("kpiCheckIns")
                 .withIndex("by_ventureId", (q) => q.eq("ventureId", ventureId))
                 .collect()
         );
-        expect(run?.evidenceSource).toBe("investor_entered");
+        expect(checkIns).toHaveLength(1);
         expect(checkIns[0]!.evidenceSource).toBe("investor_entered");
-        // The immutable evidence record carries the same provenance.
-        const evidence = await t.run(async (ctx) =>
-            ctx.db.query("founderEvidence").withIndex("by_runId", (q) => q.eq("runId", runId)).first()
-        );
-        expect(evidence?.source).toBe("investor_entered");
     });
 });

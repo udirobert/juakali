@@ -291,6 +291,113 @@ function ApprovalActions({
     );
 }
 
+/** The second-step approval: evidence arrived — consent to the exact KPI and
+ * verbatim public summary before anything is recorded or published. */
+export type PublicationView = {
+    id: string;
+    commitmentId: string;
+    ventureName: string;
+    subject: string;
+    metric: string;
+    value: number;
+    publicSummary: string;
+    evidenceSource: "founder_update" | "investor_entered" | null;
+    createdAt: number;
+};
+
+export function PublicationApproval({
+    publication,
+    onPublished,
+}: {
+    publication: PublicationView;
+    onPublished?: (runId: Id<"agentRuns">) => void;
+}) {
+    const publishApproval = useMutation(api.agentRuns.publishApproval);
+    const [publicSummary, setPublicSummary] = useState(publication.publicSummary);
+    const [editing, setEditing] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+    async function handlePublish() {
+        setBusy(true);
+        setStatusMessage(null);
+        try {
+            const result = await publishApproval({
+                runId: publication.id as Id<"agentRuns">,
+                publicSummary: publicSummary.trim() || undefined,
+            });
+            onPublished?.(result.runId);
+        } catch (error) {
+            setStatusMessage(error instanceof Error ? error.message : "Could not publish.");
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    return (
+        <Card variant="trust" style={styles.card}>
+            <View style={styles.head}>
+                <LivingSun size={36} progress={0.72} agentState="executing" />
+                <View style={styles.headCopy}>
+                    <Text style={styles.eyebrow}>Approve publication</Text>
+                    <Text style={styles.title}>{publication.ventureName}</Text>
+                </View>
+            </View>
+
+            <Text style={styles.why}>
+                The founder responded. Approving will log the exact KPI below, write your
+                digest, and post the public summary verbatim to the ledger.
+            </Text>
+
+            <View style={styles.block}>
+                <SectionLabel>Exact KPI from evidence</SectionLabel>
+                <Text style={styles.bullet}>
+                    · {publication.metric} = {publication.value}
+                </Text>
+                <Text style={styles.meta}>
+                    Source:{" "}
+                    {publication.evidenceSource === "investor_entered"
+                        ? "entered by investor; founder verification not captured"
+                        : "submitted directly by founder"}
+                </Text>
+            </View>
+
+            <View style={styles.block}>
+                <SectionLabel>Public summary (published verbatim)</SectionLabel>
+                {editing ? (
+                    <Input
+                        value={publicSummary}
+                        onChangeText={setPublicSummary}
+                        multiline
+                        style={styles.input}
+                    />
+                ) : (
+                    <Text style={styles.previewBody}>{publicSummary || "—"}</Text>
+                )}
+            </View>
+
+            <View style={styles.actions}>
+                <View style={styles.actionRow}>
+                    <Button
+                        label={editing ? "Done editing" : "Edit summary"}
+                        variant="ghost"
+                        onPress={() => setEditing(!editing)}
+                        disabled={busy}
+                        style={styles.actionBtn}
+                    />
+                    <Button
+                        label={busy ? "Publishing…" : "Approve & publish"}
+                        onPress={() => void handlePublish()}
+                        disabled={busy}
+                        style={styles.actionBtn}
+                    />
+                </View>
+                {statusMessage ? <Text style={styles.error}>{statusMessage}</Text> : null}
+            </View>
+        </Card>
+    );
+}
+
 function ApprovalRecovery({
     runId,
     error,

@@ -420,6 +420,7 @@ export default defineSchema({
             v.literal("proposed"),
             v.literal("running"),
             v.literal("waiting_for_response"),
+            v.literal("awaiting_publication"),
             v.literal("completed"),
             v.literal("failed"),
             v.literal("dismissed")
