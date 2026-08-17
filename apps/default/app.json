@@ -26,7 +26,7 @@
     "web": {
       "bundler": "metro",
       "output": "single",
-      "favicon": "../../assets/images/icon.png",
+      "favicon": "../../assets/images/favicon.png",
       "name": "JuaKali",
       "shortName": "JuaKali",
       "description": "Soft-pledge into apprentice ventures. An agent drives weekly KPIs, digests, and a public ledger — non-securities, non-settling commitments.",
