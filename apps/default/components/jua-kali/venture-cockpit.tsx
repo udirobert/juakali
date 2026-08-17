@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
     ActivityIndicator,
     Pressable,
@@ -24,6 +24,7 @@ import { color, layout } from "@/components/jua-kali/theme";
 import { styles } from "@/components/jua-kali/venture-cockpit/venture-cockpit.styles";
 
 type UpdateTag = "situation" | "problem" | "opportunity" | "win";
+type CheckInPhase = "prompt" | "capture" | "followup" | "preview" | "form";
 
 const TAGS: Array<{ id: UpdateTag; label: string }> = [
     { id: "situation", label: "Situation" },
@@ -60,9 +61,11 @@ export function VentureCockpit({ onOpenLedger }: { onOpenLedger?: () => void }) 
     const [claiming, setClaiming] = useState(false);
     const [tag, setTag] = useState<UpdateTag>("situation");
     const [body, setBody] = useState("");
+    const [followUp, setFollowUp] = useState("");
     const [kpiText, setKpiText] = useState("");
     const [status, setStatus] = useState<string | null>(null);
     const [sending, setSending] = useState(false);
+    const [phase, setPhase] = useState<CheckInPhase>("prompt");
     const dictation = useDictation((transcript) =>
         setBody((prev) => (prev ? `${prev} ${transcript}` : transcript)),
     );
@@ -81,7 +84,9 @@ export function VentureCockpit({ onOpenLedger }: { onOpenLedger?: () => void }) 
     }
 
     async function handleUpdate() {
-        const text = body.trim();
+        const text = followUp.trim()
+            ? `${body.trim()}\n\nFollow-up: ${followUp.trim()}`
+            : body.trim();
         if (!text) {
             setStatus("Write a few words first.");
             return;
@@ -97,7 +102,9 @@ export function VentureCockpit({ onOpenLedger }: { onOpenLedger?: () => void }) 
             });
             setStatus(result.message);
             setBody("");
+            setFollowUp("");
             setKpiText("");
+            setPhase("prompt");
         } catch (e) {
             setStatus(e instanceof Error ? e.message : "Could not send.");
         } finally {
@@ -122,6 +129,25 @@ export function VentureCockpit({ onOpenLedger }: { onOpenLedger?: () => void }) 
             setSending(false);
         }
     }
+
+    const lastCheckIn =
+        venture && typeof venture === "object" && "checkIns" in venture
+            ? venture.checkIns[0] ?? null
+            : null;
+    const agentPrompt = useMemo(() => {
+        if (!venture) return "What changed this week?";
+        if (lastCheckIn) {
+            return `Last week you reported ${lastCheckIn.value} on ${venture.kpiLabel.toLowerCase()}. What changed?`;
+        }
+        return `You're tracking ${venture.kpiLabel.toLowerCase()}. What should mentors know this week?`;
+    }, [venture, lastCheckIn]);
+
+    const publicPreview = useMemo(() => {
+        const parts = [body.trim()];
+        if (followUp.trim()) parts.push(followUp.trim());
+        if (kpiText.trim()) parts.push(`KPI note: ${kpiText.trim()}`);
+        return parts.filter(Boolean).join("\n\n") || "—";
+    }, [body, followUp, kpiText]);
 
     if (venture === undefined) {
         return (
@@ -209,59 +235,135 @@ export function VentureCockpit({ onOpenLedger }: { onOpenLedger?: () => void }) 
                     {status ? <Text style={styles.status}>{status}</Text> : null}
                 </Card>
 
-                {/* Share an update — the founder's voice, moderated by Jua. */}
+                {/* Conversational check-in — form remains as fallback. */}
                 <Card>
                     <View style={styles.titleRow}>
                         <IconSparkle size={15} color={color.brassDeep} />
-                        <Text style={styles.cardTitle}>Tell Jua what&apos;s happening</Text>
+                        <Text style={styles.cardTitle}>Weekly check-in with Jua</Text>
                     </View>
-                    <Text style={styles.hint}>
-                        Jua turns it into the digest your mentors read — nothing runs without you.
-                    </Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagRow}>
-                        {TAGS.map((t) => (
-                            <Chip key={t.id} label={t.label} active={tag === t.id} onPress={() => setTag(t.id)} />
-                        ))}
-                    </ScrollView>
-                    <View style={styles.composerRow}>
-                        <TextInput
-                            value={body}
-                            onChangeText={setBody}
-                            multiline
-                            style={styles.composerInput}
-                            placeholder="What moved, what's stuck, what's next…"
-                            placeholderTextColor={color.mist}
-                            maxLength={2000}
-                        />
-                        {dictation.supported ? (
-                            <Pressable
-                                onPress={() => {
-                                    tapHaptic();
-                                    dictation.toggle();
-                                }}
-                                style={[styles.micButton, dictation.listening && styles.micListening]}
-                                accessibilityRole="button"
-                                accessibilityLabel={dictation.listening ? "Stop dictation" : "Dictate"}
-                            >
-                                <IconSparkle size={16} color={dictation.listening ? color.paper : color.brassDeep} />
+
+                    {phase === "prompt" || phase === "capture" ? (
+                        <>
+                            <Text style={styles.body}>{agentPrompt}</Text>
+                            <View style={styles.composerRow}>
+                                <TextInput
+                                    value={body}
+                                    onChangeText={setBody}
+                                    multiline
+                                    style={styles.composerInput}
+                                    placeholder="Speak or type what changed…"
+                                    placeholderTextColor={color.mist}
+                                    maxLength={2000}
+                                    onFocus={() => setPhase("capture")}
+                                />
+                                {dictation.supported ? (
+                                    <Pressable
+                                        onPress={() => {
+                                            tapHaptic();
+                                            dictation.toggle();
+                                            setPhase("capture");
+                                        }}
+                                        style={[styles.micButton, dictation.listening && styles.micListening]}
+                                        accessibilityRole="button"
+                                        accessibilityLabel={dictation.listening ? "Stop dictation" : "Dictate"}
+                                    >
+                                        <IconSparkle size={16} color={dictation.listening ? color.paper : color.brassDeep} />
+                                    </Pressable>
+                                ) : null}
+                            </View>
+                            {dictation.listening ? <Text style={styles.listening}>Listening…</Text> : null}
+                            <Button
+                                label="Continue"
+                                onPress={() => setPhase("followup")}
+                                disabled={!body.trim()}
+                                icon={<IconArrowRight size={14} color={color.paper} />}
+                            />
+                        </>
+                    ) : null}
+
+                    {phase === "followup" ? (
+                        <>
+                            <Text style={styles.body}>
+                                One follow-up: what should mentors watch for next week?
+                            </Text>
+                            <TextInput
+                                value={followUp}
+                                onChangeText={setFollowUp}
+                                multiline
+                                style={styles.composerInput}
+                                placeholder="Optional — one sentence is enough"
+                                placeholderTextColor={color.mist}
+                            />
+                            <TextInput
+                                value={kpiText}
+                                onChangeText={setKpiText}
+                                keyboardType="number-pad"
+                                style={styles.kpiInput}
+                                placeholder={`This week's ${venture.kpiLabel.toLowerCase()} (optional)`}
+                                placeholderTextColor={color.mist}
+                            />
+                            <Button label="Preview public update" onPress={() => setPhase("preview")} />
+                        </>
+                    ) : null}
+
+                    {phase === "preview" ? (
+                        <>
+                            <Text style={styles.hint}>Confirm before Jua turns this into a digest path.</Text>
+                            <Text style={styles.body}>{publicPreview}</Text>
+                            <Button
+                                label={sending ? "Sending…" : "Confirm & send to Jua"}
+                                onPress={() => void handleUpdate()}
+                                busy={sending}
+                            />
+                            <Button label="Edit" variant="ghost" onPress={() => setPhase("capture")} />
+                        </>
+                    ) : null}
+
+                    {phase === "form" ? (
+                        <>
+                            <Text style={styles.hint}>Tagged form fallback</Text>
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagRow}>
+                                {TAGS.map((t) => (
+                                    <Chip key={t.id} label={t.label} active={tag === t.id} onPress={() => setTag(t.id)} />
+                                ))}
+                            </ScrollView>
+                            <View style={styles.composerRow}>
+                                <TextInput
+                                    value={body}
+                                    onChangeText={setBody}
+                                    multiline
+                                    style={styles.composerInput}
+                                    placeholder="What moved, what's stuck, what's next…"
+                                    placeholderTextColor={color.mist}
+                                    maxLength={2000}
+                                />
+                            </View>
+                            <View style={styles.kpiInputRow}>
+                                <TextInput
+                                    value={kpiText}
+                                    onChangeText={setKpiText}
+                                    style={styles.kpiInput}
+                                    placeholder={`This week's ${venture.kpiLabel.toLowerCase()}`}
+                                    placeholderTextColor={color.mist}
+                                    keyboardType="number-pad"
+                                />
+                                <Button label="Send to Jua" onPress={() => void handleUpdate()} busy={sending} />
+                            </View>
+                            <Pressable onPress={() => void handleCheckIn()} hitSlop={6} accessibilityRole="button">
+                                <Text style={styles.selfLink}>Log this number only (self check-in)</Text>
                             </Pressable>
-                        ) : null}
-                    </View>
-                    {dictation.listening ? <Text style={styles.listening}>Listening…</Text> : null}
-                    <View style={styles.kpiInputRow}>
-                        <TextInput
-                            value={kpiText}
-                            onChangeText={setKpiText}
-                            style={styles.kpiInput}
-                            placeholder={`This week's ${venture.kpiLabel.toLowerCase()}`}
-                            placeholderTextColor={color.mist}
-                            keyboardType="number-pad"
-                        />
-                        <Button label="Send to Jua" onPress={() => void handleUpdate()} busy={sending} />
-                    </View>
-                    <Pressable onPress={() => void handleCheckIn()} hitSlop={6} accessibilityRole="button">
-                        <Text style={styles.selfLink}>Log this number only (self check-in)</Text>
-                    </Pressable>
+                        </>
+                    ) : null}
+
+                    {phase !== "form" ? (
+                        <Pressable onPress={() => setPhase("form")} hitSlop={8}>
+                            <Text style={styles.hint}>More options — tagged form →</Text>
+                        </Pressable>
+                    ) : (
+                        <Pressable onPress={() => setPhase("prompt")} hitSlop={8}>
+                            <Text style={styles.hint}>← Back to guided check-in</Text>
+                        </Pressable>
+                    )}
                 </Card>
 
                 {/* Wisdom received — applied mentor advice with outcomes. */}

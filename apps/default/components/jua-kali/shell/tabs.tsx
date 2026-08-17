@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { color, font, layout } from "@/components/jua-kali/theme";
 
 /** The top-level surfaces and the Lab's sub-tabs — kept here so the shell chrome stays presentational. */
-export type TabId = "home" | "ledger" | "venture" | "lab";
+export type TabId = "home" | "today" | "deals" | "ledger" | "proof" | "venture" | "lab";
 export type LabTabId = "agent" | "funnel" | "ops";
 
 export const LAB_TABS: Array<{ id: LabTabId; label: string }> = [

@@ -3,15 +3,15 @@ export const SITE_URL = "https://juakaliapp.netlify.app";
 
 export const SITE = {
     name: "JuaKali",
-    title: "JuaKali · Invest in public",
+    title: "JuaKali · Follow every venture you back",
     description:
-        "Soft-pledge into apprentice ventures. Your agent Jua tracks weekly KPIs, files digests, and posts every step to a public ledger — non-securities, non-settling commitments.",
+        "Jua follows every venture you back, gets the weekly update, and shows you what changed — soft pledges, agent runs, and public proof.",
     locale: "en_KE",
     twitterHandle: "",
     themeColor: "#E6E4DF",
     backgroundColor: "#141816",
     ogImagePath: "/og.jpg",
-    ogImageAlt: "JuaKali — Invest in public. Soft pledges, agent ops, public ledger.",
+    ogImageAlt: "JuaKali — Jua follows your ventures and shows what changed.",
 } as const;
 
 export function absoluteUrl(path: string) {

@@ -26,6 +26,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import type { FunctionReturnType } from "convex/server";
 
 import { api } from "@/convex/_generated/api";
+import { useProductMode } from "@/lib/product-mode";
 import { daysUntil, formatDueLabel, formatKes, relativeTime } from "@/components/jua-kali/cockpit/format";
 import { styles } from "@/components/jua-kali/cockpit/investor-cockpit.styles";
 import { SITE_URL } from "@/lib/site";
@@ -38,6 +39,7 @@ import { useUiMotion } from "@/components/jua-kali/hooks/use-ui-motion";
 import { IconCheck, IconSend, IconShare, IconX } from "@/components/jua-kali/icons";
 import { Button, Card, Chip, Input } from "@/components/jua-kali/ui";
 import { ShareWisdomCard, WisdomItemCard } from "@/components/jua-kali/wisdom";
+import { useInvestorSession } from "@/components/jua-kali/investor-session";
 import { color, layout } from "@/components/jua-kali/theme";
 
 const AnimatedPath = Animated.createAnimatedComponent(SvgPath);
@@ -164,28 +166,39 @@ function WaitingShimmer({ active }: { active: boolean }) {
 
 export function InvestorCockpit({
     initialCommitmentId,
+    initialVentureSlug,
     showCoach = false,
     onDismissCoach,
     onOpenGlossary,
     hideBrand = false,
     requireAuthToAct = false,
     onOpenLedger,
+    onOpenDeal,
+    dealsOnly = false,
+    focusSingleDeal = false,
 }: {
     initialCommitmentId?: Id<"commitments">;
+    /** Venture slug deep-link target (works on native + web). */
+    initialVentureSlug?: string;
     showCoach?: boolean;
     onDismissCoach?: () => void;
     onOpenGlossary?: (focusId?: string) => void;
     hideBrand?: boolean;
     requireAuthToAct?: boolean;
     onOpenLedger?: () => void;
+    onOpenDeal?: (dealId: Id<"commitments">) => void;
+    /** Portfolio surface without Today briefing chrome. */
+    dealsOnly?: boolean;
+    /** Hide deal strip; lock to initialCommitmentId. */
+    focusSingleDeal?: boolean;
 } = {}) {
     const dealParams = useMemo(() => {
         const fromUrl = readDealParams();
         return {
             commitmentId: initialCommitmentId ?? fromUrl.commitmentId,
-            ventureSlug: fromUrl.ventureSlug,
+            ventureSlug: initialVentureSlug ?? fromUrl.ventureSlug,
         };
-    }, [initialCommitmentId]);
+    }, [initialCommitmentId, initialVentureSlug]);
 
     const data = useQuery(api.invest.investorCockpit, {
         commitmentId: dealParams.commitmentId,
@@ -193,6 +206,7 @@ export function InvestorCockpit({
     });
     const { isAuthenticated } = useConvexAuth();
     const me = useQuery(api.softAuth.whoAmI);
+    const product = useProductMode();
     const agentMail = useQuery(api.agentMailPublic.publicStatus);
     const seedInvestDemo = useMutation(api.invest.seedInvestDemo);
     const pledgeCommitment = useMutation(api.invest.pledgeCommitment);
@@ -205,15 +219,41 @@ export function InvestorCockpit({
     const padX = Math.max(14, Math.min(28, (width - layout.maxWidth) / 2 + 16));
     const ui = useUiMotion();
 
-    const [selectedCommitmentId, setSelectedCommitmentId] = useState<Id<"commitments"> | null>(
-        dealParams.commitmentId ?? null
-    );
+    // Cross-route continuity: selected deal, per-deal drafts, and the active
+    // run live in the InvestorSessionProvider (above the root Stack), so the
+    // Deals tab, deal detail, and run/approval routes share one state.
+    const session = useInvestorSession();
+
+    const [localSelectedCommitmentId, setLocalSelectedCommitmentId] = useState<
+        Id<"commitments"> | null
+    >(dealParams.commitmentId ?? null);
+    // Prefer the session's selection; fall back to this route's param.
+    const selectedCommitmentId = session.selectedCommitmentId ?? localSelectedCommitmentId;
+    const setSelectedCommitmentId = (id: Id<"commitments"> | null) => {
+        setLocalSelectedCommitmentId(id);
+        session.setSelectedCommitmentId(id);
+    };
+
     const [selectedVentureId, setSelectedVentureId] = useState<Id<"ventures"> | null>(null);
     const [amountText, setAmountText] = useState("10000");
-    const [emailDraft, setEmailDraft] = useState("Push follow-ups this week. Reply with what moved.");
+
+    // Per-commitment draft from the session (survives navigation).
+    const draftKey = selectedCommitmentId ?? "";
+    const emailDraft =
+        session.draftByCommitment[draftKey] ??
+        "Push follow-ups this week. Reply with what moved.";
+    const setEmailDraft = useCallback(
+        (value: string) => {
+            if (selectedCommitmentId) session.setDraft(selectedCommitmentId, value);
+        },
+        [selectedCommitmentId, session]
+    );
+
     const [pendingBody, setPendingBody] = useState<string | null>(null);
     const [agentPhase, setAgentPhase] = useState<AgentPhase>("idle");
-    const [activeRunId, setActiveRunId] = useState<Id<"agentRuns"> | null>(null);
+    // Active run lives in the session so run/approval routes can read it.
+    const activeRunId = session.activeRunId;
+    const setActiveRunId = session.setActiveRunId;
     /** The commitment our active run belongs to — known locally, no re-subscribe. */
     const [activeRunCommitmentId, setActiveRunCommitmentId] = useState<Id<"commitments"> | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -233,7 +273,9 @@ export function InvestorCockpit({
 
     useEffect(() => {
         if (!data?.focusCommitmentId) return;
-        setSelectedCommitmentId((prev) => prev ?? data.focusCommitmentId);
+        if (selectedCommitmentId == null) {
+            setSelectedCommitmentId(data.focusCommitmentId);
+        }
     }, [data?.focusCommitmentId]);
 
     const selectedCommitment: Commitment | null = useMemo(() => {
@@ -267,14 +309,17 @@ export function InvestorCockpit({
     // Run lifecycle — Ritual streams the run; root only hears transitions,
     // and only for runs we own. Inbound runs never clobber local drafts.
     const handleRunRunning = useCallback(() => setAgentPhase("acting"), []);
-    const handleRunCompleted = useCallback((message: string) => {
-        setAgentPhase("done");
-        setPendingBody(null);
-        setEmailDraft("");
-        setStatusMessage(message);
-        successHaptic();
-        void AccessibilityInfo.announceForAccessibility("Done. Digest and ledger updated.");
-    }, []);
+    const handleRunCompleted = useCallback(
+        (message: string) => {
+            setAgentPhase("done");
+            setPendingBody(null);
+            setEmailDraft("");
+            setStatusMessage(message);
+            successHaptic();
+            void AccessibilityInfo.announceForAccessibility("Done. Digest and ledger updated.");
+        },
+        [setEmailDraft]
+    );
     const handleRunFailed = useCallback((error: string) => {
         setAgentPhase("failed");
         setStatusMessage(error);
@@ -439,12 +484,12 @@ export function InvestorCockpit({
                         />
                     </View>
                     {hideBrand ? (
-                        <Text style={styles.bridge}>Deals = act · Ledger = public proof</Text>
+                        <Text style={styles.bridge}>Deals = act · Proof = public record</Text>
                     ) : null}
                     {statusMessage ? <Text style={styles.status}>{statusMessage}</Text> : null}
                 </View>
 
-                {!empty ? (
+                {!dealsOnly && !empty ? (
                     <AgentPresence
                         presence={data.agentPresence}
                         nextDigestAt={selectedCommitment?.nextDigestAt ?? null}
@@ -452,32 +497,34 @@ export function InvestorCockpit({
                     />
                 ) : null}
 
-                {(() => {
-                    const proposal = selectedCommitment?.openProposal ?? null;
-                    if (proposal) {
-                        return (
-                            <AuthRequiredGate required={requireAuthToAct}>
-                                <ProposalCard
-                                    ventureName={selectedCommitment!.venture.name}
-                                    proposal={proposal}
-                                    busy={agentPhase === "acting"}
-                                    onApprove={() => void handleApproveProposal(proposal.id)}
-                                    onDismiss={() => void handleDismissProposal(proposal.id)}
-                                />
-                            </AuthRequiredGate>
-                        );
-                    }
-                    if (!empty && selectedCommitment) {
-                        return (
-                            <AgentArrival
-                                inbound={liveInbound}
-                                latestDigest={selectedCommitment.latestDigest}
-                                dealCount={data.commitments.length}
-                            />
-                        );
-                    }
-                    return null;
-                })()}
+                {!dealsOnly
+                    ? (() => {
+                          const proposal = selectedCommitment?.openProposal ?? null;
+                          if (proposal) {
+                              return (
+                                  <AuthRequiredGate required={requireAuthToAct}>
+                                      <ProposalCard
+                                          ventureName={selectedCommitment!.venture.name}
+                                          proposal={proposal}
+                                          busy={agentPhase === "acting"}
+                                          onApprove={() => void handleApproveProposal(proposal.id)}
+                                          onDismiss={() => void handleDismissProposal(proposal.id)}
+                                      />
+                                  </AuthRequiredGate>
+                              );
+                          }
+                          if (!empty && selectedCommitment) {
+                              return (
+                                  <AgentArrival
+                                      inbound={liveInbound}
+                                      latestDigest={selectedCommitment.latestDigest}
+                                      dealCount={data.commitments.length}
+                                  />
+                              );
+                          }
+                          return null;
+                      })()
+                    : null}
 
                 {showPledge ? (
                     <AuthRequiredGate required={requireAuthToAct}>
@@ -528,7 +575,9 @@ export function InvestorCockpit({
                         </View>
                         <Text style={styles.emptyTitle}>Nothing on my desk yet</Text>
                         <Text style={styles.status}>
-                            Load seeded deals so Jua has something to follow — or pledge a venture.
+                            {product.preset === "demo"
+                                ? "Load seeded deals so Jua has something to follow — or pledge a venture."
+                                : "Start a soft pledge so Jua has a venture to follow."}
                         </Text>
                         <Button
                             label="New pledge"
@@ -536,24 +585,30 @@ export function InvestorCockpit({
                             disabled={data.availableVentures.length === 0}
                             style={styles.emptyBtn}
                         />
-                        <Button
-                            label={isSeeding ? "Loading…" : "Load seeded deals"}
-                            variant="ghost"
-                            onPress={handleSeed}
-                            disabled={isSeeding}
-                            busy={isSeeding}
-                            style={styles.emptyBtn}
-                        />
+                        {product.preset === "demo" ? (
+                            <Button
+                                label={isSeeding ? "Loading…" : "Load seeded deals"}
+                                variant="ghost"
+                                onPress={handleSeed}
+                                disabled={isSeeding}
+                                busy={isSeeding}
+                                style={styles.emptyBtn}
+                            />
+                        ) : null}
                     </View>
                 ) : (
                     <>
+                        {!focusSingleDeal ? (
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.strip}>
                             {data.commitments.map((row) => {
                                 const on = selectedCommitment?.id === row.id;
                                 return (
                                     <Pressable
                                         key={row.id}
-                                        onPress={() => setSelectedCommitmentId(row.id)}
+                                        onPress={() => {
+                                            setSelectedCommitmentId(row.id);
+                                            onOpenDeal?.(row.id);
+                                        }}
                                         style={[styles.stripItem, on && styles.stripItemOn]}
                                     >
                                         <Text style={[styles.stripName, on && styles.stripNameOn]} numberOfLines={1}>
@@ -564,6 +619,7 @@ export function InvestorCockpit({
                                 );
                             })}
                         </ScrollView>
+                        ) : null}
 
                         {selectedCommitment ? (
                             <View style={styles.stack}>

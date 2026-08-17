@@ -55,6 +55,10 @@ type LedgerEventRow = {
     ventureName: string | null;
     ventureSlug: string | null;
     createdAt: number;
+    correlationId?: string | null;
+    runId?: string | null;
+    initiator?: string | null;
+    publicVisible?: boolean;
 };
 
 type LedgerVenture = {
@@ -133,11 +137,15 @@ function writeLedgerSlug(slug: string | null) {
 export function PublicLedger({
     onOpenGlossary,
     hideTitleChrome = false,
+    initialVentureSlug,
+    onOpenEvent,
 }: {
     onOpenGlossary?: (focusId?: string) => void;
     hideTitleChrome?: boolean;
+    initialVentureSlug?: string;
+    onOpenEvent?: (eventId: string) => void;
 } = {}) {
-    const [slug, setSlug] = useState<string | null>(() => readLedgerSlug());
+    const [slug, setSlug] = useState<string | null>(() => initialVentureSlug ?? readLedgerSlug());
     /** The row opened into its full preview — one at a time, in place. */
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const data = useQuery(api.invest.publicLedger, {
@@ -279,8 +287,8 @@ export function PublicLedger({
                     {data.events.length === 0 ? (
                         <Text style={styles.empty}>
                             {selectedVenture
-                                ? "No events yet for this venture — act on it from My deals and proof appears here."
-                                : "No events yet — open My deals, send a note to the agent, and approve it. Proof appears here."}
+                                ? "No events yet for this venture — act on it from Deals and proof appears here."
+                                : "No events yet — open Today, approve Jua's work, and proof appears here."}
                         </Text>
                     ) : (
                         data.events.map((event: LedgerEventRow) => (
@@ -289,9 +297,13 @@ export function PublicLedger({
                                 event={event}
                                 compact={compact}
                                 expanded={expandedId === event.id}
-                                onToggle={() =>
-                                    setExpandedId((prev) => (prev === event.id ? null : event.id))
-                                }
+                                onToggle={() => {
+                                    if (onOpenEvent) {
+                                        onOpenEvent(event.id);
+                                        return;
+                                    }
+                                    setExpandedId((prev) => (prev === event.id ? null : event.id));
+                                }}
                                 onFilterVenture={() =>
                                     toggleFilter(slug === event.ventureSlug ? null : event.ventureSlug)
                                 }

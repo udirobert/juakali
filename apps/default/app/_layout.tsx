@@ -18,6 +18,7 @@ import {
 } from "@expo-google-fonts/ibm-plex-sans";
 
 import { color } from "@/components/jua-kali/theme";
+import { InvestorSessionProvider } from "@/components/jua-kali/investor-session";
 import { SITE, absoluteUrl } from "@/lib/site";
 
 const convex = new ConvexReactClient(process.env.EXPO_PUBLIC_CONVEX_URL!, {
@@ -87,7 +88,12 @@ export default function RootLayout() {
                 <meta name="twitter:description" content={SITE.description} />
                 <meta name="twitter:image" content={ogImage} />
             </Head>
-            <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: color.stone } }} />
+            {/* Session lives above the root Stack so tabs AND root detail routes
+                (deals/[dealId], runs/[runId], approvals/[proposalId]) share the
+                same selected deal, drafts, and active-run state. */}
+            <InvestorSessionProvider>
+                <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: color.stone } }} />
+            </InvestorSessionProvider>
         </ConvexAuthProvider>
     );
 }

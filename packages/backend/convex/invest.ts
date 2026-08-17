@@ -1,11 +1,20 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { rateLimiter } from "./rateLimit";
 import { normalizeKey } from "./juaKaliHelpers";
-import { assertCanAct } from "./softAuth";
-import { createAgentRun, createProposalForCommitment } from "./agentRuns";
+import {
+    assertCanAct,
+    assertInvestorOwnsInvestor,
+} from "./softAuth";
+import { createAgentRun, createProposalForCommitment, planViewForRun } from "./agentRuns";
+import {
+    actionPlanViewValidator,
+    synthesizeBriefingText,
+    autonomyLevelValidator,
+} from "./actionPlan";
 
 type DbCtx = { db: QueryCtx["db"] };
 
@@ -472,6 +481,10 @@ export const publicLedger = query({
                 ventureName: v.union(v.string(), v.null()),
                 ventureSlug: v.union(v.string(), v.null()),
                 createdAt: v.number(),
+                correlationId: v.union(v.string(), v.null()),
+                runId: v.union(v.id("agentRuns"), v.null()),
+                initiator: v.union(v.string(), v.null()),
+                publicVisible: v.boolean(),
             })
         ),
         /** Ventures with at least one public event (filter chips). */
@@ -524,6 +537,10 @@ export const publicLedger = query({
                 ventureName: venture?.name ?? null,
                 ventureSlug: venture?.publicSlug ?? null,
                 createdAt: row.createdAt,
+                correlationId: row.correlationId ?? null,
+                runId: row.runId ?? null,
+                initiator: row.initiator ?? null,
+                publicVisible: row.publicVisible,
             });
             if (events.length >= limit) break;
         }
@@ -847,6 +864,324 @@ export const investorCockpit = query({
                 openProposals,
             },
         };
+    },
+});
+
+function planFromRun(run: Doc<"agentRuns">, ventureName: string, kpiLabel: string) {
+    // Single representation of the approval contract — shared with
+    // agentRuns.getProposalDetail so inline and standalone approvals match.
+    return planViewForRun(run, ventureName, kpiLabel);
+}
+
+/** Empty private briefing for callers who have not linked an investor identity. */
+function emptyTodayBriefing() {
+    return {
+        greetingName: null,
+        briefingText: synthesizeBriefingText({
+            firstName: null,
+            needsDecision: 0,
+            venturesMoved: 0,
+            blocked: 0,
+            decisionVenture: null,
+        }),
+        decision: null,
+        completed: [],
+        nextScheduled: null,
+        stats: { needsDecision: 0, venturesMoved: 0, blocked: 0 },
+        autonomyLevel: "ask_every_time" as const,
+    };
+}
+
+/** Agent-led Today briefing: what happened, what needs a decision, what's next. */
+export const todayBriefing = query({
+    args: {
+        investorId: v.optional(v.id("investors")),
+    },
+    returns: v.object({
+        greetingName: v.union(v.string(), v.null()),
+        briefingText: v.string(),
+        decision: v.union(actionPlanViewValidator, v.null()),
+        completed: v.array(
+            v.object({
+                title: v.string(),
+                proofEventId: v.union(v.id("ledgerEvents"), v.null()),
+                commitmentId: v.union(v.id("commitments"), v.null()),
+                runId: v.union(v.id("agentRuns"), v.null()),
+                at: v.number(),
+            })
+        ),
+        nextScheduled: v.union(
+            v.object({
+                label: v.string(),
+                at: v.number(),
+            }),
+            v.null()
+        ),
+        stats: v.object({
+            needsDecision: v.number(),
+            venturesMoved: v.number(),
+            blocked: v.number(),
+        }),
+        autonomyLevel: autonomyLevelValidator,
+    }),
+    handler: async (ctx, args) => {
+        const userId = await getAuthUserId(ctx);
+        const linkedInvestor = userId
+            ? await ctx.db
+                  .query("investors")
+                  .withIndex("by_userId", (q) => q.eq("userId", userId))
+                  .first()
+            : null;
+        if (!linkedInvestor || (args.investorId && args.investorId !== linkedInvestor._id)) {
+            return emptyTodayBriefing();
+        }
+        const investorId = linkedInvestor._id;
+        const investor = await ctx.db.get(investorId);
+        const greetingName = investor?.displayName?.split(/\s+/)[0] ?? null;
+        const autonomyLevel = investor?.autonomyLevel ?? "ask_every_time";
+
+        const commitments = await ctx.db
+            .query("commitments")
+            .withIndex("by_investorId", (q) => q.eq("investorId", investorId!))
+            .order("desc")
+            .take(30);
+
+        const proposals: Array<{ run: Doc<"agentRuns">; ventureName: string; kpiLabel: string }> = [];
+        const completed: Array<{
+            title: string;
+            proofEventId: Id<"ledgerEvents"> | null;
+            commitmentId: Id<"commitments"> | null;
+            runId: Id<"agentRuns"> | null;
+            at: number;
+        }> = [];
+        let nextScheduled: { label: string; at: number } | null = null;
+        const movedVentureIds = new Set<string>();
+        let blocked = 0;
+        const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+        for (const commitment of commitments) {
+            const venture = await ctx.db.get(commitment.ventureId);
+            const ventureName = venture?.name ?? "Venture";
+            if (commitment.nextDigestAt != null) {
+                if (!nextScheduled || commitment.nextDigestAt < nextScheduled.at) {
+                    nextScheduled = {
+                        label: `Jua checks for responses for ${ventureName}`,
+                        at: commitment.nextDigestAt,
+                    };
+                }
+            }
+
+            const runs = await ctx.db
+                .query("agentRuns")
+                .withIndex("by_commitmentId", (q) => q.eq("commitmentId", commitment._id))
+                .order("desc")
+                .take(15);
+
+            for (const run of runs) {
+                if (run.status === "proposed") {
+                    proposals.push({ run, ventureName, kpiLabel: venture?.kpiLabel ?? "KPI" });
+                } else if (run.status === "failed") {
+                    blocked += 1;
+                } else if (run.status === "completed" && run.updatedAt >= weekAgo) {
+                    movedVentureIds.add(String(commitment.ventureId));
+                    const ledger = await ctx.db
+                        .query("ledgerEvents")
+                        .withIndex("by_runId", (q) => q.eq("runId", run._id))
+                        .order("desc")
+                        .first();
+                    completed.push({
+                        title: run.result?.message || run.subject || `${ventureName} updated`,
+                        proofEventId: ledger?._id ?? null,
+                        commitmentId: commitment._id,
+                        runId: run._id,
+                        at: run.updatedAt,
+                    });
+                }
+            }
+        }
+
+        proposals.sort((a, b) => a.run.createdAt - b.run.createdAt);
+        completed.sort((a, b) => b.at - a.at);
+
+        const top = proposals[0];
+        const decision = top ? planFromRun(top.run, top.ventureName, top.kpiLabel) : null;
+        const needsDecision = proposals.length;
+        const venturesMoved = movedVentureIds.size;
+
+        return {
+            greetingName,
+            briefingText: synthesizeBriefingText({
+                firstName: greetingName,
+                needsDecision,
+                venturesMoved,
+                blocked,
+                decisionVenture: decision?.ventureName ?? null,
+            }),
+            decision,
+            completed: completed.slice(0, 8),
+            nextScheduled,
+            stats: { needsDecision, venturesMoved, blocked },
+            autonomyLevel,
+        };
+    },
+});
+
+/** Does this investor own the commitment behind a ledger event? */
+async function investorOwnsEvent(
+    ctx: { db: QueryCtx["db"] },
+    investorId: Id<"investors"> | null,
+    event: Doc<"ledgerEvents">
+): Promise<boolean> {
+    if (!investorId || !event.commitmentId) return false;
+    const commitment = await ctx.db.get(event.commitmentId);
+    return commitment?.investorId === investorId;
+}
+
+/**
+ * Single proof event + causal chain for detail screens.
+ *
+ * Fail-closed privacy:
+ *  - Anonymous callers only ever see public events; a private root event is
+ *    rejected outright and private chain members are filtered out.
+ *  - Authenticated investors see private events ONLY for commitments they
+ *    own (authorization by ownership, never by knowing an id).
+ */
+export const proofEvent = query({
+    args: { eventId: v.id("ledgerEvents") },
+    returns: v.union(
+        v.null(),
+        v.object({
+            id: v.id("ledgerEvents"),
+            type: ledgerTypeValidator,
+            summary: v.string(),
+            amountKes: v.union(v.number(), v.null()),
+            metric: v.union(v.string(), v.null()),
+            value: v.union(v.number(), v.null()),
+            evidence: v.array(v.string()),
+            ventureName: v.union(v.string(), v.null()),
+            ventureSlug: v.union(v.string(), v.null()),
+            createdAt: v.number(),
+            publicVisible: v.boolean(),
+            initiator: v.union(v.string(), v.null()),
+            disputeState: v.union(v.string(), v.null()),
+            runId: v.union(v.id("agentRuns"), v.null()),
+            correlationId: v.union(v.string(), v.null()),
+            /** The run whose approval authorized this effect, if any. */
+            approvalRunId: v.union(v.id("agentRuns"), v.null()),
+            parentEventId: v.union(v.id("ledgerEvents"), v.null()),
+            chain: v.array(
+                v.object({
+                    id: v.id("ledgerEvents"),
+                    type: ledgerTypeValidator,
+                    summary: v.string(),
+                    createdAt: v.number(),
+                    initiator: v.union(v.string(), v.null()),
+                    publicVisible: v.boolean(),
+                    parentEventId: v.union(v.id("ledgerEvents"), v.null()),
+                    approvalRunId: v.union(v.id("agentRuns"), v.null()),
+                    /** True when an explicit parent edge makes this "caused by",
+                     *  false when it is merely related activity in the chain. */
+                    causedBy: v.boolean(),
+                })
+            ),
+        })
+    ),
+    handler: async (ctx, args) => {
+        const event = await ctx.db.get(args.eventId);
+        if (!event) return null;
+
+        // Resolve the caller's investor identity (null when anonymous).
+        const userId = await getAuthUserId(ctx);
+        let investorId: Id<"investors"> | null = null;
+        if (userId) {
+            const investor = await ctx.db
+                .query("investors")
+                .withIndex("by_userId", (q) => q.eq("userId", userId))
+                .first();
+            investorId = investor?._id ?? null;
+        }
+
+        // Fail closed: private root events require ownership.
+        if (!event.publicVisible && !(await investorOwnsEvent(ctx, investorId, event))) {
+            return null;
+        }
+
+        const venture = event.ventureId ? await ctx.db.get(event.ventureId) : null;
+        let chainDocs = [event];
+        if (event.correlationId) {
+            const related = await ctx.db
+                .query("ledgerEvents")
+                .withIndex("by_correlationId", (q) => q.eq("correlationId", event.correlationId!))
+                .order("asc")
+                .take(20);
+            if (related.length) chainDocs = related;
+        } else if (event.runId) {
+            const related = await ctx.db
+                .query("ledgerEvents")
+                .withIndex("by_runId", (q) => q.eq("runId", event.runId!))
+                .order("asc")
+                .take(20);
+            if (related.length) chainDocs = related;
+        }
+
+        // Filter chain members: public always visible; private only if owned.
+        const visibleChain: Doc<"ledgerEvents">[] = [];
+        for (const row of chainDocs) {
+            if (row.publicVisible || (await investorOwnsEvent(ctx, investorId, row))) {
+                visibleChain.push(row);
+            }
+        }
+        const visibleIds = new Set(visibleChain.map((row) => String(row._id)));
+
+        return {
+            id: event._id,
+            type: event.type,
+            summary: event.summary,
+            amountKes: event.amountKes ?? null,
+            metric: event.metric ?? null,
+            value: event.value ?? null,
+            evidence: event.evidence ?? [],
+            ventureName: venture?.name ?? null,
+            ventureSlug: venture?.publicSlug ?? null,
+            createdAt: event.createdAt,
+            publicVisible: event.publicVisible,
+            initiator: event.initiator ?? null,
+            disputeState: event.disputeState ?? "none",
+            runId: event.runId ?? null,
+            correlationId: event.correlationId ?? null,
+            approvalRunId: event.approvalRunId ?? null,
+            parentEventId: event.parentEventId ?? null,
+            chain: visibleChain.map((row) => ({
+                id: row._id,
+                type: row.type,
+                summary: row.summary,
+                createdAt: row.createdAt,
+                initiator: row.initiator ?? null,
+                publicVisible: row.publicVisible,
+                parentEventId: row.parentEventId ?? null,
+                approvalRunId: row.approvalRunId ?? null,
+                // "caused by" = explicit parent edge into a visible chain member;
+                // otherwise it is merely related activity in the same run.
+                causedBy:
+                    row.parentEventId != null && visibleIds.has(String(row.parentEventId)),
+            })),
+        };
+    },
+});
+
+export const setInvestorAutonomy = mutation({
+    args: {
+        investorId: v.optional(v.id("investors")),
+        autonomyLevel: autonomyLevelValidator,
+    },
+    returns: v.object({ ok: v.boolean() }),
+    handler: async (ctx, args) => {
+        await assertCanAct(ctx);
+        const investorId = args.investorId ?? (await resolveDefaultInvestorId(ctx));
+        if (!investorId) throw new Error("Investor not found");
+        await assertInvestorOwnsInvestor(ctx, investorId);
+        await ctx.db.patch(investorId, { autonomyLevel: args.autonomyLevel });
+        return { ok: true };
     },
 });
 

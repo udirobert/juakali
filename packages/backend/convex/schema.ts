@@ -1,6 +1,7 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { authTables } from "@convex-dev/auth/server";
+import { actionPlanValidator, autonomyLevelValidator } from "./actionPlan";
 
 const language = v.union(v.literal("sw"), v.literal("en"), v.literal("mixed"), v.literal("unknown"));
 const telephonyProvider = v.union(v.literal("twilio"), v.literal("africas_talking"), v.literal("mock"));
@@ -244,6 +245,8 @@ export default defineSchema({
         phone: v.optional(v.union(v.string(), v.null())),
         userId: v.optional(v.union(v.id("users"), v.null())),
         isDefaultDemo: v.optional(v.boolean()),
+        /** How much Jua may auto-start. Default ask_every_time. */
+        autonomyLevel: v.optional(autonomyLevelValidator),
         createdAt: v.number(),
     })
         .index("by_email", ["email"])
@@ -256,6 +259,7 @@ export default defineSchema({
         onboarded: v.boolean(),
         coachDismissed: v.boolean(),
         lastOrientedAt: v.optional(v.number()),
+        autonomyLevel: v.optional(autonomyLevelValidator),
         updatedAt: v.number(),
     }).index("by_userId", ["userId"]),
 
@@ -302,6 +306,21 @@ export default defineSchema({
         .index("by_ventureId", ["ventureId"])
         .index("by_status", ["status"]),
 
+    /** Immutable evidence submitted by a venture owner or recorded by an investor. */
+    founderEvidence: defineTable({
+        runId: v.id("agentRuns"),
+        ventureId: v.id("ventures"),
+        commitmentId: v.id("commitments"),
+        metric: v.string(),
+        value: v.number(),
+        note: v.string(),
+        source: v.union(v.literal("founder_update"), v.literal("investor_entered")),
+        submittedByUserId: v.optional(v.union(v.id("users"), v.null())),
+        createdAt: v.number(),
+    })
+        .index("by_runId", ["runId"])
+        .index("by_ventureId", ["ventureId"]),
+
     kpiCheckIns: defineTable({
         ventureId: v.id("ventures"),
         commitmentId: v.optional(v.union(v.id("commitments"), v.null())),
@@ -310,6 +329,8 @@ export default defineSchema({
         value: v.number(),
         note: v.string(),
         source: kpiSource,
+        /** Immutable founder/investor evidence that supports this check-in. */
+        evidenceId: v.optional(v.union(v.id("founderEvidence"), v.null())),
         /** Set when this check-in measures a piece of applied mentor wisdom. */
         appliedItemId: v.optional(v.union(v.id("sharedItems"), v.null())),
         createdAt: v.number(),
@@ -394,6 +415,7 @@ export default defineSchema({
         status: v.union(
             v.literal("proposed"),
             v.literal("running"),
+            v.literal("waiting_for_response"),
             v.literal("completed"),
             v.literal("failed"),
             v.literal("dismissed")
@@ -424,11 +446,45 @@ export default defineSchema({
                 detail: v.union(v.string(), v.null()),
             })
         ),
+        /** Structured trust contract (reason, effects, visibility, recovery). */
+        actionPlan: v.optional(actionPlanValidator),
+        /** Correlates ledger events written by this run. */
+        correlationId: v.optional(v.string()),
+        /** The verbatim approved public summary (set by approveProposal). */
+        approvedSummary: v.optional(v.string()),
+        /** True when the run was auto-started under auto_low_risk autonomy. */
+        autoStarted: v.optional(v.boolean()),
+        /**
+         * Intermediate pipeline outputs, persisted as each step commits so a
+         * failed run can resume idempotently without re-running committed
+         * effects (no duplicate KPI / digest / ledger / reply).
+         */
+        pipeline: v.optional(
+            v.object({
+                checkInId: v.optional(v.id("kpiCheckIns")),
+                digestId: v.optional(v.id("agentDigests")),
+                replyId: v.optional(v.id("agentEmails")),
+                requestEmailId: v.optional(v.id("agentEmails")),
+                /** Immutable evidence record that unlocked the KPI step. */
+                evidenceId: v.optional(v.id("founderEvidence")),
+                /** Ledger event ids — explicit causal edges (parentEventId). */
+                requestEventId: v.optional(v.id("ledgerEvents")),
+                checkinEventId: v.optional(v.id("ledgerEvents")),
+                digestEventId: v.optional(v.id("ledgerEvents")),
+                ledgerEventId: v.optional(v.id("ledgerEvents")),
+                kpiMetric: v.optional(v.string()),
+                kpiValue: v.optional(v.number()),
+                kpiBefore: v.optional(v.number()),
+                kpiAfter: v.optional(v.number()),
+                /** True once a KPI was recorded (or deliberately skipped). */
+                kpiResolved: v.optional(v.boolean()),
+            })
+        ),
         result: v.optional(
             v.union(
                 v.object({
-                    checkInId: v.id("kpiCheckIns"),
-                    digestId: v.id("agentDigests"),
+                    checkInId: v.union(v.id("kpiCheckIns"), v.null()),
+                    digestId: v.union(v.id("agentDigests"), v.null()),
                     replyId: v.id("agentEmails"),
                     message: v.string(),
                     kpiMetric: v.string(),
@@ -446,7 +502,8 @@ export default defineSchema({
     })
         .index("by_commitmentId", ["commitmentId"])
         .index("by_ventureId", ["ventureId"])
-        .index("by_status", ["status"]),
+        .index("by_status", ["status"])
+        .index("by_investorId", ["investorId"]),
 
     agentEmails: defineTable({
         commitmentId: v.id("commitments"),
@@ -476,10 +533,29 @@ export default defineSchema({
         evidence: v.optional(v.array(v.string())),
         createdAt: v.number(),
         publicVisible: v.boolean(),
+        /** Causal proof chain fields (optional for legacy rows). */
+        runId: v.optional(v.union(v.id("agentRuns"), v.null())),
+        correlationId: v.optional(v.union(v.string(), v.null())),
+        parentEventId: v.optional(v.union(v.id("ledgerEvents"), v.null())),
+        initiator: v.optional(
+            v.union(
+                v.literal("investor"),
+                v.literal("founder"),
+                v.literal("jua"),
+                v.literal("system")
+            )
+        ),
+        approvalRunId: v.optional(v.union(v.id("agentRuns"), v.null())),
+        correctionOf: v.optional(v.union(v.id("ledgerEvents"), v.null())),
+        disputeState: v.optional(
+            v.union(v.literal("none"), v.literal("corrected"), v.literal("disputed"))
+        ),
     })
         .index("by_publicVisible_and_createdAt", ["publicVisible", "createdAt"])
         .index("by_ventureId", ["ventureId"])
-        .index("by_createdAt", ["createdAt"]),
+        .index("by_createdAt", ["createdAt"])
+        .index("by_correlationId", ["correlationId"])
+        .index("by_runId", ["runId"]),
 
     /** RevenueCat entitlements per investor (Shipaton 2026 monetization). */
     subscriptions: defineTable({

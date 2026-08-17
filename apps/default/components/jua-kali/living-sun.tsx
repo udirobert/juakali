@@ -18,44 +18,57 @@ const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 const RAY_COUNT = 12;
 
+export type AgentSunState = "observing" | "proposing" | "executing" | "verified" | "blocked";
+
+const STATE_PROGRESS: Record<AgentSunState, number> = {
+    observing: 0.12,
+    proposing: 0.42,
+    executing: 0.72,
+    verified: 1,
+    blocked: 0.22,
+};
+
 /**
- * The living sun — the brand's signature system. A venture's sun rises as it
- * proves itself: `progress` 0 = dawn (a few short rays, deep brass), 1 = high
- * noon (twelve full rays, light brass). Ray ignition, core growth, and color
- * all derive from the single progress value, so every surface tells the same
- * story of the entrepreneur's evolution.
- *
- * Springs only on progress change; reduced motion snaps between states.
+ * The living sun — brand signature and agent-state language.
+ * States: quiet horizon (observing), partial rise (proposing), active rays
+ * (executing), sealed noon (verified), interrupted (blocked).
  */
 export function LivingSun({
     progress,
     size = 40,
     working = false,
+    agentState,
 }: {
-    /** 0 (dawn) .. 1 (noon). Values outside are clamped. */
-    progress: number;
+    /** 0 (dawn) .. 1 (noon). Values outside are clamped. Overridden by agentState when set. */
+    progress?: number;
     size?: number;
     /** Gentle core breathing while the agent runs — rests when idle. */
     working?: boolean;
+    /** Stateful agent identity — maps to progress + working when provided. */
+    agentState?: AgentSunState;
 }) {
     const reduceMotion = useReducedMotion();
-    const p = useSharedValue(progress);
+    const resolvedProgress =
+        agentState != null ? STATE_PROGRESS[agentState] : (progress ?? 0.3);
+    const resolvedWorking = agentState === "executing" || working;
+    const rayCount = agentState === "blocked" ? 6 : RAY_COUNT;
+    const p = useSharedValue(resolvedProgress);
     const pulse = useSharedValue(0);
 
     useEffect(() => {
-        const target = Math.min(1, Math.max(0, progress));
+        const target = Math.min(1, Math.max(0, resolvedProgress));
         p.value = reduceMotion
             ? withTiming(target, { duration: 1 })
             : withSpring(target, { damping: 14, stiffness: 90, mass: 0.9 });
-    }, [progress, reduceMotion, p]);
+    }, [resolvedProgress, reduceMotion, p]);
 
     useEffect(() => {
-        if (working && !reduceMotion) {
+        if (resolvedWorking && !reduceMotion) {
             pulse.value = withRepeat(withTiming(1, { duration: 1100 }), -1, true);
         } else {
             pulse.value = withTiming(0, { duration: 200 });
         }
-    }, [working, reduceMotion, pulse]);
+    }, [resolvedWorking, reduceMotion, pulse]);
 
     const c = size / 2;
     const baseDotR = size * 0.19;
@@ -65,10 +78,11 @@ export function LivingSun({
 
     return (
         <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} fill="none" accessibilityElementsHidden>
-            {Array.from({ length: RAY_COUNT }, (_, i) => (
+            {Array.from({ length: rayCount }, (_, i) => (
                 <SunRay
                     key={i}
                     index={i}
+                    rayCount={rayCount}
                     progress={p}
                     pulse={pulse}
                     center={c}
@@ -76,6 +90,7 @@ export function LivingSun({
                     gap={gap}
                     maxRay={maxRay}
                     rayW={rayW}
+                    eclipsed={agentState === "blocked"}
                 />
             ))}
             <AnimatedCircle
@@ -100,6 +115,7 @@ export function LivingSun({
 
 function SunRay({
     index,
+    rayCount,
     progress,
     pulse,
     center,
@@ -107,8 +123,10 @@ function SunRay({
     gap,
     maxRay,
     rayW,
+    eclipsed,
 }: {
     index: number;
+    rayCount: number;
     progress: SharedValue<number>;
     pulse: SharedValue<number>;
     center: number;
@@ -116,26 +134,26 @@ function SunRay({
     gap: number;
     maxRay: number;
     rayW: number;
+    eclipsed?: boolean;
 }) {
     const animatedProps = useAnimatedProps(() => {
-        // Dawn keeps a sparse corona (25% lit); noon ignites all twelve rays.
         const colorStops = interpolateColor(progress.value, [0, 0.5, 1], [sun.dawn, sun.rising, sun.noon]);
-        const litFraction = 0.25 + 0.75 * progress.value;
-        const lit = Math.min(1, Math.max(0, litFraction * RAY_COUNT - index));
-        const angle = ((index * (360 / RAY_COUNT) - 90) * Math.PI) / 180;
+        const litFraction = eclipsed ? 0.15 : 0.25 + 0.75 * progress.value;
+        const lit = Math.min(1, Math.max(0, litFraction * rayCount - index));
+        const angle = ((index * (360 / rayCount) - 90) * Math.PI) / 180;
         const r1 = dotR + gap;
         if (lit <= 0.01) {
             return { x1: center, y1: center, x2: center, y2: center, opacity: 0, stroke: colorStops };
         }
         const globalScale = 0.8 + 0.2 * progress.value;
-        const len = maxRay * globalScale * (0.55 + 0.45 * lit) * (1 + 0.12 * pulse.value);
+        const len = maxRay * globalScale * (0.55 + 0.45 * lit) * (1 + 0.12 * pulse.value) * (eclipsed ? 0.55 : 1);
         const r2 = r1 + len;
         return {
             x1: center + Math.cos(angle) * r1,
             y1: center + Math.sin(angle) * r1,
             x2: center + Math.cos(angle) * r2,
             y2: center + Math.sin(angle) * r2,
-            opacity: 0.35 + 0.65 * lit,
+            opacity: (0.35 + 0.65 * lit) * (eclipsed ? 0.45 : 1),
             stroke: colorStops,
         };
     });

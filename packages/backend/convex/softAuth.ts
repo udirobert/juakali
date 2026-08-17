@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { internalMutation, mutation, query } from "./_generated/server";
-import type { MutationCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
+import type { Doc, Id } from "./_generated/dataModel";
 import { rateLimiter } from "./rateLimit";
 
  
@@ -21,6 +22,76 @@ export async function assertCanAct(ctx: MutationCtx) {
     if (!userId) {
         throw new Error("Sign in required to act on deals. Use soft email identity first.");
     }
+}
+
+/** Ownership gate for investor mutations, independent of the soft-auth flag. */
+export async function assertInvestorOwnsCommitment(
+    ctx: MutationCtx,
+    commitmentId: Id<"commitments">
+): Promise<Id<"investors">> {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Authentication required");
+    const commitment = await ctx.db.get(commitmentId);
+    if (!commitment) throw new Error("Commitment not found");
+    const investor = await ctx.db.get(commitment.investorId);
+    if (!investor || investor.userId !== userId) {
+        throw new Error("You do not own this commitment");
+    }
+    return investor._id;
+}
+
+export async function assertInvestorOwnsRun(
+    ctx: MutationCtx,
+    run: Doc<"agentRuns">
+): Promise<Id<"investors">> {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Authentication required");
+    const investor = await ctx.db.get(run.investorId);
+    if (!investor || investor.userId !== userId) {
+        throw new Error("You do not own this investor run");
+    }
+    return investor._id;
+}
+
+/** Ownership gate for investor settings. */
+export async function assertInvestorOwnsInvestor(
+    ctx: MutationCtx,
+    investorId: Id<"investors">
+): Promise<void> {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Authentication required");
+    const investor = await ctx.db.get(investorId);
+    if (!investor || investor.userId !== userId) {
+        throw new Error("You do not own this investor profile");
+    }
+}
+
+/** Read gate for private investor run/proposal details. */
+export async function canReadInvestorRun(
+    ctx: QueryCtx,
+    run: Doc<"agentRuns">
+): Promise<boolean> {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return false;
+    const investor = await ctx.db.get(run.investorId);
+    return investor?.userId === userId;
+}
+
+/** Venture-owner gate for founder-originated evidence. */
+export async function assertVentureOwner(
+    ctx: MutationCtx,
+    ventureId: Id<"ventures">
+): Promise<Id<"users">> {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Authentication required");
+    const owner = await ctx.db
+        .query("ventureOwners")
+        .withIndex("by_userId", (q) => q.eq("userId", userId))
+        .first();
+    if (!owner || owner.ventureId !== ventureId) {
+        throw new Error("You do not own this venture");
+    }
+    return userId;
 }
 
 export const storeLink = internalMutation({
@@ -173,6 +244,12 @@ export const getMyPrefs = query({
             onboarded: v.boolean(),
             coachDismissed: v.boolean(),
             lastOrientedAt: v.union(v.number(), v.null()),
+            autonomyLevel: v.union(
+                v.literal("ask_every_time"),
+                v.literal("auto_low_risk"),
+                v.literal("pause_all"),
+                v.null()
+            ),
         })
     ),
     handler: async (ctx) => {
@@ -187,6 +264,7 @@ export const getMyPrefs = query({
             onboarded: prefs.onboarded,
             coachDismissed: prefs.coachDismissed,
             lastOrientedAt: prefs.lastOrientedAt ?? null,
+            autonomyLevel: prefs.autonomyLevel ?? null,
         };
     },
 });
@@ -196,6 +274,13 @@ export const setMyPrefs = mutation({
         onboarded: v.optional(v.boolean()),
         coachDismissed: v.optional(v.boolean()),
         lastOrientedAt: v.optional(v.union(v.number(), v.null())),
+        autonomyLevel: v.optional(
+            v.union(
+                v.literal("ask_every_time"),
+                v.literal("auto_low_risk"),
+                v.literal("pause_all")
+            )
+        ),
     },
     returns: v.object({ ok: v.boolean() }),
     handler: async (ctx, args) => {
@@ -217,6 +302,7 @@ export const setMyPrefs = mutation({
                 onboarded: args.onboarded ?? existing.onboarded,
                 coachDismissed: args.coachDismissed ?? existing.coachDismissed,
                 lastOrientedAt: nextOriented,
+                autonomyLevel: args.autonomyLevel ?? existing.autonomyLevel,
                 updatedAt: now,
             });
         } else {
@@ -225,6 +311,7 @@ export const setMyPrefs = mutation({
                 onboarded: args.onboarded ?? false,
                 coachDismissed: args.coachDismissed ?? false,
                 lastOrientedAt: nextOriented,
+                autonomyLevel: args.autonomyLevel,
                 updatedAt: now,
             });
         }

@@ -1,10 +1,23 @@
 import { v } from "convex/values";
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { internalMutation, mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { rateLimiter } from "./rateLimit";
-import { assertCanAct } from "./softAuth";
+import {
+    assertCanAct,
+    assertInvestorOwnsCommitment,
+    assertInvestorOwnsRun,
+    canReadInvestorRun,
+} from "./softAuth";
+import {
+    actionPlanValidator,
+    actionPlanViewValidator,
+    buildProactiveActionPlan,
+    DEFAULT_PLAN_STEPS,
+    type AutonomyLevel,
+} from "./actionPlan";
 
 /**
  * Durable "approve & run" pipeline.
@@ -12,17 +25,32 @@ import { assertCanAct } from "./softAuth";
  * One committed transaction per agent step, so the UI streams truthful
  * progress (subscribers see each real commit — nothing simulated):
  *
- *   0. createAgentRun             → run + inbound email row; step 1 "running"
- *   1. stepRecordKpi (internal)   → kpiCheckIns + ledger event; step done
- *   2. stepWriteDigest (internal) → agentDigests + ledger event; step done
- *   3. stepPostLedger (internal)  → ledger "action" event (public proof)
- *   4. stepSendReply (internal)   → outbound reply + cadence patch; run completed
+ *   Evidence-backed runs (approved note / inbound email / founder note):
+ *     0. createAgentRun             → run + inbound email row; step 1 "running"
+ *     1. stepRecordKpi (internal)   → kpiCheckIns + ledger event (ONLY if the
+ *                                     run carries sourced evidence — never a
+ *                                     fabricated fallback); step done
+ *     2. stepWriteDigest (internal) → agentDigests + ledger event; step done
+ *     3. stepPostLedger (internal)  → ledger "action" event (public proof,
+ *                                     publishing the approved summary verbatim)
+ *     4. stepSendReply (internal)   → outbound reply + cadence patch; run completed
+ *
+ *   Proactive check-ins (request evidence first, record nothing until it arrives):
+ *     0. approveProposal            → run "running"; step 1 "running"
+ *     1. stepSendFounderRequest     → outbound request + PRIVATE ledger event;
+ *                                     run parks in "waiting_for_response"
+ *     2. submitFounderEvidence      → sourced KPI stamped on the run; resumes
+ *     3. stepRecordKpi → stepWriteDigest → stepPostLedger → stepSendReply
+ *
+ * Every step executor is idempotent (guarded by run.pipeline), so a failed run
+ * can be retried from its first uncommitted step without duplicating effects.
  *
  * A failed step marks the run failed and stops the chain (nothing is
  * scheduled after a failure). Inbound AgentMail uses the same entry point,
  * so email-triggered runs stream live in the cockpit too.
  *
  * Recovery: crons.ts sweeps runs stuck "running" for >90s and fails them.
+ * Runs parked "waiting_for_response" are exempt — they wait for evidence.
  */
 
 export const runStepValidator = v.object({
@@ -44,9 +72,22 @@ export const RUN_STEP_ORDER = [
     { tool: "send_reply", label: "Send reply" },
 ] as const;
 
+/**
+ * Proactive runs follow a different pipeline: the approval authorizes a
+ * check-in REQUEST, not KPI recording. KPI is only recorded once the founder
+ * responds with sourced evidence (see submitFounderEvidence).
+ */
+export const PROACTIVE_RUN_STEP_ORDER = [
+    { tool: "send_founder_request", label: "Request check-in" },
+    { tool: "log_kpi_checkin", label: "Log KPI" },
+    { tool: "create_investor_digest", label: "Write digest" },
+    { tool: "post_public_ledger", label: "Post to ledger" },
+    { tool: "send_reply", label: "Send reply" },
+] as const;
+
 export const runResultValidator = v.object({
-    checkInId: v.id("kpiCheckIns"),
-    digestId: v.id("agentDigests"),
+    checkInId: v.union(v.id("kpiCheckIns"), v.null()),
+    digestId: v.union(v.id("agentDigests"), v.null()),
     replyId: v.id("agentEmails"),
     message: v.string(),
     kpiMetric: v.string(),
@@ -59,6 +100,7 @@ export const runResultValidator = v.object({
 export const runStatusValidator = v.union(
     v.literal("proposed"),
     v.literal("running"),
+    v.literal("waiting_for_response"),
     v.literal("completed"),
     v.literal("failed"),
     v.literal("dismissed")
@@ -78,12 +120,17 @@ function proposalSteps(): Array<{
     status: "pending";
     detail: null;
 }> {
-    return RUN_STEP_ORDER.map((step) => ({
+    return PROACTIVE_RUN_STEP_ORDER.map((step) => ({
         tool: step.tool,
         label: step.label,
         status: "pending" as const,
         detail: null,
     }));
+}
+
+/** The step order a run follows — proactive runs request evidence first. */
+function stepOrderFor(run: Doc<"agentRuns">): ReadonlyArray<{ tool: string; label: string }> {
+    return run.trigger === "proactive" ? PROACTIVE_RUN_STEP_ORDER : RUN_STEP_ORDER;
 }
 
 function initialSteps(): Array<{
@@ -121,6 +168,13 @@ async function writeLedgerEvent(
         value?: number | null;
         evidence?: string[];
         createdAt: number;
+        runId?: Id<"agentRuns">;
+        correlationId?: string;
+        parentEventId?: Id<"ledgerEvents"> | null;
+        initiator?: "investor" | "founder" | "jua" | "system";
+        approvalRunId?: Id<"agentRuns"> | null;
+        /** Defaults to true; set false for private (investor-only) events. */
+        publicVisible?: boolean;
     }
 ) {
     return await ctx.db.insert("ledgerEvents", {
@@ -133,7 +187,14 @@ async function writeLedgerEvent(
         value: args.value ?? null,
         evidence: args.evidence,
         createdAt: args.createdAt,
-        publicVisible: true,
+        publicVisible: args.publicVisible ?? true,
+        runId: args.runId ?? null,
+        correlationId: args.correlationId ?? null,
+        parentEventId: args.parentEventId ?? null,
+        initiator: args.initiator ?? "jua",
+        approvalRunId: args.approvalRunId ?? args.runId ?? null,
+        correctionOf: null,
+        disputeState: "none",
     });
 }
 
@@ -157,16 +218,38 @@ function originPhrase(run: Doc<"agentRuns">): string {
     }
 }
 
-function resolveKpi(run: Doc<"agentRuns">, kpiUnit: "meetings" | "revenue_kes" | "jobs") {
-    const metric =
-        run.metricOverride?.trim() ||
-        (kpiUnit === "meetings"
-            ? "meetings_booked"
-            : kpiUnit === "jobs"
-              ? "jobs_completed"
-              : "revenue_kes");
-    const value =
-        run.valueOverride ?? (kpiUnit === "revenue_kes" ? 3500 : kpiUnit === "jobs" ? 1 : 2);
+/** The exact public copy that the ledger step is authorized to publish. */
+export function publishedSummaryForRun(run: Doc<"agentRuns">, ventureName: string): string {
+    const kpiMetric = run.pipeline?.kpiMetric ?? null;
+    const kpiValue = run.pipeline?.kpiValue ?? null;
+    const approved = run.approvedSummary?.trim();
+    return approved
+        ? approved
+        : kpiMetric != null && kpiValue != null
+          ? `Jua ran ${originPhrase(run)} for ${ventureName}: KPI ${kpiMetric} +${kpiValue}, digest filed, ledger posted.`
+          : `Jua ran ${originPhrase(run)} for ${ventureName}: digest filed, ledger posted.`;
+}
+
+function defaultMetricFor(kpiUnit: "meetings" | "revenue_kes" | "jobs") {
+    return kpiUnit === "meetings"
+        ? "meetings_booked"
+        : kpiUnit === "jobs"
+          ? "jobs_completed"
+          : "revenue_kes";
+}
+
+/**
+ * Resolve the KPI to record — ONLY from sourced evidence. Approval to request
+ * evidence is never approval to invent it, so there is no fabricated fallback:
+ * without a real value on the run we record nothing and wait for evidence.
+ */
+function resolveKpi(
+    run: Doc<"agentRuns">,
+    kpiUnit: "meetings" | "revenue_kes" | "jobs"
+): { metric: string; value: number } | null {
+    const metric = run.metricOverride?.trim() || defaultMetricFor(kpiUnit);
+    const value = run.valueOverride;
+    if (value == null || !Number.isFinite(value)) return null;
     return { metric, value };
 }
 
@@ -177,7 +260,8 @@ async function advanceRun(
     tool: string,
     detail: string | null
 ) {
-    const idx = RUN_STEP_ORDER.findIndex((s) => s.tool === tool);
+    const order = stepOrderFor(run);
+    const idx = order.findIndex((s) => s.tool === tool);
     const steps = run.steps.map((step, i) => {
         if (i === idx) return { ...step, status: "done" as const, detail };
         if (i === idx + 1 && step.status === "pending") {
@@ -205,12 +289,210 @@ async function failRunInline(
     await ctx.db.patch(run._id, { status: "failed", steps, error, updatedAt: Date.now() });
 }
 
+/** Map a step tool to its internal executor so steps can be scheduled by name. */
+function executorForTool(tool: string) {
+    switch (tool) {
+        case "send_founder_request":
+            return internal.agentRuns.stepSendFounderRequest;
+        case "log_kpi_checkin":
+            return internal.agentRuns.stepRecordKpi;
+        case "create_investor_digest":
+            return internal.agentRuns.stepWriteDigest;
+        case "post_public_ledger":
+            return internal.agentRuns.stepPostLedger;
+        case "send_reply":
+            return internal.agentRuns.stepSendReply;
+        default:
+            return null;
+    }
+}
+
+/**
+ * Schedule the step that follows `currentTool` in this run's pipeline. Steps
+ * carry only `{ runId }`; each executor reads its inputs from run.pipeline,
+ * which is what makes the chain resumable and idempotent on retry.
+ */
+async function scheduleNextStep(
+    ctx: MutationCtx,
+    run: Doc<"agentRuns">,
+    currentTool: string
+) {
+    const order = stepOrderFor(run);
+    const idx = order.findIndex((s) => s.tool === currentTool);
+    const next = idx >= 0 ? order[idx + 1] : undefined;
+    if (!next) return;
+    const executor = executorForTool(next.tool);
+    if (!executor) return;
+    await ctx.scheduler.runAfter(0, executor, { runId: run._id });
+}
+
+/**
+ * Schedule a specific step by tool name (used to resume a failed run from its
+ * first uncommitted step). No-op if the tool isn't part of this run's pipeline.
+ */
+async function scheduleStepByTool(
+    ctx: MutationCtx,
+    run: Doc<"agentRuns">,
+    tool: string
+) {
+    const executor = executorForTool(tool);
+    if (!executor) return;
+    await ctx.scheduler.runAfter(0, executor, { runId: run._id });
+}
+
+/** The first step that has not committed yet ("pending", "running", or "failed"). */
+function firstUncommittedStep(run: Doc<"agentRuns">) {
+    return (
+        run.steps.find(
+            (step) =>
+                step.status === "pending" ||
+                step.status === "running" ||
+                step.status === "failed"
+        ) ?? null
+    );
+}
+
+/**
+ * Risk classifier for autonomous work.
+ *
+ * Under `auto_low_risk`, the ONLY work Jua may start without a fresh approve is
+ * sending a private check-in REQUEST to the founder. That action:
+ *   - has no public effect (the request ledger event is private),
+ *   - does not fabricate or mutate KPI evidence (nothing is recorded),
+ *   - stays within a revocable policy (investor can pause or switch levels),
+ *   - leaves an audit trail (a private ledger event marks the auto-start).
+ *
+ * Anything with a public effect — recording a KPI, posting to the public
+ * ledger — is NOT low-risk and always requires explicit approval, even after
+ * founder evidence arrives on an auto-started run.
+ */
+export function isLowRiskAutoAction(args: {
+    autonomyLevel: AutonomyLevel;
+    trigger: "proactive" | "approved_note" | "inbound_email" | "entrepreneur_note";
+}): boolean {
+    // Only proactive check-in requests qualify; and only under auto_low_risk.
+    return args.autonomyLevel === "auto_low_risk" && args.trigger === "proactive";
+}
+
+/** Store the immutable evidence record before allowing the KPI step to run. */
+async function insertFounderEvidence(
+    ctx: MutationCtx,
+    args: {
+        runId: Id<"agentRuns">;
+        ventureId: Id<"ventures">;
+        commitmentId: Id<"commitments">;
+        metric: string;
+        value: number;
+        note: string;
+        source: "founder_update" | "investor_entered";
+        submittedByUserId?: Id<"users"> | null;
+    }
+): Promise<Id<"founderEvidence">> {
+    return await ctx.db.insert("founderEvidence", {
+        runId: args.runId,
+        ventureId: args.ventureId,
+        commitmentId: args.commitmentId,
+        metric: args.metric,
+        value: args.value,
+        note: args.note,
+        source: args.source,
+        submittedByUserId: args.submittedByUserId ?? null,
+        createdAt: Date.now(),
+    });
+}
+
+/**
+ * If a proactive check-in for this venture is parked in `waiting_for_response`,
+ * resume it with the founder's sourced evidence instead of starting a new run.
+ * Returns the resumed run id, or null if no waiting run exists.
+ *
+ * This is the founder-side counterpart to submitFounderEvidence: when the
+ * founder posts an update carrying a KPI value, it answers Jua's open request.
+ */
+export async function resumeWaitingRunWithEvidence(
+    ctx: MutationCtx,
+    args: {
+        ventureId: Id<"ventures">;
+        metric: string | null;
+        value: number | null;
+        note: string;
+        submittedByUserId?: Id<"users"> | null;
+    }
+): Promise<Id<"agentRuns"> | null> {
+    if (args.value == null || !Number.isFinite(args.value) || args.value <= 0) return null;
+
+    const runs = await ctx.db
+        .query("agentRuns")
+        .withIndex("by_ventureId", (q) => q.eq("ventureId", args.ventureId))
+        .order("desc")
+        .take(20);
+    const waiting = runs.find((run) => run.status === "waiting_for_response");
+    if (!waiting) return null;
+
+    const now = Date.now();
+    const venture = await ctx.db.get(args.ventureId);
+    const metric =
+        args.metric?.trim() ||
+        (venture?.kpiUnit === "meetings"
+            ? "meetings_booked"
+            : venture?.kpiUnit === "jobs"
+              ? "jobs_completed"
+              : "revenue_kes");
+    const note = args.note.trim() || "Founder evidence";
+    const evidenceId = await insertFounderEvidence(ctx, {
+        runId: waiting._id,
+        ventureId: waiting.ventureId,
+        commitmentId: waiting.commitmentId,
+        metric,
+        value: args.value,
+        note,
+        source: "founder_update",
+        submittedByUserId: args.submittedByUserId,
+    });
+
+    // Founder evidence on an auto-started run still needs explicit approval
+    // before any public effect: park it back as a proposal.
+    if (waiting.autoStarted) {
+        await ctx.db.patch(waiting._id, {
+            status: "proposed",
+            autoStarted: false,
+            metricOverride: metric,
+            valueOverride: args.value,
+            noteBody: note,
+            source: "self",
+            pipeline: { ...waiting.pipeline, evidenceId },
+            updatedAt: now,
+        });
+        return waiting._id;
+    }
+
+    // Explicitly-approved run: resume the pipeline at the KPI step.
+    const order = stepOrderFor(waiting);
+    const kpiIdx = order.findIndex((s) => s.tool === "log_kpi_checkin");
+    const steps = waiting.steps.map((step, i) =>
+        i === kpiIdx ? { ...step, status: "running" as const, detail: null } : step
+    );
+
+    await ctx.db.patch(waiting._id, {
+        status: "running",
+        steps,
+        metricOverride: metric,
+        valueOverride: args.value,
+        noteBody: note,
+        source: "self",
+        pipeline: { ...waiting.pipeline, evidenceId },
+        updatedAt: now,
+    });
+
+    await ctx.scheduler.runAfter(0, internal.agentRuns.stepRecordKpi, { runId: waiting._id });
+    return waiting._id;
+}
+
 /**
  * Shared run creation (mutations cannot call mutations in Convex, so both
  * the public approve mutation and invest.ts's inbound webhook use this).
  */
-export async function createAgentRun(
-    ctx: MutationCtx,
+export async function createAgentRun(    ctx: MutationCtx,
     args: {
         commitmentId: Id<"commitments">;
         noteBody: string;
@@ -238,6 +520,7 @@ export async function createAgentRun(
     const toAddress =
         args.toAddressOverride ?? venture.agentEmail ?? `${venture.publicSlug}@agent.juakali.demo`;
     const subject = args.subject?.trim() || `Re: ${venture.name}`;
+    const correlationId = `run_${now}_${commitment._id}`;
 
     await ctx.db.insert("agentEmails", {
         commitmentId: commitment._id,
@@ -265,6 +548,8 @@ export async function createAgentRun(
         toAddress,
         source: args.source,
         steps: initialSteps(),
+        actionPlan: undefined,
+        correlationId,
         result: null,
         error: null,
         createdAt: now,
@@ -292,7 +577,15 @@ export const startAgentRun = mutation({
     }),
     handler: async (ctx, args) => {
         await assertCanAct(ctx);
+        await assertInvestorOwnsCommitment(ctx, args.commitmentId);
         await rateLimiter.limit(ctx, "investMutate", { key: "agentRun" });
+        const commitment = await ctx.db.get(args.commitmentId);
+        if (commitment) {
+            const investor = await ctx.db.get(commitment.investorId);
+            if (investor?.autonomyLevel === "pause_all") {
+                throw new Error("Automation is paused. Change autonomy in Account to run.");
+            }
+        }
         return await createAgentRun(ctx, {
             commitmentId: args.commitmentId,
             noteBody: args.noteBody,
@@ -319,6 +612,9 @@ export const getAgentRun = query({
             fromAddress: v.string(),
             toAddress: v.string(),
             steps: v.array(runStepValidator),
+            /** The canonical persisted action plan (single source of truth). */
+            actionPlan: v.union(actionPlanValidator, v.null()),
+            approvedSummary: v.union(v.string(), v.null()),
             result: v.union(runResultValidator, v.null()),
             error: v.union(v.string(), v.null()),
             createdAt: v.number(),
@@ -328,7 +624,7 @@ export const getAgentRun = query({
     ),
     handler: async (ctx, args) => {
         const run = await ctx.db.get(args.runId);
-        if (!run) return null;
+        if (!run || !(await canReadInvestorRun(ctx, run))) return null;
         return {
             id: run._id,
             commitmentId: run.commitmentId,
@@ -340,6 +636,8 @@ export const getAgentRun = query({
             fromAddress: run.fromAddress,
             toAddress: run.toAddress,
             steps: run.steps,
+            actionPlan: run.actionPlan ?? null,
+            approvedSummary: run.approvedSummary ?? null,
             result: run.result ?? null,
             error: run.error ?? null,
             createdAt: run.createdAt,
@@ -366,6 +664,7 @@ export const getLatestRun = query({
             .withIndex("by_commitmentId", (q) => q.eq("commitmentId", args.commitmentId))
             .order("desc")
             .first();
+        if (latest && !(await canReadInvestorRun(ctx, latest))) return null;
         return latest
             ? {
                   id: latest._id,
@@ -379,6 +678,100 @@ export const getLatestRun = query({
 
 // --- Step executors (internal; one transaction each, scheduled in order) ---
 
+/**
+ * Proactive step 1: send the founder a check-in REQUEST and park the run in
+ * `waiting_for_response`. This step records NO KPI and publishes NO public
+ * evidence — approval to request evidence is not approval to invent it. The
+ * request itself is a private ledger event (investor-visible, not public).
+ * The pipeline resumes only when sourced evidence arrives
+ * (see submitFounderEvidence).
+ */
+export const stepSendFounderRequest = internalMutation({
+    args: { runId: v.id("agentRuns") },
+    returns: v.object({ ok: v.boolean() }),
+    handler: async (ctx, args) => {
+        const run = await ctx.db.get(args.runId);
+        if (!run || run.status !== "running") return { ok: false };
+
+        try {
+            // Idempotent: if the request was already sent, just re-park the run.
+            if (run.pipeline?.requestEmailId) {
+                await ctx.db.patch(run._id, {
+                    status: "waiting_for_response",
+                    updatedAt: Date.now(),
+                });
+                return { ok: true };
+            }
+
+            const venture = await ctx.db.get(run.ventureId);
+            if (!venture) throw new Error("Venture not found");
+
+            const now = Date.now();
+            const requestBody =
+                run.actionPlan?.preview.messageDraft?.trim() ||
+                run.noteBody ||
+                `Hi — checking in on ${venture.name}. Please share this week's ${venture.kpiLabel} and what moved.`;
+
+            const requestEmailId = await ctx.db.insert("agentEmails", {
+                commitmentId: run.commitmentId,
+                ventureId: venture._id,
+                investorId: run.investorId,
+                direction: "outbound",
+                fromAddress: run.fromAddress,
+                toAddress: run.toAddress,
+                subject: run.subject,
+                body: requestBody,
+                createdAt: now,
+            });
+
+            // Private event: the request is investor-visible, never public proof.
+            const requestEventId = await writeLedgerEvent(ctx, {
+                type: "action",
+                ventureId: venture._id,
+                commitmentId: run.commitmentId,
+                summary: `Jua requested a check-in from ${venture.name}: "${requestBody.slice(0, 120)}"`,
+                evidence: evidenceTags(run),
+                createdAt: now,
+                runId: run._id,
+                correlationId: run.correlationId ?? run._id,
+                initiator: "jua",
+                approvalRunId: run._id,
+                publicVisible: false,
+            });
+
+            await ctx.db.patch(run._id, {
+                pipeline: { ...run.pipeline, requestEmailId, requestEventId },
+                updatedAt: now,
+            });
+
+            // Mark the request step done but leave the next step "pending" —
+            // the run parks in waiting_for_response and resumes on evidence.
+            const order = stepOrderFor(run);
+            const reqIdx = order.findIndex((s) => s.tool === "send_founder_request");
+            const steps = run.steps.map((step, i) =>
+                i === reqIdx
+                    ? { ...step, status: "done" as const, detail: `request sent to ${run.toAddress}` }
+                    : step
+            );
+            await ctx.db.patch(run._id, {
+                status: "waiting_for_response",
+                steps,
+                updatedAt: Date.now(),
+            });
+            return { ok: true };
+        } catch (e) {
+            const error = e instanceof Error ? e.message : "Request step failed";
+            await failRunInline(ctx, run, "send_founder_request", error);
+            return { ok: false };
+        }
+    },
+});
+
+/**
+ * Record a KPI check-in — ONLY from sourced evidence. If no real value is
+ * present on the run, the step completes with a "no evidence" note and the
+ * pipeline continues without fabricating a number.
+ */
 export const stepRecordKpi = internalMutation({
     args: { runId: v.id("agentRuns") },
     returns: v.object({ ok: v.boolean() }),
@@ -387,11 +780,62 @@ export const stepRecordKpi = internalMutation({
         if (!run || run.status !== "running") return { ok: false };
 
         try {
+            // Idempotent: skip if KPI was already recorded (or deliberately skipped).
+            if (run.pipeline?.kpiResolved &&
+                (run.trigger !== "proactive" || run.pipeline.evidenceId)) {
+                await advanceRun(ctx, run, "log_kpi_checkin", "Already recorded");
+                await scheduleNextStep(ctx, run, "log_kpi_checkin");
+                return { ok: true };
+            }
+
             const venture = await ctx.db.get(run.ventureId);
             if (!venture) throw new Error("Venture not found");
 
             const now = Date.now();
-            const { metric, value } = resolveKpi(run, venture.kpiUnit);
+            // A proactive run may only consume an immutable evidence record.
+            // Never let a stray valueOverride or a replayed job turn approval
+            // into a public effect without founder evidence.
+            const resolved =
+                run.trigger === "proactive" && !run.pipeline?.evidenceId
+                    ? null
+                    : resolveKpi(run, venture.kpiUnit);
+
+            if (!resolved) {
+                if (run.trigger === "proactive") {
+                    // Park rather than advancing to digest/ledger/reply. The
+                    // only legal continuation is a sourced evidence submission.
+                    const kpiIndex = run.steps.findIndex(
+                        (step) => step.tool === "log_kpi_checkin"
+                    );
+                    const steps = run.steps.map((step, index) =>
+                        index === kpiIndex
+                            ? {
+                                  ...step,
+                                  status: "pending" as const,
+                                  detail: "Waiting for sourced founder evidence",
+                              }
+                            : step
+                    );
+                    await ctx.db.patch(run._id, {
+                        status: "waiting_for_response",
+                        steps,
+                        updatedAt: now,
+                    });
+                    return { ok: true };
+                }
+
+                // Evidence-backed non-proactive notes may complete without a
+                // KPI, but still disclose that no number was recorded.
+                await ctx.db.patch(run._id, {
+                    pipeline: { ...run.pipeline, kpiResolved: true },
+                    updatedAt: now,
+                });
+                await advanceRun(ctx, run, "log_kpi_checkin", "No sourced evidence — skipped");
+                await scheduleNextStep(ctx, run, "log_kpi_checkin");
+                return { ok: true };
+            }
+
+            const { metric, value } = resolved;
 
             const checkInsBefore = await ctx.db
                 .query("kpiCheckIns")
@@ -421,11 +865,12 @@ export const stepRecordKpi = internalMutation({
                 value,
                 note: run.noteBody.slice(0, 160),
                 source: run.source,
+                evidenceId: run.pipeline?.evidenceId ?? null,
                 appliedItemId,
                 createdAt: now,
             });
 
-            await writeLedgerEvent(ctx, {
+            const checkinEventId = await writeLedgerEvent(ctx, {
                 type: "checkin",
                 ventureId: venture._id,
                 commitmentId: run.commitmentId,
@@ -434,18 +879,30 @@ export const stepRecordKpi = internalMutation({
                 value,
                 evidence: evidenceTags(run),
                 createdAt: now,
+                runId: run._id,
+                correlationId: run.correlationId ?? run._id,
+                parentEventId: run.pipeline?.requestEventId ?? null,
+                initiator: "jua",
+                approvalRunId: run._id,
+            });
+
+            // Persist pipeline state for idempotent retry.
+            await ctx.db.patch(run._id, {
+                pipeline: {
+                    ...run.pipeline,
+                    checkInId,
+                    checkinEventId,
+                    kpiMetric: metric,
+                    kpiValue: value,
+                    kpiBefore,
+                    kpiAfter: kpiBefore + value,
+                    kpiResolved: true,
+                },
+                updatedAt: now,
             });
 
             await advanceRun(ctx, run, "log_kpi_checkin", `${metric} = ${value}`);
-
-            await ctx.scheduler.runAfter(0, internal.agentRuns.stepWriteDigest, {
-                runId: run._id,
-                checkInId,
-                kpiBefore,
-                kpiAfter: kpiBefore + value,
-                kpiMetric: metric,
-                kpiValue: value,
-            });
+            await scheduleNextStep(ctx, run, "log_kpi_checkin");
             return { ok: true };
         } catch (e) {
             const error = e instanceof Error ? e.message : "KPI step failed";
@@ -456,27 +913,32 @@ export const stepRecordKpi = internalMutation({
 });
 
 export const stepWriteDigest = internalMutation({
-    args: {
-        runId: v.id("agentRuns"),
-        checkInId: v.id("kpiCheckIns"),
-        kpiBefore: v.number(),
-        kpiAfter: v.number(),
-        kpiMetric: v.string(),
-        kpiValue: v.number(),
-    },
+    args: { runId: v.id("agentRuns") },
     returns: v.object({ ok: v.boolean() }),
     handler: async (ctx, args) => {
         const run = await ctx.db.get(args.runId);
         if (!run || run.status !== "running") return { ok: false };
 
         try {
+            // Idempotent: skip if the digest was already written.
+            if (run.pipeline?.digestId) {
+                await advanceRun(ctx, run, "create_investor_digest", "Already written");
+                await scheduleNextStep(ctx, run, "create_investor_digest");
+                return { ok: true };
+            }
+
             const venture = await ctx.db.get(run.ventureId);
             const commitment = await ctx.db.get(run.commitmentId);
             if (!venture || !commitment) throw new Error("Venture or commitment missing");
 
             const now = Date.now();
             const cadence = commitment.digestCadence ?? "Weekly · Fri 08:00 EAT";
-            const digestSummary = `I acted on ${originPhrase(run)} for ${venture.name}: logged ${args.kpiMetric} = ${args.kpiValue}.`;
+            const kpiMetric = run.pipeline?.kpiMetric ?? null;
+            const kpiValue = run.pipeline?.kpiValue ?? null;
+            const digestSummary =
+                kpiMetric != null && kpiValue != null
+                    ? `I acted on ${originPhrase(run)} for ${venture.name}: logged ${kpiMetric} = ${kpiValue}.`
+                    : `I acted on ${originPhrase(run)} for ${venture.name}: no sourced KPI was recorded this cycle.`;
             const digestInsights =
                 venture.peerMedian != null
                     ? `Peer median this period is ~${venture.peerMedian}. Next digest ${cadence}.`
@@ -493,26 +955,27 @@ export const stepWriteDigest = internalMutation({
                 createdAt: now,
             });
 
-            await writeLedgerEvent(ctx, {
+            const digestEventId = await writeLedgerEvent(ctx, {
                 type: "digest",
                 ventureId: venture._id,
                 commitmentId: run.commitmentId,
                 summary: `Digest for ${venture.name}: ${digestSummary}`,
                 evidence: evidenceTags(run),
                 createdAt: now,
+                runId: run._id,
+                correlationId: run.correlationId ?? run._id,
+                parentEventId: run.pipeline?.checkinEventId ?? run.pipeline?.requestEventId ?? null,
+                initiator: "jua",
+                approvalRunId: run._id,
+            });
+
+            await ctx.db.patch(run._id, {
+                pipeline: { ...run.pipeline, digestId, digestEventId },
+                updatedAt: now,
             });
 
             await advanceRun(ctx, run, "create_investor_digest", digestSummary);
-
-            await ctx.scheduler.runAfter(0, internal.agentRuns.stepPostLedger, {
-                runId: run._id,
-                checkInId: args.checkInId,
-                digestId,
-                kpiBefore: args.kpiBefore,
-                kpiAfter: args.kpiAfter,
-                kpiMetric: args.kpiMetric,
-                kpiValue: args.kpiValue,
-            });
+            await scheduleNextStep(ctx, run, "create_investor_digest");
             return { ok: true };
         } catch (e) {
             const error = e instanceof Error ? e.message : "Digest step failed";
@@ -523,45 +986,54 @@ export const stepWriteDigest = internalMutation({
 });
 
 export const stepPostLedger = internalMutation({
-    args: {
-        runId: v.id("agentRuns"),
-        checkInId: v.id("kpiCheckIns"),
-        digestId: v.id("agentDigests"),
-        kpiBefore: v.number(),
-        kpiAfter: v.number(),
-        kpiMetric: v.string(),
-        kpiValue: v.number(),
-    },
+    args: { runId: v.id("agentRuns") },
     returns: v.object({ ok: v.boolean() }),
     handler: async (ctx, args) => {
         const run = await ctx.db.get(args.runId);
         if (!run || run.status !== "running") return { ok: false };
 
         try {
+            // Idempotent: skip if the public ledger event was already posted.
+            if (run.pipeline?.ledgerEventId) {
+                await advanceRun(ctx, run, "post_public_ledger", "Already posted");
+                await scheduleNextStep(ctx, run, "post_public_ledger");
+                return { ok: true };
+            }
+
             const venture = await ctx.db.get(run.ventureId);
             if (!venture) throw new Error("Venture not found");
 
             const now = Date.now();
-            await writeLedgerEvent(ctx, {
+
+            // Publish the APPROVED summary verbatim. The investor consented to
+            // exactly this text; system metadata stays out of the public copy.
+            const summary = publishedSummaryForRun(run, venture.name);
+
+            const ledgerEventId = await writeLedgerEvent(ctx, {
                 type: "action",
                 ventureId: venture._id,
                 commitmentId: run.commitmentId,
-                summary: `Jua ran ${originPhrase(run)} for ${venture.name}: KPI ${args.kpiMetric} +${args.kpiValue}, digest filed, ledger posted.`,
+                summary,
                 evidence: evidenceTags(run),
                 createdAt: now,
+                runId: run._id,
+                correlationId: run.correlationId ?? run._id,
+                parentEventId:
+                    run.pipeline?.digestEventId ??
+                    run.pipeline?.checkinEventId ??
+                    run.pipeline?.requestEventId ??
+                    null,
+                initiator: "jua",
+                approvalRunId: run._id,
+            });
+
+            await ctx.db.patch(run._id, {
+                pipeline: { ...run.pipeline, ledgerEventId },
+                updatedAt: now,
             });
 
             await advanceRun(ctx, run, "post_public_ledger", "checkin + digest + action events");
-
-            await ctx.scheduler.runAfter(0, internal.agentRuns.stepSendReply, {
-                runId: run._id,
-                checkInId: args.checkInId,
-                digestId: args.digestId,
-                kpiBefore: args.kpiBefore,
-                kpiAfter: args.kpiAfter,
-                kpiMetric: args.kpiMetric,
-                kpiValue: args.kpiValue,
-            });
+            await scheduleNextStep(ctx, run, "post_public_ledger");
             return { ok: true };
         } catch (e) {
             const error = e instanceof Error ? e.message : "Ledger step failed";
@@ -572,15 +1044,7 @@ export const stepPostLedger = internalMutation({
 });
 
 export const stepSendReply = internalMutation({
-    args: {
-        runId: v.id("agentRuns"),
-        checkInId: v.id("kpiCheckIns"),
-        digestId: v.id("agentDigests"),
-        kpiBefore: v.number(),
-        kpiAfter: v.number(),
-        kpiMetric: v.string(),
-        kpiValue: v.number(),
-    },
+    args: { runId: v.id("agentRuns") },
     returns: v.object({ ok: v.boolean() }),
     handler: async (ctx, args) => {
         const run = await ctx.db.get(args.runId);
@@ -592,42 +1056,58 @@ export const stepSendReply = internalMutation({
             if (!venture || !commitment) throw new Error("Venture or commitment missing");
 
             const now = Date.now();
-            const noteEcho = run.trigger === "proactive" ? null : `You said: “${run.noteBody.slice(0, 140)}”`;
-            const replySummary = `I acted on ${originPhrase(run)} for ${venture.name}: logged ${args.kpiMetric} = ${args.kpiValue} (total now ${args.kpiAfter}).`;
-            const peerLine =
-                venture.peerMedian != null
-                    ? `Peer median this period is ~${venture.peerMedian}.`
-                    : null;
-            const replyBody = [
-                noteEcho,
-                replySummary,
-                peerLine,
-                `Evidence tagged: ${run.source}. Posted to the public ledger.`,
-                "— Jua · JuaKali agent",
-            ]
-                .filter(Boolean)
-                .join("\n\n");
+            const kpiMetric = run.pipeline?.kpiMetric ?? null;
+            const kpiValue = run.pipeline?.kpiValue ?? null;
+            const kpiAfter = run.pipeline?.kpiAfter ?? null;
 
-            const replyId = await ctx.db.insert("agentEmails", {
-                commitmentId: run.commitmentId,
-                ventureId: venture._id,
-                investorId: run.investorId,
-                direction: "outbound",
-                fromAddress: run.toAddress,
-                toAddress: run.fromAddress,
-                subject: `Re: ${run.subject.replace(/^Re:\s*/i, "")}`,
-                body: replyBody,
-                createdAt: now,
-            });
+            // Idempotent: reuse the already-sent reply instead of duplicating it.
+            let replyId = run.pipeline?.replyId ?? null;
+            if (!replyId) {
+                const noteEcho =
+                    run.trigger === "proactive" ? null : `You said: “${run.noteBody.slice(0, 140)}”`;
+                const replySummary =
+                    kpiMetric != null && kpiValue != null
+                        ? `I acted on ${originPhrase(run)} for ${venture.name}: logged ${kpiMetric} = ${kpiValue}${kpiAfter != null ? ` (total now ${kpiAfter})` : ""}.`
+                        : `I acted on ${originPhrase(run)} for ${venture.name}: no sourced KPI was recorded this cycle.`;
+                const peerLine =
+                    venture.peerMedian != null
+                        ? `Peer median this period is ~${venture.peerMedian}.`
+                        : null;
+                const replyBody = [
+                    noteEcho,
+                    replySummary,
+                    peerLine,
+                    `Evidence tagged: ${run.source}. Posted to the public ledger.`,
+                    "— Jua · JuaKali agent",
+                ]
+                    .filter(Boolean)
+                    .join("\n\n");
 
-            await ctx.db.patch(commitment._id, {
-                nextDigestAt: nextFridayEightEAT(now),
-                digestCadence: commitment.digestCadence ?? "Weekly · Fri 08:00 EAT",
-                updatedAt: now,
-            });
+                replyId = await ctx.db.insert("agentEmails", {
+                    commitmentId: run.commitmentId,
+                    ventureId: venture._id,
+                    investorId: run.investorId,
+                    direction: "outbound",
+                    fromAddress: run.toAddress,
+                    toAddress: run.fromAddress,
+                    subject: `Re: ${run.subject.replace(/^Re:\s*/i, "")}`,
+                    body: replyBody,
+                    createdAt: now,
+                });
 
-            const message = `Agent replied and logged ${args.kpiMetric}=${args.kpiValue} for ${venture.name}.`;
-            const idx = RUN_STEP_ORDER.length - 1;
+                await ctx.db.patch(commitment._id, {
+                    nextDigestAt: nextFridayEightEAT(now),
+                    digestCadence: commitment.digestCadence ?? "Weekly · Fri 08:00 EAT",
+                    updatedAt: now,
+                });
+            }
+
+            const message =
+                kpiMetric != null && kpiValue != null
+                    ? `Agent replied and logged ${kpiMetric}=${kpiValue} for ${venture.name}.`
+                    : `Agent replied for ${venture.name} (no sourced KPI recorded).`;
+            const order = stepOrderFor(run);
+            const idx = order.length - 1;
             const steps = run.steps.map((step, i) =>
                 i === idx
                     ? { ...step, status: "done" as const, detail: `to ${run.fromAddress}` }
@@ -636,15 +1116,16 @@ export const stepSendReply = internalMutation({
             await ctx.db.patch(run._id, {
                 status: "completed",
                 steps,
+                pipeline: { ...run.pipeline, replyId },
                 result: {
-                    checkInId: args.checkInId,
-                    digestId: args.digestId,
+                    checkInId: run.pipeline?.checkInId ?? null,
+                    digestId: run.pipeline?.digestId ?? null,
                     replyId,
                     message,
-                    kpiMetric: args.kpiMetric,
-                    kpiValue: args.kpiValue,
-                    kpiBefore: args.kpiBefore,
-                    kpiAfter: args.kpiAfter,
+                    kpiMetric: kpiMetric ?? "",
+                    kpiValue: kpiValue ?? 0,
+                    kpiBefore: run.pipeline?.kpiBefore ?? 0,
+                    kpiAfter: kpiAfter ?? 0,
                     replyTo: run.fromAddress,
                 },
                 updatedAt: Date.now(),
@@ -699,15 +1180,6 @@ export const recoverStaleRuns = internalMutation({
 /** How stale a venture's latest KPI may be before Jua proposes a check-in. */
 const PROPOSAL_STALE_MS = 24 * 60 * 60 * 1000; // 24h — demo-friendly cadence
 
-function proposalNote(ventureName: string, daysStale: number, metricLabel: string): string {
-    const age = daysStale <= 0 ? "just" : `${daysStale} day${daysStale === 1 ? "" : "s"} ago`;
-    return [
-        `${ventureName} hasn't reported in ${age} — the latest ${metricLabel} on file is getting stale.`,
-        "I want to follow up, log the result as a KPI check-in, write you a digest, and post it to the public ledger.",
-        "Approve and I'll get to work; dismiss if now is not the time.",
-    ].join("\n");
-}
-
 /**
  * Insert a `proposed` run for one commitment (shared by the proactive cron
  * and the demo seeder). Pure initiative — nothing runs until approval.
@@ -716,10 +1188,23 @@ export async function createProposalForCommitment(
     ctx: MutationCtx,
     commitment: Doc<"commitments">,
     venture: Doc<"ventures">,
-    daysStale: number
+    daysStale: number,
+    lastCheckInAt: number | null = null,
+    autonomyLevel: AutonomyLevel = "ask_every_time"
 ) {
     const now = Date.now();
-    const noteBody = proposalNote(venture.name, daysStale, venture.kpiLabel || "KPI");
+    const actionPlan = buildProactiveActionPlan({
+        ventureName: venture.name,
+        daysStale,
+        metricLabel: venture.kpiLabel || "KPI",
+        lastCheckInAt,
+        autonomyLevel,
+    });
+    const noteBody = [
+        actionPlan.reason.whyNow,
+        "I want to follow up, log the result as a KPI check-in, write you a digest, and post it to the public ledger.",
+        "Approve and I'll get to work; dismiss if now is not the time.",
+    ].join("\n");
     return await ctx.db.insert("agentRuns", {
         commitmentId: commitment._id,
         ventureId: venture._id,
@@ -734,6 +1219,8 @@ export async function createProposalForCommitment(
         toAddress: venture.agentEmail ?? `${venture.publicSlug}@agent.juakali.demo`,
         source: "agent",
         steps: proposalSteps(),
+        actionPlan,
+        correlationId: `proposal_${now}_${commitment._id}`,
         result: null,
         error: null,
         createdAt: now,
@@ -798,13 +1285,45 @@ export const proposeProactiveCheckIns = internalMutation({
                 continue;
             }
 
-            await createProposalForCommitment(
+            const autonomyLevel =
+                (await ctx.db.get(commitment.investorId))?.autonomyLevel ?? "ask_every_time";
+
+            const proposalRunId = await createProposalForCommitment(
                 ctx,
                 commitment,
                 venture,
-                Math.floor(staleMs / (24 * 60 * 60 * 1000))
+                Math.floor(staleMs / (24 * 60 * 60 * 1000)),
+                lastCheckIn?.createdAt ?? null,
+                autonomyLevel
             );
             proposed++;
+
+            // auto_low_risk: the ONLY automated work is the private check-in
+            // request (no public effect, no evidence fabrication). Start it now;
+            // the run parks in waiting_for_response. Public effects still need
+            // explicit approval after founder evidence arrives.
+            if (isLowRiskAutoAction({ autonomyLevel, trigger: "proactive" })) {
+                const run = await ctx.db.get(proposalRunId);
+                if (run && run.status === "proposed") {
+                    const order = stepOrderFor(run);
+                    const steps = run.steps.map((step, i) =>
+                        i === 0 && order[0]?.tool === step.tool
+                            ? { ...step, status: "running" as const, detail: null }
+                            : step
+                    );
+                    await ctx.db.patch(run._id, {
+                        status: "running",
+                        steps,
+                        autoStarted: true,
+                        updatedAt: Date.now(),
+                    });
+                    await ctx.scheduler.runAfter(
+                        0,
+                        internal.agentRuns.stepSendFounderRequest,
+                        { runId: run._id }
+                    );
+                }
+            }
         }
 
         return { proposed, skipped };
@@ -833,7 +1352,7 @@ export const getOpenProposal = query({
             .order("desc")
             .take(20);
         const proposal = recentRuns.find((run) => run.status === "proposed");
-        if (!proposal) return null;
+        if (!proposal || !(await canReadInvestorRun(ctx, proposal))) return null;
         return {
             id: proposal._id,
             noteBody: proposal.noteBody,
@@ -844,9 +1363,75 @@ export const getOpenProposal = query({
     },
 });
 
+/**
+ * Canonical proposal detail — the single representation of an approval
+ * contract. Returns the persisted action plan (never a reconstructed fallback),
+ * so Today and the standalone /approvals/[proposalId] route render the same
+ * reason, sources, previews, and recovery terms.
+ */
+export const getProposalDetail = query({
+    args: { runId: v.id("agentRuns") },
+    returns: v.union(actionPlanViewValidator, v.null()),
+    handler: async (ctx, args) => {
+        const run = await ctx.db.get(args.runId);
+        if (!run || run.status !== "proposed" || !(await canReadInvestorRun(ctx, run))) return null;
+
+        const venture = await ctx.db.get(run.ventureId);
+        return planViewForRun(run, venture?.name ?? "Venture", venture?.kpiLabel ?? "KPI");
+    },
+});
+
+/**
+ * One plan-view builder for a run — the single representation of an approval
+ * contract, shared by getProposalDetail and invest.ts's Today briefing so
+ * inline and standalone approvals can never diverge.
+ *
+ * The persisted actionPlan IS the contract. Only legacy runs created before
+ * the field existed lack one; those are rebuilt deterministically from the
+ * run's own age and the venture's real metric label (never a stale constant).
+ */
+export function planViewForRun(
+    run: Doc<"agentRuns">,
+    ventureName: string,
+    kpiLabel: string
+) {
+    const plan =
+        run.actionPlan ??
+        buildProactiveActionPlan({
+            ventureName,
+            daysStale: Math.max(
+                0,
+                Math.floor((Date.now() - run.createdAt) / (24 * 60 * 60 * 1000))
+            ),
+            metricLabel: kpiLabel || "KPI",
+            lastCheckInAt: null,
+        });
+    return {
+        id: run._id,
+        commitmentId: run.commitmentId,
+        ventureName,
+        subject: run.subject,
+        noteBody: run.noteBody,
+        status: run.status,
+        createdAt: run.createdAt,
+        reason: plan.reason,
+        sources: plan.sources,
+        planSteps: plan.planSteps.length ? plan.planSteps : DEFAULT_PLAN_STEPS,
+        preview: plan.preview,
+        permissions: plan.permissions,
+        recovery: plan.recovery,
+        durationEta: plan.durationEta ?? "within 24 hours",
+    };
+}
+
 /** Approve a proposal → same durable pipeline as an approved note. */
 export const approveProposal = mutation({
-    args: { runId: v.id("agentRuns") },
+    args: {
+        runId: v.id("agentRuns"),
+        /** Optional edit to the follow-up message before execution. */
+        messageDraft: v.optional(v.string()),
+        publicSummary: v.optional(v.string()),
+    },
     returns: v.object({
         runId: v.id("agentRuns"),
         commitmentId: v.id("commitments"),
@@ -858,14 +1443,354 @@ export const approveProposal = mutation({
         const run = await ctx.db.get(args.runId);
         if (!run) throw new Error("Proposal not found");
         if (run.status !== "proposed") throw new Error("Proposal is no longer pending");
+        await assertInvestorOwnsRun(ctx, run);
+
+        const investor = await ctx.db.get(run.investorId);
+        if (investor?.autonomyLevel === "pause_all") {
+            throw new Error("Automation is paused. Change autonomy in Account to approve.");
+        }
 
         const now = Date.now();
-        const steps = run.steps.map((step, i) =>
-            i === 0 ? { ...step, status: "running" as const, detail: null } : step
+        // Resume from the first uncommitted step. For a fresh proposal that is
+        // the request/KPI step; for an auto_low_risk run parked back for public
+        // approval it is the first public step (the request already ran).
+        const resumeStep = firstUncommittedStep(run);
+        if (!resumeStep) throw new Error("Nothing left to approve");
+        const steps = run.steps.map((step) =>
+            step.tool === resumeStep.tool && step.status !== "done"
+                ? { ...step, status: "running" as const, detail: null }
+                : step
         );
-        await ctx.db.patch(run._id, { status: "running", steps, updatedAt: now });
-        await ctx.scheduler.runAfter(0, internal.agentRuns.stepRecordKpi, { runId: run._id });
+        const actionPlan = run.actionPlan
+            ? {
+                  ...run.actionPlan,
+                  preview: {
+                      ...run.actionPlan.preview,
+                      messageDraft:
+                          args.messageDraft?.trim() || run.actionPlan.preview.messageDraft || null,
+                      publicSummary:
+                          args.publicSummary?.trim() || run.actionPlan.preview.publicSummary || null,
+                  },
+              }
+            : undefined;
+        const noteBody =
+            args.messageDraft?.trim() ||
+            actionPlan?.preview.messageDraft ||
+            run.noteBody;
+
+        // The verbatim public summary the investor approved. stepPostLedger
+        // publishes exactly this text — consent matches publication.
+        const approvedSummary =
+            args.publicSummary?.trim() ||
+            actionPlan?.preview.publicSummary ||
+            run.actionPlan?.preview.publicSummary ||
+            null;
+
+        await ctx.db.patch(run._id, {
+            status: "running",
+            steps,
+            noteBody,
+            actionPlan,
+            approvedSummary: approvedSummary ?? undefined,
+            // An explicit approval supersedes any earlier auto-start.
+            autoStarted: false,
+            correlationId: run.correlationId ?? `run_${now}_${run.commitmentId}`,
+            updatedAt: now,
+        });
+
+        await scheduleStepByTool(ctx, run, resumeStep.tool);
         return { runId: run._id, commitmentId: run.commitmentId, ventureId: run.ventureId };
+    },
+});
+
+/**
+ * Submit sourced founder evidence for a run parked in `waiting_for_response`.
+ * This is the ONLY path that records a KPI for a proactive check-in: the
+ * founder responds with a real number, Jua validates it, then the pipeline
+ * resumes (record KPI → digest → ledger → reply). No evidence, no KPI.
+ */
+export const submitFounderEvidence = mutation({
+    args: {
+        runId: v.id("agentRuns"),
+        metric: v.optional(v.string()),
+        value: v.number(),
+        note: v.optional(v.string()),
+    },
+    returns: v.object({ ok: v.boolean(), message: v.string() }),
+    handler: async (ctx, args) => {
+        await assertCanAct(ctx);
+        await rateLimiter.limit(ctx, "investMutate", { key: "agentRun" });
+
+        const run = await ctx.db.get(args.runId);
+        if (!run) throw new Error("Run not found");
+        await assertInvestorOwnsRun(ctx, run);
+        if (run.status !== "waiting_for_response") {
+            throw new Error("This run is not waiting for founder evidence");
+        }
+        if (!Number.isFinite(args.value) || args.value <= 0) {
+            throw new Error("Evidence value must be a positive number");
+        }
+
+        const investor = await ctx.db.get(run.investorId);
+        if (investor?.autonomyLevel === "pause_all") {
+            throw new Error("Automation is paused. Change autonomy in Account to continue.");
+        }
+
+        const venture = await ctx.db.get(run.ventureId);
+        if (!venture) throw new Error("Venture not found");
+
+        const now = Date.now();
+        const metric = args.metric?.trim() || defaultMetricFor(venture.kpiUnit);
+        const userId = await getAuthUserId(ctx);
+        const evidenceId = await insertFounderEvidence(ctx, {
+            runId: run._id,
+            ventureId: run.ventureId,
+            commitmentId: run.commitmentId,
+            metric,
+            value: args.value,
+            note: args.note?.trim() || run.noteBody,
+            source: "investor_entered",
+            submittedByUserId: userId,
+        });
+
+        // Stamp the sourced evidence onto the run.
+        const evidencePatch = {
+            metricOverride: metric,
+            valueOverride: args.value,
+            noteBody: args.note?.trim() || run.noteBody,
+            source: "self" as const,
+            updatedAt: now,
+        };
+
+        // auto_low_risk guarantee: an auto-started run may only have sent the
+        // PRIVATE request. Recording a KPI and posting to the public ledger are
+        // public effects, so they require explicit approval. Park the run back
+        // as a proposal; approveProposal resumes from the first uncommitted
+        // (public) step once the investor consents.
+        if (run.autoStarted) {
+            await ctx.db.patch(run._id, {
+                ...evidencePatch,
+                status: "proposed",
+                autoStarted: false,
+                pipeline: { ...run.pipeline, evidenceId },
+            });
+            return {
+                ok: true,
+                message: `Evidence received (${metric} = ${args.value}). Approve to record it and post to the public ledger.`,
+            };
+        }
+
+        // Explicitly-approved run: resume the pipeline at the KPI step. Mark it
+        // running so the UI streams truthfully.
+        const order = stepOrderFor(run);
+        const kpiIdx = order.findIndex((s) => s.tool === "log_kpi_checkin");
+        const steps = run.steps.map((step, i) =>
+            i === kpiIdx ? { ...step, status: "running" as const, detail: null } : step
+        );
+
+        await ctx.db.patch(run._id, {
+            ...evidencePatch,
+            status: "running",
+            steps,
+            pipeline: { ...run.pipeline, evidenceId },
+        });
+
+        await ctx.scheduler.runAfter(0, internal.agentRuns.stepRecordKpi, { runId: run._id });
+        return { ok: true, message: `Evidence received — recording ${metric} = ${args.value}.` };
+    },
+});
+
+/** Edit proposal preview without approving. */
+export const updateProposalPlan = mutation({
+    args: {
+        runId: v.id("agentRuns"),
+        messageDraft: v.optional(v.string()),
+        publicSummary: v.optional(v.string()),
+        noteBody: v.optional(v.string()),
+    },
+    returns: v.object({ ok: v.boolean() }),
+    handler: async (ctx, args) => {
+        await assertCanAct(ctx);
+        const run = await ctx.db.get(args.runId);
+        if (!run || run.status !== "proposed") return { ok: false };
+        await assertInvestorOwnsRun(ctx, run);
+        const actionPlan = run.actionPlan
+            ? {
+                  ...run.actionPlan,
+                  preview: {
+                      ...run.actionPlan.preview,
+                      messageDraft:
+                          args.messageDraft !== undefined
+                              ? args.messageDraft
+                              : run.actionPlan.preview.messageDraft,
+                      publicSummary:
+                          args.publicSummary !== undefined
+                              ? args.publicSummary
+                              : run.actionPlan.preview.publicSummary,
+                  },
+              }
+            : undefined;
+        await ctx.db.patch(run._id, {
+            noteBody: args.noteBody?.trim() || run.noteBody,
+            actionPlan,
+            updatedAt: Date.now(),
+        });
+        return { ok: true };
+    },
+});
+
+/** Compute retry state without changing the run or duplicating committed effects. */
+export function retryStateForRun(run: Doc<"agentRuns">) {
+    const resumeIdx = run.steps.findIndex(
+        (step) =>
+            step.status === "failed" ||
+            step.status === "pending" ||
+            step.status === "running"
+    );
+    if (resumeIdx < 0) return null;
+    return {
+        resumeIdx,
+        resumeTool: run.steps[resumeIdx]!.tool,
+        steps: run.steps.map((step, index) => {
+            if (index === resumeIdx) return { ...step, status: "running" as const, detail: null };
+            if (index > resumeIdx && (step.status === "failed" || step.status === "running")) {
+                return { ...step, status: "pending" as const, detail: null };
+            }
+            return step;
+        }),
+    };
+}
+
+/**
+ * Retry a failed run by RESUMING it from the first uncommitted step.
+ *
+ * The original run is reused, so the approved action plan, edited previews,
+ * permission scope, recovery agreement, and correlation lineage are all
+ * preserved. Each step executor is idempotent (guarded by run.pipeline), so a
+ * step that already committed its effect (KPI, digest, ledger, reply) is never
+ * duplicated — the chain picks up at the first step that did not commit.
+ */
+export const retryFailedRun = mutation({
+    args: { runId: v.id("agentRuns") },
+    returns: v.object({
+        runId: v.id("agentRuns"),
+        commitmentId: v.id("commitments"),
+        ventureId: v.id("ventures"),
+    }),
+    handler: async (ctx, args) => {
+        await assertCanAct(ctx);
+        await rateLimiter.limit(ctx, "investMutate", { key: "agentRun" });
+        const failed = await ctx.db.get(args.runId);
+        if (!failed) throw new Error("Run not found");
+        if (failed.status !== "failed") throw new Error("Only failed runs can be retried");
+        await assertInvestorOwnsRun(ctx, failed);
+
+        const investor = await ctx.db.get(failed.investorId);
+        if (investor?.autonomyLevel === "pause_all") {
+            throw new Error("Automation is paused. Change autonomy in Account to retry.");
+        }
+
+        const retry = retryStateForRun(failed);
+        if (!retry) {
+            // Nothing left to do — mark completed rather than re-running effects.
+            throw new Error("All steps already committed — nothing to retry");
+        }
+
+        const now = Date.now();
+        const { resumeTool, steps } = retry;
+        await ctx.db.patch(failed._id, {
+            status: "running",
+            steps,
+            error: null,
+            // Keep correlationId, actionPlan, approvedSummary, pipeline intact.
+            updatedAt: now,
+        });
+
+        await scheduleStepByTool(ctx, failed, resumeTool);
+        return { runId: failed._id, commitmentId: failed.commitmentId, ventureId: failed.ventureId };
+    },
+});
+
+const activityItemValidator = v.object({
+    id: v.id("agentRuns"),
+    commitmentId: v.id("commitments"),
+    ventureName: v.string(),
+    status: runStatusValidator,
+    trigger: runTriggerValidator,
+    subject: v.string(),
+    error: v.union(v.string(), v.null()),
+    updatedAt: v.number(),
+});
+
+/** Investor activity center: active, waiting, completed, blocked, failed. */
+export const activityForInvestor = query({
+    args: {
+        investorId: v.optional(v.id("investors")),
+        limit: v.optional(v.number()),
+    },
+    returns: v.object({
+        active: v.array(activityItemValidator),
+        waiting: v.array(activityItemValidator),
+        completed: v.array(activityItemValidator),
+        blocked: v.array(activityItemValidator),
+        failed: v.array(activityItemValidator),
+    }),
+    handler: async (ctx, args) => {
+        const userId = await getAuthUserId(ctx);
+        const linkedInvestor = userId
+            ? await ctx.db
+                  .query("investors")
+                  .withIndex("by_userId", (q) => q.eq("userId", userId))
+                  .first()
+            : null;
+        // Activity contains run state and is never a public/default-demo feed.
+        if (!linkedInvestor || (args.investorId && args.investorId !== linkedInvestor._id)) {
+            return { active: [], waiting: [], completed: [], blocked: [], failed: [] };
+        }
+        const investorId = linkedInvestor._id;
+        const limit = Math.min(Math.max(args.limit ?? 20, 1), 50);
+        if (!investorId) {
+            return { active: [], waiting: [], completed: [], blocked: [], failed: [] };
+        }
+
+        const runs = await ctx.db
+            .query("agentRuns")
+            .withIndex("by_investorId", (q) => q.eq("investorId", investorId!))
+            .order("desc")
+            .take(80);
+
+        const active = [];
+        const waiting = [];
+        const completed = [];
+        const blocked = [];
+        const failed = [];
+
+        for (const run of runs) {
+            const venture = await ctx.db.get(run.ventureId);
+            const item = {
+                id: run._id,
+                commitmentId: run.commitmentId,
+                ventureName: venture?.name ?? "Venture",
+                status: run.status,
+                trigger: run.trigger,
+                subject: run.subject,
+                error: run.error ?? null,
+                updatedAt: run.updatedAt,
+            };
+            if (run.status === "running") active.push(item);
+            else if (run.status === "waiting_for_response") waiting.push(item);
+            else if (run.status === "proposed") blocked.push(item);
+            else if (run.status === "failed") failed.push(item);
+            else if (run.status === "completed") completed.push(item);
+        }
+
+        return {
+            active: active.slice(0, limit),
+            waiting: waiting.slice(0, limit),
+            completed: completed.slice(0, limit),
+            blocked: blocked.slice(0, limit),
+            failed: failed.slice(0, limit),
+        };
     },
 });
 
@@ -877,6 +1802,7 @@ export const dismissProposal = mutation({
         await assertCanAct(ctx);
         const run = await ctx.db.get(args.runId);
         if (!run || run.status !== "proposed") return { ok: false };
+        await assertInvestorOwnsRun(ctx, run);
         await ctx.db.patch(run._id, { status: "dismissed", updatedAt: Date.now() });
         return { ok: true };
     },

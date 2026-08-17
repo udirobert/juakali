@@ -9,6 +9,18 @@ import { useProductMode } from "@/lib/product-mode";
 import { color, font, motion } from "@/components/jua-kali/theme";
 import { tapHaptic } from "@/components/jua-kali/haptics";
 
+/**
+ * One app-level capability check: does this build require sign-in before
+ * acting (pledge / approve / retry / autonomy)? Every mutation entry point
+ * should gate on this so the UI gives consistent pre-action messaging instead
+ * of failing only after the user presses a button.
+ */
+export function useRequireAuthToAct(): boolean {
+    const softAuth = useQuery(api.softAuth.softAuthConfig);
+    const product = useProductMode();
+    return Boolean(softAuth?.requireAuthToAct) || product.requireAuthToAct;
+}
+
 function firstName(name: string | null | undefined, email: string | null | undefined) {
     const fromName = name?.trim().split(/\s+/)[0];
     if (fromName) return fromName;

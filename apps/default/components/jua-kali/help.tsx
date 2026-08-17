@@ -87,18 +87,18 @@ export const GLOSSARY: GlossaryTerm[] = [
 export const HOW_IT_WORKS_STEPS = [
     {
         n: "1",
-        title: "Open a deal",
-        body: "Pick a venture on My deals — or start a soft pledge if you're empty.",
+        title: "Open Today",
+        body: "See what Jua handled while you were away, and what needs your decision.",
     },
     {
         n: "2",
-        title: "Send a note to Jua",
-        body: "Queue it and approve, or email juakali@agentmail.to. Nothing runs until you approve.",
+        title: "Review or approve",
+        body: "Jua proposes exact steps — reason, evidence, public effects. Approve once or edit first.",
     },
     {
         n: "3",
-        title: "Check public proof",
-        body: "The same pledge, KPI, and digest events appear on the public ledger.",
+        title: "Check Proof",
+        body: "Every consequential outcome lands on a public causal record you can share.",
     },
 ] as const;
 
@@ -251,7 +251,7 @@ export function HowItWorksCard({
                 </View>
             </View>
             <Text style={styles.coachSummary}>
-                Open a deal · Send a note to Jua · Check public proof
+                Open Today · Review or approve · Check Proof
             </Text>
             {open ? (
                 <>
@@ -294,7 +294,7 @@ export function WelcomeBackBanner({
     return (
         <View style={styles.welcome} accessibilityRole="summary">
             <Text style={styles.welcomeLead}>
-                Welcome back — deals are where you act · the ledger is public proof.
+                Welcome back — Today is your briefing · Proof is the public record.
             </Text>
             <View style={styles.welcomeActions}>
                 {onHowItWorks ? (

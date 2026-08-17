@@ -9,7 +9,7 @@ import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
 import { assertCanAct } from "./softAuth";
-import { createAgentRun } from "./agentRuns";
+import { createAgentRun, resumeWaitingRunWithEvidence } from "./agentRuns";
 
 const ventureUpdateTag = v.union(
     v.literal("situation"),
@@ -210,6 +210,25 @@ export const postVentureUpdate = mutation({
                 publicVisible: true,
             });
             return { message: "Posted to the public ledger.", runId: null };
+        }
+
+        // If Jua has an open check-in request waiting on this venture, the
+        // founder's KPI-bearing update answers it — resume that run with the
+        // sourced evidence instead of starting a duplicate.
+        if (args.kpiValue != null) {
+            const resumedRunId = await resumeWaitingRunWithEvidence(ctx, {
+                ventureId: venture._id,
+                metric: null,
+                value: args.kpiValue,
+                note: `${tagLabel} from the founder: ${body}`,
+                submittedByUserId: userId,
+            });
+            if (resumedRunId) {
+                return {
+                    message: "Sent — that answers Jua's check-in request.",
+                    runId: resumedRunId,
+                };
+            }
         }
 
         const run = await createAgentRun(ctx, {

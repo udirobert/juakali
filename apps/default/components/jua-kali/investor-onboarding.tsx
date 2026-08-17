@@ -331,6 +331,7 @@ export function InvestorLanding({
     const seedInvestDemo = useMutation(api.invest.seedInvestDemo);
     const softAuth = useQuery(api.softAuth.softAuthConfig);
     const requireAuth = Boolean(softAuth?.requireAuthToAct);
+    const product = useProductMode();
 
     const [mode, setMode] = useState<"pitch" | "form" | "save">("pitch");
     const [busy, setBusy] = useState(false);
@@ -436,7 +437,7 @@ export function InvestorLanding({
                         style={styles.brandBlock}
                     >
                         <Text style={styles.brand}>JuaKali</Text>
-                        <Text style={styles.eyebrow}>Invest in public</Text>
+                        <Text style={styles.eyebrow}>Keep commitments moving</Text>
                     </Animated.View>
 
                     {requireAuth ? (
@@ -451,15 +452,15 @@ export function InvestorLanding({
                                 entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(90)}
                                 style={[styles.headline, compact && styles.headlineCompact]}
                             >
-                                You’re busy. Your capital shouldn’t be.
+                                Jua follows every venture you back.
                             </Animated.Text>
                             <Animated.Text
                                 entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(140)}
                                 style={styles.subhead}
                             >
-                                Jua, your agent, mentors each venture weekly — tracking KPIs, writing
-                                digests, nudging follow-ups. Every step lands on a public ledger you
-                                can share.
+                                Your agent gets the weekly update and shows you what changed — so you keep
+                                commitments moving without chasing people. Soft pledges and public proof are
+                                how the work stays honest.
                             </Animated.Text>
 
                             <Animated.View
@@ -474,16 +475,35 @@ export function InvestorLanding({
                                 entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(240)}
                                 style={styles.ctaBlock}
                             >
-                                <Button
-                                    label={busy ? "Opening…" : "Watch a deal come alive"}
-                                    onPress={() => void handleExample()}
-                                    disabled={busy}
-                                    icon={<IconArrowRight size={15} color={color.paper} />}
-                                    style={styles.ctaBlockFull}
-                                    accessibilityHint="Loads example deals and opens My deals"
-                                />
-                                <Pressable onPress={() => setMode("form")} accessibilityRole="button">
-                                    <Text style={styles.secondary}>or start your own commitment →</Text>
+                                {product.preset === "demo" ? (
+                                    <Button
+                                        label={busy ? "Opening…" : "See Jua follow a venture"}
+                                        onPress={() => void handleExample()}
+                                        disabled={busy}
+                                        icon={<IconArrowRight size={15} color={color.paper} />}
+                                        style={styles.ctaBlockFull}
+                                        accessibilityHint="Loads example deals and opens Today"
+                                    />
+                                ) : (
+                                    <Button
+                                        label="Start a commitment"
+                                        onPress={() => setMode("form")}
+                                        icon={<IconArrowRight size={15} color={color.paper} />}
+                                        style={styles.ctaBlockFull}
+                                        accessibilityHint="Create your own soft pledge"
+                                    />
+                                )}
+                                <Pressable
+                                    onPress={() =>
+                                        product.preset === "demo" ? setMode("form") : onEnter({})
+                                    }
+                                    accessibilityRole="button"
+                                >
+                                    <Text style={styles.secondary}>
+                                        {product.preset === "demo"
+                                            ? "or start your own commitment →"
+                                            : "Enter Today without a pledge →"}
+                                    </Text>
                                 </Pressable>
                                 <ProofStrip />
                             </Animated.View>
