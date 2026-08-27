@@ -92,7 +92,14 @@ export default function RootLayout() {
                 (deals/[dealId], runs/[runId], approvals/[proposalId]) share the
                 same selected deal, drafts, and active-run state. */}
             <InvestorSessionProvider>
-                <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: color.stone } }} />
+                <Stack
+                    screenOptions={{
+                        headerShown: false,
+                        contentStyle: { backgroundColor: color.stone },
+                        // Native push transition on devices; web stays instant.
+                        animation: Platform.OS === "web" ? "none" : "slide_from_right",
+                    }}
+                />
             </InvestorSessionProvider>
         </ConvexAuthProvider>
     );
