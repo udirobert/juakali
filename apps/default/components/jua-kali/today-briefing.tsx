@@ -18,6 +18,7 @@ import { LivingSun } from "@/components/jua-kali/living-sun";
 import { HowItWorksCard } from "@/components/jua-kali/help";
 import { AuthRequiredGate, useRequireAuthToAct } from "@/components/jua-kali/soft-identity";
 import { TodaySkeleton } from "@/components/jua-kali/loaders/today-skeleton";
+import { TodayDayZero } from "@/components/jua-kali/today-day-zero";
 import { SectionLabel } from "@/components/jua-kali/ui";
 import { useUiMotion } from "@/components/jua-kali/hooks/use-ui-motion";
 import { color, font, layout, type } from "@/components/jua-kali/theme";
@@ -62,11 +63,31 @@ export function TodayBriefing({
     // Every unresolved failure, most recent first — each gets a recovery card.
     const failedRuns = activity?.failed ?? [];
 
+    // Day zero: nothing in flight anywhere. Render the designed first
+    // experience (sun, steps, live ventures, one way in) instead of a sparse
+    // greeting over an empty canvas.
+    const hasActivity = Boolean(
+        activity &&
+            (activity.active.length > 0 ||
+                activity.waiting.length > 0 ||
+                activity.blocked.length > 0)
+    );
+    const dayZero =
+        !decision &&
+        !briefing.publication &&
+        failedRuns.length === 0 &&
+        briefing.completed.length === 0 &&
+        !briefing.nextScheduled &&
+        !hasActivity;
+
     return (
         <ScrollView
             contentContainerStyle={[
                 styles.scroll,
                 { paddingTop: insets.top + (hideBrand ? 8 : 16), paddingHorizontal: padX },
+                // On wide screens the day-zero page sits vertically centered;
+                // flex-start stays for phones so tall content never clips.
+                dayZero && width >= 700 && { flexGrow: 1, justifyContent: "center" },
             ]}
             showsVerticalScrollIndicator={false}
         >
@@ -97,6 +118,13 @@ export function TodayBriefing({
                     </View>
                 )}
 
+                {dayZero ? (
+                    <TodayDayZero
+                        greetingName={briefing.greetingName}
+                        briefingText={briefing.briefingText}
+                    />
+                ) : (
+                    <>
                 <View style={styles.hero}>
                     <LivingSun
                         size={56}
@@ -267,6 +295,8 @@ export function TodayBriefing({
                 >
                     <Text style={styles.dealsCtaText}>Browse deals →</Text>
                 </Pressable>
+                    </>
+                )}
             </Animated.View>
         </ScrollView>
     );
