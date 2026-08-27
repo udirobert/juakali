@@ -2,7 +2,7 @@ import { StyleSheet, View } from "react-native";
 import Animated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Skeleton } from "@/components/jua-kali/ui/skeleton";
+import { Skeleton, SkeletonPulse } from "@/components/jua-kali/ui/skeleton";
 import { color } from "@/components/jua-kali/theme";
 import { useUiMotion } from "@/components/jua-kali/hooks/use-ui-motion";
 
@@ -24,6 +24,7 @@ export function DetailSkeleton({
     const { enter } = useUiMotion();
     const insets = useSafeAreaInsets();
     return (
+        <SkeletonPulse>
         <View
             style={[styles.screen, { paddingTop: header ? 16 : insets.top + 16 }]}
             accessible
@@ -67,6 +68,7 @@ export function DetailSkeleton({
                 </Animated.View>
             </View>
         </View>
+        </SkeletonPulse>
     );
 }
 

@@ -1,7 +1,7 @@
 import { StyleSheet, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Skeleton } from "@/components/jua-kali/ui/skeleton";
+import { Skeleton, SkeletonPulse } from "@/components/jua-kali/ui/skeleton";
 import { color, layout } from "@/components/jua-kali/theme";
 import { useUiMotion } from "@/components/jua-kali/hooks/use-ui-motion";
 import Animated from "react-native-reanimated";
@@ -24,6 +24,7 @@ export function TodaySkeleton() {
     const padX = Math.max(14, Math.min(28, (width - layout.maxWidth) / 2 + 16));
     return (
         // insets.top + 16 is the briefing's own scroll padding (branded header).
+        <SkeletonPulse>
         <View
             style={[styles.screen, { paddingTop: insets.top + 16 }]}
             accessible
@@ -58,6 +59,7 @@ export function TodaySkeleton() {
                 </Animated.View>
             </View>
         </View>
+        </SkeletonPulse>
     );
 }
 

@@ -120,7 +120,10 @@ export const styles = StyleSheet.create({
         borderColor: color.line,
         borderRadius: 6,
         maxWidth: layout.maxWidth,
-        alignSelf: "stretch",
+        // Centered under the same gutter as the page frame — on wide screens a
+        // stretched banner would otherwise hug the left edge of the viewport.
+        width: "100%",
+        alignSelf: "center",
     },
     welcomeLead: {
         flex: 1,

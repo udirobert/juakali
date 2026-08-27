@@ -93,7 +93,7 @@ export function TodayBriefing({
         >
             <Animated.View entering={fade()} style={styles.frame}>
                 {!hideBrand ? (
-                    <View style={styles.brandRow}>
+                    <View style={[styles.brandRow, dayZero && styles.brandRowDayZero]}>
                         <Text style={styles.brand}>JuaKali</Text>
                         <Pressable
                             onPress={() => router.push("/account")}
@@ -105,7 +105,7 @@ export function TodayBriefing({
                         </Pressable>
                     </View>
                 ) : (
-                    <View style={styles.brandRow}>
+                    <View style={[styles.brandRow, dayZero && styles.brandRowDayZero]}>
                         <View />
                         <Pressable
                             onPress={() => router.push("/account")}
@@ -310,6 +310,9 @@ const styles = StyleSheet.create({
         justifyContent: "space-between",
         alignItems: "center",
     },
+    // Day zero is a centered 560px page — keep the brand row on the same
+    // column so JuaKali/Account don't float wide above it.
+    brandRowDayZero: { maxWidth: 560, width: "100%", alignSelf: "center" },
     brand: {
         fontFamily: font.display,
         fontSize: 28,

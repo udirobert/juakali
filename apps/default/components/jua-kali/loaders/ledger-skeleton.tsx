@@ -1,7 +1,7 @@
 import { StyleSheet, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Skeleton } from "@/components/jua-kali/ui/skeleton";
+import { Skeleton, SkeletonPulse } from "@/components/jua-kali/ui/skeleton";
 import { color, layout } from "@/components/jua-kali/theme";
 import { useUiMotion } from "@/components/jua-kali/hooks/use-ui-motion";
 import Animated from "react-native-reanimated";
@@ -24,6 +24,7 @@ export function LedgerSkeleton() {
     const padX = Math.max(14, Math.min(28, (width - layout.maxWidth) / 2 + 16));
     return (
         // insets.top + 8 mirrors the screen's own top inset plus styles.content padding.
+        <SkeletonPulse>
         <View
             style={[styles.screen, { paddingTop: insets.top + 8 }]}
             accessible
@@ -59,6 +60,7 @@ export function LedgerSkeleton() {
                 </Animated.View>
             </View>
         </View>
+        </SkeletonPulse>
     );
 }
 
