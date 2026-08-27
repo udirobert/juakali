@@ -120,7 +120,7 @@ export async function syncInvestorBriefing(ctx: WriteDb, investorId: Id<"investo
     const ventureIds = new Set<string>();
     for (const run of runs) ventureIds.add(String(run.ventureId));
     for (const commitment of commitments) ventureIds.add(String(commitment.ventureId));
-    type VentureSummary = Doc<"investorBriefings">["cockpit"][number]["venture"];
+    type VentureSummary = NonNullable<Doc<"investorBriefings">["cockpit"]>[number]["venture"];
     const ventureSummaryByVenture = new Map<string, VentureSummary>();
     const checkInsByVenture = new Map<string, Doc<"kpiCheckIns">[]>();
     for (const raw of ventureIds) {
@@ -218,7 +218,7 @@ export async function syncInvestorBriefing(ctx: WriteDb, investorId: Id<"investo
 
     // Cockpit projection: per commitment, the venture summary, latest digest,
     // recent check-ins, recent emails, and newest open proposal.
-    type CockpitRow = Doc<"investorBriefings">["cockpit"][number];
+    type CockpitRow = NonNullable<Doc<"investorBriefings">["cockpit"]>[number];
     const cockpit: CockpitRow[] = [];
     for (const commitment of commitments) {
         const venture = ventureSummaryByVenture.get(String(commitment.ventureId));

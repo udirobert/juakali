@@ -604,7 +604,7 @@ export const listVentures = query({
  */
 function commitmentFromProjection(
     row: Doc<"commitments">,
-    proj: Doc<"investorBriefings">["cockpit"][number]
+    proj: NonNullable<Doc<"investorBriefings">["cockpit"]>[number]
 ) {
     return {
         id: row._id,
@@ -894,7 +894,7 @@ export const investorCockpit = query({
             openProposals: number;
         } = { lastWorkedAt: null, runsThisWeek: 0, openProposals: 0 };
 
-        if (briefing) {
+        if (briefing?.cockpit && briefing.presence) {
             const cockpitByCommitment = new Map(
                 briefing.cockpit.map((row) => [String(row.commitmentId), row] as const)
             );

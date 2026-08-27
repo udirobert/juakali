@@ -334,4 +334,34 @@ describe("investor briefing index", () => {
         expect(activity.failed).toHaveLength(1);
         expect(activity.failed[0]!.id).toBe(runId);
     });
+
+    test("pre-cockpit index docs (no cockpit/presence) stay readable", async () => {
+        const t = initTest();
+        const { investorId, asUser } = await createInvestor(t, "legacy@test.com");
+
+        // The doc shape written before the cockpit projection existed: activity
+        // buckets only, no cockpit/presence. Reading it must not throw a schema
+        // validation error — todayBriefing/activityForInvestor don't need those
+        // fields, and investorCockpit degrades to its scan fallback.
+        await t.run(async (ctx) => {
+            await ctx.db.insert("investorBriefings", {
+                investorId,
+                decisions: [],
+                active: [],
+                waiting: [],
+                failed: [],
+                completed: [],
+                movedVentureIds: [],
+                blockedCount: 0,
+                nextScheduled: null,
+                updatedAt: Date.now(),
+            });
+        });
+
+        const briefing = await asUser.query(api.invest.todayBriefing, {});
+        expect(briefing.stats).toEqual({ needsDecision: 0, venturesMoved: 0, blocked: 0 });
+
+        const activity = await asUser.query(api.agentRuns.activityForInvestor, {});
+        expect(activity.active).toEqual([]);
+    });
 });

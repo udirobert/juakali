@@ -209,4 +209,33 @@ describe("investor cockpit index", () => {
         expect(cockpit.agentPresence.runsThisWeek).toBe(0);
         expect(cockpit.agentPresence.openProposals).toBe(0);
     });
+
+    test("a pre-cockpit index doc degrades to the scan path instead of throwing", async () => {
+        const t = initTest();
+        const { investorId, asUser } = await createInvestor(t, "alice@test.com");
+        const { commitmentId } = await createVentureWithCommitment(t, investorId);
+
+        // The doc shape written before the cockpit projection existed: activity
+        // buckets only, no cockpit/presence. Reads must not throw a schema
+        // validation error, and the cockpit must fall back to the legacy scan.
+        await t.run(async (ctx) => {
+            await ctx.db.insert("investorBriefings", {
+                investorId,
+                decisions: [],
+                active: [],
+                waiting: [],
+                failed: [],
+                completed: [],
+                movedVentureIds: [],
+                blockedCount: 0,
+                nextScheduled: null,
+                updatedAt: Date.now(),
+            });
+        });
+
+        const cockpit = await asUser.query(api.invest.investorCockpit, {});
+        expect(cockpit.commitments).toHaveLength(1);
+        expect(cockpit.commitments[0]!.id).toBe(commitmentId);
+        expect(cockpit.agentPresence.runsThisWeek).toBe(0);
+    });
 });

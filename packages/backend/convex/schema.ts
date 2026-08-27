@@ -468,10 +468,19 @@ export default defineSchema({
         /** Count of failed runs (the "blocked" stat). */
         blockedCount: v.number(),
         nextScheduled: v.union(v.object({ label: v.string(), at: v.number() }), v.null()),
-        /** Per-commitment cockpit projection so investorCockpit reads one doc. */
-        cockpit: v.array(cockpitCommitmentValidator),
-        /** Presence stats for the cockpit's agent-presence block. */
-        presence: briefingPresenceValidator,
+        /**
+         * Per-commitment cockpit projection so investorCockpit reads one doc.
+         * OPTIONAL ONLY DURING THE MIGRATION WINDOW: docs written before the
+         * cockpit projection landed (pre-8516382) lack cockpit/presence, and a
+         * required field made every read of those docs throw a schema
+         * validation error. syncInvestorBriefing always writes both fields, and
+         * migrations:backfillInvestorBriefings repairs existing docs — once it
+         * completes for every investor, narrow these back to required and drop
+         * the scan fallback in investorCockpit.
+         */
+        cockpit: v.optional(v.array(cockpitCommitmentValidator)),
+        /** Presence stats for the cockpit's agent-presence block. See cockpit. */
+        presence: v.optional(briefingPresenceValidator),
         updatedAt: v.number(),
     }).index("by_investorId", ["investorId"]),
 
