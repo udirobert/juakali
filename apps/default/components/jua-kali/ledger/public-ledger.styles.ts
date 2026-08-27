@@ -56,7 +56,7 @@ export const styles = StyleSheet.create({
         paddingVertical: 6,
         borderRadius: 4,
         borderWidth: 1,
-        borderColor: "rgba(166,124,45,0.35)",
+        borderColor: color.brassBorder,
         backgroundColor: color.brassSoft,
     },
     shareLink: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.brassDeep },
@@ -104,7 +104,7 @@ export const styles = StyleSheet.create({
         borderRadius: 4,
         backgroundColor: color.brassSoft,
         borderWidth: 1,
-        borderColor: "rgba(166,124,45,0.25)",
+        borderColor: color.brassBorder,
     },
     evidenceChipText: {
         fontFamily: font.bodyBold,

@@ -34,7 +34,7 @@ export default function RunScreen() {
     const [submitError, setSubmitError] = useState<string | null>(null);
 
     if (run === undefined) {
-        return <DetailSkeleton />;
+        return <DetailSkeleton accessibilityLabel="Loading the run" />;
     }
     if (!run) {
         return (

@@ -14,11 +14,22 @@ import { useUiMotion } from "@/components/jua-kali/hooks/use-ui-motion";
  * spinner. `header` opts out of the top inset for screens whose chrome is the
  * Stack header (approvals).
  */
-export function DetailSkeleton({ header = false }: { header?: boolean }) {
+export function DetailSkeleton({
+    header = false,
+    accessibilityLabel = "Loading details",
+}: {
+    header?: boolean;
+    accessibilityLabel?: string;
+}) {
     const { enter } = useUiMotion();
     const insets = useSafeAreaInsets();
     return (
-        <View style={[styles.screen, { paddingTop: header ? 16 : insets.top + 16 }]}>
+        <View
+            style={[styles.screen, { paddingTop: header ? 16 : insets.top + 16 }]}
+            accessible
+            accessibilityRole="progressbar"
+            accessibilityLabel={accessibilityLabel}
+        >
             <View style={styles.frame}>
                 <Animated.View entering={enter(0)}>
                     <Skeleton.Text width={52} height={14} />
