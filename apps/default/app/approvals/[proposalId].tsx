@@ -22,7 +22,15 @@ export default function ApprovalScreen() {
     const router = useRouter();
 
     if (decision === undefined) {
-        return <DetailSkeleton header />;
+        // Declare the header during boot too — without it the root Stack's
+        // headerShown: false default applies and the skeleton paints under the
+        // status bar, then jumps down when the header appears on load.
+        return (
+            <>
+                <Stack.Screen options={{ headerShown: true, title: "Approval" }} />
+                <DetailSkeleton header />
+            </>
+        );
     }
     if (!decision) {
         return (
