@@ -2,9 +2,11 @@
 
 Busy investors make soft **revenue-share** microcommitments into Kenya informal-sector (“Jua Kali”) apprentice ventures. An AI agent mentors the investee, logs hard KPIs, and publishes a transparent public ledger — Gemini on Google Cloud.
 
-Built for the [Gemini X Prize](https://www.geminixprize.com/). Voice/SMS/USSD matching remains Lab scaffolding from the earlier Rapid Agent Hackathon prototype.
+Built for the [Gemini X Prize](https://www.geminixprize.com/). See [docs/xprize-submission.md](docs/xprize-submission.md) for the submission-facing summary and [docs/ops.md](docs/ops.md) for the internal ops/cleanup checklist. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains the loop, what is AI and what isn't.
 
-> Demo only: soft pledges — not securities, escrow, or live payments. Agent inbox inbound (`juakali@agentmail.to`) is live.
+Voice/SMS/USSD matching remains Lab scaffolding from the earlier Rapid Agent Hackathon prototype.
+
+> Demo only: soft pledges — not securities, escrow, or live payments. Agent inbox inbound (`juakali@agentmail.to`) is live. The Gemini agent is publicly deployed to Google Cloud Run (see submission summary for URL + model).
 
 ## How it works
 
