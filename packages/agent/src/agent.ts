@@ -262,7 +262,7 @@ async function executeToolCall(name: string, args: Record<string, unknown>): Pro
 
 export async function runAgent(userMessage: string): Promise<string> {
     const model = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash",
+        model: "gemini-3.6-flash",
         systemInstruction: SYSTEM_PROMPT,
         tools: [{ functionDeclarations: toolDeclarations }],
     });
@@ -297,7 +297,7 @@ export async function runAgent(userMessage: string): Promise<string> {
                     parts: candidate.content?.parts ?? [],
                 },
                 {
-                    role: "function",
+                    role: "user",
                     parts: toolCalls.map((tc) => ({
                         functionResponse: {
                             name: tc.name,

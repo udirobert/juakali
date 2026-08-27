@@ -2,6 +2,7 @@ import express from "express";
 import { voiceRouter } from "./routes/voice.js";
 import { smsRouter } from "./routes/sms.js";
 import { ussdRouter } from "./routes/ussd.js";
+import { chatRouter } from "./routes/chat.js";
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
@@ -14,6 +15,7 @@ app.get("/health", (_req, res) => {
 app.use("/webhooks/voice", voiceRouter);
 app.use("/webhooks/sms", smsRouter);
 app.use("/webhooks/ussd", ussdRouter);
+app.use("/chat", chatRouter);
 
 const port = Number(process.env.PORT) || 8080;
 app.listen(port, () => {
