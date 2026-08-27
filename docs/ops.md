@@ -60,6 +60,39 @@ gcloud run deploy juakali-agent \
   --project=cognivern
 ```
 
+## Convex backend deploy
+
+```bash
+cd packages/backend
+npm run deploy          # convex deploy --env-file ../../.env
+```
+
+- Deploys to prod (`zealous-scorpion-285`, selected via `CONVEX_DEPLOYMENT` in `.env`).
+- **Auth-config env trap (cost us Aug 17–27):** `auth.config.ts` must NOT import
+  the shared `env` object. Convex's deploy-time check evaluates the auth
+  config's whole dependency graph against the deployment's env vars and rejects
+  the push (`AuthConfigMissingEnvironmentVariable`) if any declared variable is
+  unset — including optional integrations we deliberately leave unset (Resend,
+  Twilio, Africa's Talking, Gemini, RevenueCat). `CONVEX_SITE_URL` is
+  auto-injected, so the auth config reads it from `process.env` directly
+  (fixed in `d8f3b6b`; do not regress this).
+- Do NOT "fix" that check by setting placeholder values on the deployment:
+  e.g. a fake `AUTH_RESEND_KEY` would flip soft-identity email from inbox-peek
+  mode to live Resend sends.
+
+### 2026-08-27 catch-up deploy (incident)
+
+Prod was running a bundle predating `6ef792c` — the app queried functions the
+backend didn't have (`invest:todayBriefing` → "Could not find public function").
+Every deploy since Aug 17 had been blocked by the auth-config trap above.
+
+- Deployed `d8f3b6b` (all pending backend work; 6 indexes backfilled by Convex).
+- Ran all three migrations: `backfillInvestorBriefings` (2 investors),
+  `backfillLedgerEventVentureMeta` (10 events), `backfillVentureBrowse`.
+- Schema is currently WIDENED: `investorBriefings.cockpit`/`presence` are
+  `v.optional` with a scan fallback in `investorCockpit` (defense against
+  deploy skew; `ad3294a`). See the parking lot for the narrow step.
+
 ## Local secrets (kept off-disk)
 
 - We never write `GOOGLE_API_KEY` or `AGENTMAIL_*` values to files. Shell history: clear it after the deploy run.
@@ -103,6 +136,11 @@ If you're unsure whether the deadline has fully closed, **don't delete** — jud
 
 ## Things to remember to do (parking lot)
 
+- Narrow `investorBriefings.cockpit`/`presence` back to required and drop the
+  `investorCockpit` scan fallback — safe once we're confident every index doc
+  carries the projection (all docs written since 2026-08-27 do).
+- Rotate `AGENTMAIL_API_KEY` and `AGENTMAIL_WEBHOOK_SECRET` — both values were
+  printed into a terminal session during the 2026-08-27 incident debugging.
 - Decide whether to flip `GOOGLE_API_KEY` from AI Studio free tier to a paid key before next real users land. Current burn: probably tolerant for prototype; not for production traffic.
 - After the X Prize window, decide whether `cognivern` is still the right home for the Cloud Run service. It is currently the active GCP project, but the Gemini API key lives in a separate project (`AI Studio`).
 - Re-verify the bearer-token rate-limiter before opening `/chat` to third parties. Right now there is rate-limit work inside Convex for the investment mutations, but the agent endpoint itself is token-gated only.
