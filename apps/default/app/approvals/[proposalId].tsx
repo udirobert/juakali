@@ -1,11 +1,12 @@
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useQuery } from "convex/react";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Approval, PublicationApproval, type ActionPlanView } from "@/components/jua-kali/approval";
 import { AuthRequiredGate, useRequireAuthToAct } from "@/components/jua-kali/soft-identity";
+import { DetailSkeleton } from "@/components/jua-kali/loaders/detail-skeleton";
 import { color, type } from "@/components/jua-kali/theme";
 
 export default function ApprovalScreen() {
@@ -21,11 +22,7 @@ export default function ApprovalScreen() {
     const router = useRouter();
 
     if (decision === undefined) {
-        return (
-            <View style={styles.boot}>
-                <ActivityIndicator color={color.brass} />
-            </View>
-        );
+        return <DetailSkeleton header />;
     }
     if (!decision) {
         return (

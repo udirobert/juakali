@@ -13,6 +13,8 @@ import Animated from "react-native-reanimated";
  *
  * The chrome (safe-area inset, responsive gutter) is derived exactly as
  * `TodayBriefing` derives it, so the skeleton → briefing swap paints in place.
+ * Block heights track the briefing's real type line-heights (brand 28 ⇢ 30,
+ * greeting 32, briefing copy 26, section body 22) so the swap doesn't jump.
  */
 export function TodaySkeleton() {
     const { enter } = useUiMotion();
@@ -25,14 +27,14 @@ export function TodaySkeleton() {
         <View style={[styles.screen, { paddingTop: insets.top + 16 }]}>
             <View style={[styles.frame, { paddingHorizontal: padX }]}>
                 <Animated.View entering={enter(0)}>
-                    <Skeleton.Text width={120} height={16} />
+                    <Skeleton.Text width={140} height={30} />
                 </Animated.View>
 
                 <Animated.View entering={enter(1)} style={styles.hero}>
                     <Skeleton circle height={56} width={56} />
                     <View style={styles.heroCopy}>
-                        <Skeleton.Text width={"62%"} height={20} />
-                        <Skeleton.Stack lines={2} gap={6} />
+                        <Skeleton.Text width={"62%"} height={32} />
+                        <Skeleton.Stack lines={2} gap={6} lineHeight={26} />
                     </View>
                 </Animated.View>
 
@@ -47,7 +49,7 @@ export function TodaySkeleton() {
                 </Animated.View>
 
                 <Animated.View entering={enter(4)}>
-                    <Skeleton.Stack labelWidth={120} lines={3} gap={10} />
+                    <Skeleton.Stack labelWidth={120} lines={3} gap={10} lineHeight={22} />
                 </Animated.View>
             </View>
         </View>

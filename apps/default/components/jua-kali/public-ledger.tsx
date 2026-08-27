@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
     Platform,
     Pressable,
@@ -162,6 +162,15 @@ export function PublicLedger({
     // Headline figures arrive rather than jump; 0 while the query is in flight.
     const pledged = useCountUp(data?.totals.pledgedKes ?? 0);
 
+    // Stagger the feed only on the first boot. Filtering/swapping the venture
+    // re-renders rows, but they shouldn't re-enter every time — the group is
+    // present the moment the page boots, so we gate on "first content present".
+    const booted = useRef(false);
+    const firstPresent = data !== undefined && !booted.current;
+    useEffect(() => {
+        if (data !== undefined) booted.current = true;
+    }, [data !== undefined]);
+
     // Keep the URL shareable as the filter changes.
     useEffect(() => {
         writeLedgerSlug(slug);
@@ -305,9 +314,9 @@ export function PublicLedger({
                             <Animated.View
                                 key={event.id}
                                 entering={
-                                    reduceMotion
-                                        ? undefined
-                                        : FadeIn.duration(motion.base).delay(Math.min(idx, 7) * motion.stagger)
+                                    firstPresent && !reduceMotion
+                                        ? FadeIn.duration(motion.base).delay(Math.min(idx, 7) * motion.stagger)
+                                        : undefined
                                 }
                             >
                                 <LedgerRow
