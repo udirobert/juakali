@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as actionPlan from "../actionPlan.js";
 import type * as agentMail from "../agentMail.js";
 import type * as agentMailPublic from "../agentMailPublic.js";
 import type * as agentMailStore from "../agentMailStore.js";
@@ -20,6 +21,7 @@ import type * as functions from "../functions.js";
 import type * as http from "../http.js";
 import type * as httpShareLedger from "../httpShareLedger.js";
 import type * as invest from "../invest.js";
+import type * as investorBriefing from "../investorBriefing.js";
 import type * as juaKaliHelpers from "../juaKaliHelpers.js";
 import type * as migrations from "../migrations.js";
 import type * as rateLimit from "../rateLimit.js";
@@ -39,6 +41,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  actionPlan: typeof actionPlan;
   agentMail: typeof agentMail;
   agentMailPublic: typeof agentMailPublic;
   agentMailStore: typeof agentMailStore;
@@ -51,6 +54,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   httpShareLedger: typeof httpShareLedger;
   invest: typeof invest;
+  investorBriefing: typeof investorBriefing;
   juaKaliHelpers: typeof juaKaliHelpers;
   migrations: typeof migrations;
   rateLimit: typeof rateLimit;

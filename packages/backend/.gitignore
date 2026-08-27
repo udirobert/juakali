@@ -1,6 +1,8 @@
 # Convex
 .convex/
-convex/_generated/
+# NOTE: convex/_generated/ is deliberately NOT ignored — the codegen files are
+# committed (see root .gitignore) so fresh clones typecheck without running
+# convex dev first. Ignoring them breaks any commit that touches codegen.
 
 # Build
 dist/
