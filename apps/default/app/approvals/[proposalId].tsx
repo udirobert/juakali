@@ -28,7 +28,7 @@ export default function ApprovalScreen() {
         return (
             <>
                 <Stack.Screen options={{ headerShown: true, title: "Approval" }} />
-                <DetailSkeleton header />
+                <DetailSkeleton header accessibilityLabel="Loading the approval" />
             </>
         );
     }

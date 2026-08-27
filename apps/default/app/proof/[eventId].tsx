@@ -35,7 +35,7 @@ export default function ProofEventScreen() {
     const router = useRouter();
 
     if (event === undefined) {
-        return <DetailSkeleton />;
+        return <DetailSkeleton accessibilityLabel="Loading the proof event" />;
     }
     if (!event) {
         return (

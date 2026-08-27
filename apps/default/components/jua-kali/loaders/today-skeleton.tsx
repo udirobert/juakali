@@ -24,7 +24,12 @@ export function TodaySkeleton() {
     const padX = Math.max(14, Math.min(28, (width - layout.maxWidth) / 2 + 16));
     return (
         // insets.top + 16 is the briefing's own scroll padding (branded header).
-        <View style={[styles.screen, { paddingTop: insets.top + 16 }]}>
+        <View
+            style={[styles.screen, { paddingTop: insets.top + 16 }]}
+            accessible
+            accessibilityRole="progressbar"
+            accessibilityLabel="Loading the Today briefing"
+        >
             <View style={[styles.frame, { paddingHorizontal: padX }]}>
                 <Animated.View entering={enter(0)}>
                     <Skeleton.Text width={140} height={30} />

@@ -171,7 +171,7 @@ export const styles = StyleSheet.create({
         borderRadius: 4,
         backgroundColor: color.brassSoft,
         borderWidth: 1,
-        borderColor: "rgba(166,124,45,0.25)",
+        borderColor: color.brassBorder,
     },
     presenceBadgeText: {
         fontFamily: font.bodyBold,
@@ -235,7 +235,7 @@ export const styles = StyleSheet.create({
         borderRadius: 4,
         backgroundColor: color.brassSoft,
         borderWidth: 1,
-        borderColor: "rgba(166,124,45,0.25)",
+        borderColor: color.brassBorder,
     },
     insightLabel: {
         fontFamily: font.bodyBold,
@@ -348,7 +348,7 @@ export const styles = StyleSheet.create({
         borderRadius: 4,
         backgroundColor: color.brassSoft,
         borderWidth: 1,
-        borderColor: "rgba(166,124,45,0.25)",
+        borderColor: color.brassBorder,
     },
     evidenceChipText: {
         fontFamily: font.bodyBold,

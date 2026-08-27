@@ -24,7 +24,12 @@ export function LedgerSkeleton() {
     const padX = Math.max(14, Math.min(28, (width - layout.maxWidth) / 2 + 16));
     return (
         // insets.top + 8 mirrors the screen's own top inset plus styles.content padding.
-        <View style={[styles.screen, { paddingTop: insets.top + 8 }]}>
+        <View
+            style={[styles.screen, { paddingTop: insets.top + 8 }]}
+            accessible
+            accessibilityRole="progressbar"
+            accessibilityLabel="Loading the public ledger"
+        >
             <View style={[styles.frame, { paddingHorizontal: padX }]}>
                 <Animated.View entering={enter(0)} style={styles.hero}>
                     <Skeleton circle height={28} width={28} />
@@ -79,8 +84,8 @@ const styles = StyleSheet.create({
         paddingHorizontal: 14,
     },
     row: {
-        gap: 8,
-        paddingVertical: 14,
+        gap: 4,
+        paddingVertical: 12,
         borderTopWidth: 1,
         borderTopColor: color.line,
     },

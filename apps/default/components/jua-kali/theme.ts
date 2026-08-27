@@ -12,6 +12,8 @@ export const color = {
     brassLight: "#C4A15A",
     brassDeep: "#7C5E22",
     brassSoft: "rgba(166, 124, 45, 0.14)",
+    /** The one brass-family border tone (chips, pills, card scaffolds). */
+    brassBorder: "rgba(166, 124, 45, 0.25)",
     /** Meta text — darkened to ~5.5:1 on paper for WCAG AA at small sizes. */
     mist: "#5E6660",
     line: "rgba(20, 24, 22, 0.1)",
