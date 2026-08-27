@@ -1,4 +1,5 @@
-import { StyleSheet, View } from "react-native";
+import { StyleSheet, View, useWindowDimensions } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Skeleton } from "@/components/jua-kali/ui/skeleton";
 import { color, layout } from "@/components/jua-kali/theme";
@@ -9,12 +10,20 @@ import Animated from "react-native-reanimated";
  * Branded loading preview for the Today briefing — mirrors the hero (brand row,
  * living sun + greeting) and the section skeletons beneath, so the first frame
  * already locates where each thing will land. No bare spinner.
+ *
+ * The chrome (safe-area inset, responsive gutter) is derived exactly as
+ * `TodayBriefing` derives it, so the skeleton → briefing swap paints in place.
  */
 export function TodaySkeleton() {
     const { enter } = useUiMotion();
+    const insets = useSafeAreaInsets();
+    const { width } = useWindowDimensions();
+    // Same clamp TodayBriefing uses for its content gutter.
+    const padX = Math.max(14, Math.min(28, (width - layout.maxWidth) / 2 + 16));
     return (
-        <View style={styles.screen}>
-            <View style={styles.frame}>
+        // insets.top + 16 is the briefing's own scroll padding (branded header).
+        <View style={[styles.screen, { paddingTop: insets.top + 16 }]}>
+            <View style={[styles.frame, { paddingHorizontal: padX }]}>
                 <Animated.View entering={enter(0)}>
                     <Skeleton.Text width={120} height={16} />
                 </Animated.View>
@@ -50,13 +59,11 @@ const styles = StyleSheet.create({
         flex: 1,
         alignItems: "center",
         backgroundColor: color.stone,
-        paddingTop: 24,
     },
     frame: {
         maxWidth: layout.maxWidth,
         width: "100%",
         alignSelf: "center",
-        paddingHorizontal: 16,
         gap: 20,
     },
     hero: { flexDirection: "row", gap: 14, alignItems: "flex-start" },

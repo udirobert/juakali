@@ -1,4 +1,5 @@
-import { StyleSheet, View } from "react-native";
+import { StyleSheet, View, useWindowDimensions } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Skeleton } from "@/components/jua-kali/ui/skeleton";
 import { color, layout } from "@/components/jua-kali/theme";
@@ -9,12 +10,20 @@ import Animated from "react-native-reanimated";
  * Branded loading preview for the public ledger — mirrors the hero (mark, title,
  * total, stat row) then a stack of feed rows, so the timeline's shape is in place
  * before the events stream in. No bare spinner.
+ *
+ * The chrome (status-bar inset, responsive gutter) is derived exactly as
+ * `PublicLedger` derives it, so the skeleton → ledger swap paints in place.
  */
 export function LedgerSkeleton() {
     const { enter } = useUiMotion();
+    const insets = useSafeAreaInsets();
+    const { width } = useWindowDimensions();
+    // Same clamp PublicLedger uses for its content gutter.
+    const padX = Math.max(14, Math.min(28, (width - layout.maxWidth) / 2 + 16));
     return (
-        <View style={styles.screen}>
-            <View style={styles.frame}>
+        // insets.top + 8 mirrors the screen's own top inset plus styles.content padding.
+        <View style={[styles.screen, { paddingTop: insets.top + 8 }]}>
+            <View style={[styles.frame, { paddingHorizontal: padX }]}>
                 <Animated.View entering={enter(0)} style={styles.hero}>
                     <Skeleton circle height={28} width={28} />
                     <Skeleton.Text width={168} height={16} />
@@ -56,13 +65,11 @@ const styles = StyleSheet.create({
         flex: 1,
         alignItems: "center",
         backgroundColor: color.stone,
-        paddingTop: 24,
     },
     frame: {
         maxWidth: layout.maxWidth,
         width: "100%",
         alignSelf: "center",
-        paddingHorizontal: 16,
         gap: 16,
     },
     hero: { alignItems: "center", gap: 10, paddingBottom: 2 },

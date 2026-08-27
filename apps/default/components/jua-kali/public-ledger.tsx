@@ -182,8 +182,12 @@ export function PublicLedger({
             ? `${selectedVenture.name} — public ledger`
             : "JuaKali — public ledger";
         try {
-            await Share.share({ message: `${title}\n${url}`, url, title });
-            successHaptic();
+            const result = await Share.share({ message: `${title}\n${url}`, url, title });
+            // The promise resolves on dismissal too — only celebrate a share that
+            // actually left the app. (Android always resolves "sharedAction".)
+            if (result.action !== Share.dismissedAction) {
+                successHaptic();
+            }
         } catch {
             // user dismissed — nothing to do
         }
