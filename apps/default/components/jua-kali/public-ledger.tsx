@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-    ActivityIndicator,
     Platform,
     Pressable,
     ScrollView,
@@ -24,6 +23,7 @@ import { SITE_URL } from "@/lib/site";
 import { styles } from "@/components/jua-kali/ledger/public-ledger.styles";
 import { TermHint } from "@/components/jua-kali/help";
 import { SunMark } from "@/components/jua-kali/sun-mark";
+import { LedgerSkeleton } from "@/components/jua-kali/loaders/ledger-skeleton";
 import {
     IconBolt,
     IconCapital,
@@ -33,8 +33,10 @@ import {
     IconSparkle,
     IconTrend,
 } from "@/components/jua-kali/icons";
-import { Chip } from "@/components/jua-kali/ui";
+import { Chip, PressableScale } from "@/components/jua-kali/ui";
 import { useCountUp } from "@/components/jua-kali/hooks/use-count-up";
+import { useUiMotion } from "@/components/jua-kali/hooks/use-ui-motion";
+import { successHaptic } from "@/components/jua-kali/haptics";
 import { color, layout, motion } from "@/components/jua-kali/theme";
 
 function formatKes(value: number) {
@@ -156,6 +158,7 @@ export function PublicLedger({
     const { width } = useWindowDimensions();
     const compact = width < 440;
     const padX = Math.max(14, Math.min(28, (width - layout.maxWidth) / 2 + 16));
+    const { reduceMotion } = useUiMotion();
     // Headline figures arrive rather than jump; 0 while the query is in flight.
     const pledged = useCountUp(data?.totals.pledgedKes ?? 0);
 
@@ -179,18 +182,19 @@ export function PublicLedger({
             ? `${selectedVenture.name} — public ledger`
             : "JuaKali — public ledger";
         try {
-            await Share.share({ message: `${title}\n${url}`, url, title });
+            const result = await Share.share({ message: `${title}\n${url}`, url, title });
+            // The promise resolves on dismissal too — only celebrate a share that
+            // actually left the app. (Android always resolves "sharedAction".)
+            if (result.action !== Share.dismissedAction) {
+                successHaptic();
+            }
         } catch {
             // user dismissed — nothing to do
         }
     }
 
     if (data === undefined) {
-        return (
-            <View style={styles.loadingScreen}>
-                <ActivityIndicator color={color.brass} />
-            </View>
-        );
+        return <LedgerSkeleton />;
     }
 
     return (
@@ -252,12 +256,18 @@ export function PublicLedger({
                             <Text style={styles.stat}>{data.totals.digests} digests</Text>
                         </Pressable>
                         <Text style={styles.statDot}>·</Text>
-                        <Pressable onPress={() => void handleShare()} hitSlop={6} accessibilityRole="button">
+                        <PressableScale
+                            onPress={() => void handleShare()}
+                            hitSlop={6}
+                            style={styles.sharePill}
+                            accessibilityLabel="Share this proof ledger"
+                            accessibilityHint="Opens the native share sheet with a link to this ledger"
+                        >
                             <View style={styles.shareRowInner}>
                                 <IconShare size={13} color={color.brassDeep} />
-                                <Text style={styles.shareLink}>Share</Text>
+                                <Text style={styles.shareLink}>Share proof</Text>
                             </View>
-                        </Pressable>
+                        </PressableScale>
                     </View>
                 </View>
 
@@ -291,24 +301,32 @@ export function PublicLedger({
                                 : "No events yet — open Today, approve Jua's work, and proof appears here."}
                         </Text>
                     ) : (
-                        data.events.map((event: LedgerEventRow) => (
-                            <LedgerRow
+                        data.events.map((event: LedgerEventRow, idx: number) => (
+                            <Animated.View
                                 key={event.id}
-                                event={event}
-                                compact={compact}
-                                expanded={expandedId === event.id}
-                                onToggle={() => {
-                                    if (onOpenEvent) {
-                                        onOpenEvent(event.id);
-                                        return;
-                                    }
-                                    setExpandedId((prev) => (prev === event.id ? null : event.id));
-                                }}
-                                onFilterVenture={() =>
-                                    toggleFilter(slug === event.ventureSlug ? null : event.ventureSlug)
+                                entering={
+                                    reduceMotion
+                                        ? undefined
+                                        : FadeIn.duration(motion.base).delay(Math.min(idx, 7) * motion.stagger)
                                 }
-                                onOpenGlossary={onOpenGlossary}
-                            />
+                            >
+                                <LedgerRow
+                                    event={event}
+                                    compact={compact}
+                                    expanded={expandedId === event.id}
+                                    onToggle={() => {
+                                        if (onOpenEvent) {
+                                            onOpenEvent(event.id);
+                                            return;
+                                        }
+                                        setExpandedId((prev) => (prev === event.id ? null : event.id));
+                                    }}
+                                    onFilterVenture={() =>
+                                        toggleFilter(slug === event.ventureSlug ? null : event.ventureSlug)
+                                    }
+                                    onOpenGlossary={onOpenGlossary}
+                                />
+                            </Animated.View>
                         ))
                     )}
                 </View>

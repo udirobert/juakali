@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import {
-    ActivityIndicator,
     Pressable,
     ScrollView,
     StyleSheet,
@@ -8,6 +7,7 @@ import {
     useWindowDimensions,
     View,
 } from "react-native";
+import Animated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "convex/react";
 import { useRouter } from "expo-router";
@@ -17,7 +17,9 @@ import { Approval, PublicationApproval, type ActionPlanView } from "@/components
 import { LivingSun } from "@/components/jua-kali/living-sun";
 import { HowItWorksCard } from "@/components/jua-kali/help";
 import { AuthRequiredGate, useRequireAuthToAct } from "@/components/jua-kali/soft-identity";
+import { TodaySkeleton } from "@/components/jua-kali/loaders/today-skeleton";
 import { SectionLabel } from "@/components/jua-kali/ui";
+import { useUiMotion } from "@/components/jua-kali/hooks/use-ui-motion";
 import { color, font, layout, type } from "@/components/jua-kali/theme";
 import { relativeTime } from "@/components/jua-kali/cockpit/format";
 
@@ -49,12 +51,11 @@ export function TodayBriefing({
         return "observing" as const;
     }, [briefing, activity]);
 
-    if (briefing === undefined) {
-        return (
-            <View style={styles.boot}>
-                <ActivityIndicator color={color.brass} />
-            </View>
-        );
+    // Ease the skeleton → briefing swap — one fade, no layout shift.
+    const { fade } = useUiMotion();
+
+    if (briefing === undefined || !activity) {
+        return <TodaySkeleton />;
     }
 
     const decision = briefing.decision as ActionPlanView | null;
@@ -69,7 +70,7 @@ export function TodayBriefing({
             ]}
             showsVerticalScrollIndicator={false}
         >
-            <View style={styles.frame}>
+            <Animated.View entering={fade()} style={styles.frame}>
                 {!hideBrand ? (
                     <View style={styles.brandRow}>
                         <Text style={styles.brand}>JuaKali</Text>
@@ -266,13 +267,12 @@ export function TodayBriefing({
                 >
                     <Text style={styles.dealsCtaText}>Browse deals →</Text>
                 </Pressable>
-            </View>
+            </Animated.View>
         </ScrollView>
     );
 }
 
 const styles = StyleSheet.create({
-    boot: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: color.stone },
     scroll: { paddingBottom: 48 },
     frame: { maxWidth: layout.maxWidth, width: "100%", alignSelf: "center", gap: 20 },
     brandRow: {

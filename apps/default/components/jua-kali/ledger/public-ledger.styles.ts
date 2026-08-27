@@ -4,12 +4,6 @@ import { color, font, tabularNums } from "@/components/jua-kali/theme";
 
 export const styles = StyleSheet.create({
     screen: { flex: 1, backgroundColor: color.stone },
-    loadingScreen: {
-        flex: 1,
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: color.stone,
-    },
     content: { paddingTop: 8, gap: 16 },
     hero: { alignItems: "center", gap: 8 },
     titleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
@@ -55,6 +49,16 @@ export const styles = StyleSheet.create({
     stat: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.ink, fontVariant: tabularNums },
     statDot: { color: color.mist },
     shareRowInner: { flexDirection: "row", alignItems: "center", gap: 5 },
+    sharePill: {
+        flexDirection: "row",
+        alignItems: "center",
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 4,
+        borderWidth: 1,
+        borderColor: "rgba(166,124,45,0.35)",
+        backgroundColor: color.brassSoft,
+    },
     shareLink: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.brassDeep },
     filterRow: { gap: 6, paddingHorizontal: 2, paddingVertical: 2 },
     feed: {
