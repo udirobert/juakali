@@ -15,6 +15,7 @@
         "lint": "turbo run lint",
         "typecheck": "turbo run typecheck",
         "test": "turbo run test",
+        "verify:lock": "node scripts/verify-lock-optional-deps.mjs",
         "gitleaks": "gitleaks detect --source . --verbose",
         "prepare": "husky"
     },

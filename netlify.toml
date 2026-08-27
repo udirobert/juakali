@@ -1,10 +1,11 @@
 # Netlify — Expo web (SPA) for investor review
 # Docs: https://docs.expo.dev/guides/publishing-websites/#netlify
 # Use npm here so builds don't depend on mise downloading Bun (GitHub release 503s).
-
+# verify:lock fails fast if the lockfile was regenerated on a machine whose npm
+# pruned cross-platform optional binaries (the lightningcss linux CI incident).
 [build]
   base = "/"
-  command = "npm install --ignore-scripts && npm run export:web -w @bloom/mobile"
+  command = "npm run verify:lock && npm install --ignore-scripts && npm run export:web -w @bloom/mobile"
   publish = "apps/default/dist"
 
 [build.environment]
