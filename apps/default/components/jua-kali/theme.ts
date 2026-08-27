@@ -52,6 +52,12 @@ export const motion = {
     stagger: 60,
     /** Tactile press scale — 0.96; never below 0.95. */
     pressScale: 0.96,
+    /**
+     * The skeleton breathing loop — an idle, ambient placeholder cue, not a
+     * response to a user action. Slower on purpose so it reads as "waiting for
+     * live data", distinct from the sub-300ms interaction language above.
+     */
+    skeletonPulse: 900,
 };
 
 /**

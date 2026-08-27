@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMutation, useQuery } from "convex/react";
 
@@ -8,6 +8,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Approval, PublicationApproval } from "@/components/jua-kali/approval";
 import { LivingSun } from "@/components/jua-kali/living-sun";
+import { DetailSkeleton } from "@/components/jua-kali/loaders/detail-skeleton";
 import { AuthRequiredGate, useRequireAuthToAct } from "@/components/jua-kali/soft-identity";
 import { Button, Input, SectionLabel } from "@/components/jua-kali/ui";
 import { color, type } from "@/components/jua-kali/theme";
@@ -33,11 +34,7 @@ export default function RunScreen() {
     const [submitError, setSubmitError] = useState<string | null>(null);
 
     if (run === undefined) {
-        return (
-            <View style={styles.boot}>
-                <ActivityIndicator color={color.brass} />
-            </View>
-        );
+        return <DetailSkeleton />;
     }
     if (!run) {
         return (

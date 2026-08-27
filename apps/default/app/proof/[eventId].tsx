@@ -1,11 +1,12 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "convex/react";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { LivingSun } from "@/components/jua-kali/living-sun";
+import { DetailSkeleton } from "@/components/jua-kali/loaders/detail-skeleton";
 import { SectionLabel } from "@/components/jua-kali/ui";
 import { color, type } from "@/components/jua-kali/theme";
 
@@ -34,11 +35,7 @@ export default function ProofEventScreen() {
     const router = useRouter();
 
     if (event === undefined) {
-        return (
-            <View style={styles.boot}>
-                <ActivityIndicator color={color.brass} />
-            </View>
-        );
+        return <DetailSkeleton />;
     }
     if (!event) {
         return (

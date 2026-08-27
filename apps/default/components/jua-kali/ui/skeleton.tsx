@@ -9,7 +9,7 @@ import Animated, {
     withTiming,
 } from "react-native-reanimated";
 
-import { color } from "@/components/jua-kali/theme";
+import { color, motion } from "@/components/jua-kali/theme";
 
 /**
  * Skeleton primitives — branded placeholders that preview real layout so the
@@ -68,22 +68,26 @@ export namespace Skeleton {
     /** A labelled column of text lines (mirrors a SectionLabel + body paragraph). */
     export function Stack({
         labelWidth = 84,
+        labelHeight = 9,
         lines = 2,
         lastWidth = "62%",
+        lineHeight = 12,
         gap = 8,
         style,
     }: {
         labelWidth?: number;
+        labelHeight?: number;
         lines?: number;
         lastWidth?: DimensionValue;
+        lineHeight?: number;
         gap?: number;
         style?: StyleProp<ViewStyle>;
     }) {
         return (
             <View style={[{ gap }, style]}>
-                <Text width={labelWidth} height={9} />
+                <Text width={labelWidth} height={labelHeight} />
                 {Array.from({ length: lines }, (_, i) => (
-                    <Text key={i} width={i === lines - 1 ? lastWidth : "100%"} />
+                    <Text key={i} width={i === lines - 1 ? lastWidth : "100%"} height={lineHeight} />
                 ))}
             </View>
         );
@@ -99,7 +103,11 @@ function usePulse() {
             pulse.value = 0.55;
             return;
         }
-        pulse.value = withRepeat(withTiming(1, { duration: 900, easing: Easing.inOut(Easing.ease) }), -1, true);
+        pulse.value = withRepeat(
+            withTiming(1, { duration: motion.skeletonPulse, easing: Easing.inOut(Easing.ease) }),
+            -1,
+            true
+        );
         return () => undefined;
     }, [reduce, pulse]);
     return pulse;
