@@ -79,7 +79,12 @@ export function DealsEmptyDesk({
     return (
         <View style={styles.wrap}>
             <Animated.View entering={enter(heroIndex)} style={styles.hero}>
-                <View style={styles.dawnStage} accessibilityElementsHidden>
+                <View
+                    style={styles.dawnStage}
+                    aria-hidden
+                    accessibilityElementsHidden
+                    importantForAccessibility="no-hide-descendants"
+                >
                     <View style={styles.horizon} />
                     <LivingSun size={88} agentState="observing" />
                 </View>
@@ -230,11 +235,6 @@ function VentureCard({
                     <Text style={styles.ventureName} numberOfLines={1}>
                         {venture.name}
                     </Text>
-                    {venture.status !== "active" ? (
-                        <View style={styles.statusPill}>
-                            <Text style={styles.statusPillText}>{venture.status}</Text>
-                        </View>
-                    ) : null}
                 </View>
                 <Text style={styles.ventureMeta} numberOfLines={1}>
                     {venture.craftText} · {venture.locationText}
@@ -371,22 +371,6 @@ const styles = StyleSheet.create({
         letterSpacing: -0.3,
         color: color.charcoal,
         flex: 1,
-    },
-    statusPill: {
-        paddingHorizontal: 7,
-        paddingVertical: 2,
-        borderRadius: 4,
-        backgroundColor: color.brassSoft,
-        borderWidth: 1,
-        borderColor: color.brassBorder,
-    },
-    statusPillText: {
-        fontFamily: font.bodyBold,
-        fontSize: 9,
-        fontWeight: "700",
-        letterSpacing: 0.6,
-        textTransform: "uppercase",
-        color: color.brassDeep,
     },
     ventureMeta: { fontFamily: font.body, fontSize: 12, lineHeight: 16, color: color.mist },
     ventureSummary: { fontFamily: font.body, fontSize: 13, lineHeight: 19, color: color.ink },
