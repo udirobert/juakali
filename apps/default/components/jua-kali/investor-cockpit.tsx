@@ -11,10 +11,8 @@ import {
     useWindowDimensions,
     View,
 } from "react-native";
-import Svg, { Circle as SvgCircle, Path as SvgPath } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
-    useAnimatedProps,
     useAnimatedStyle,
     useReducedMotion,
     useSharedValue,
@@ -28,6 +26,8 @@ import type { FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import { useProductMode } from "@/lib/product-mode";
 import { daysUntil, formatDueLabel, formatKes, relativeTime } from "@/components/jua-kali/cockpit/format";
+import { DealsEmptyDesk } from "@/components/jua-kali/cockpit/deals-empty-desk";
+import { Sparkline } from "@/components/jua-kali/cockpit/sparkline";
 import { styles } from "@/components/jua-kali/cockpit/investor-cockpit.styles";
 import { SITE_URL } from "@/lib/site";
 import { HowItWorksCard, TermHint } from "@/components/jua-kali/help";
@@ -41,8 +41,6 @@ import { Button, Card, Chip, Input } from "@/components/jua-kali/ui";
 import { ShareWisdomCard, WisdomItemCard } from "@/components/jua-kali/wisdom";
 import { useInvestorSession } from "@/components/jua-kali/investor-session";
 import { color, layout } from "@/components/jua-kali/theme";
-
-const AnimatedPath = Animated.createAnimatedComponent(SvgPath);
 
 type Cockpit = FunctionReturnType<typeof api.invest.investorCockpit>;
 type Commitment = Cockpit["commitments"][number];
@@ -69,74 +67,6 @@ function readDealParams(): { commitmentId?: Id<"commitments">; ventureSlug?: str
         commitmentId: c ? (c as Id<"commitments">) : undefined,
         ventureSlug: v?.trim() || undefined,
     };
-}
-
-/**
- * The KPI line — a real drawn sparkline instead of bars. The line draws
- * itself in when data arrives or changes; the last point lands in brass.
- */
-function Sparkline({ values }: { values: number[] }) {
-    const reduceMotion = useReducedMotion();
-    const [width, setWidth] = useState(0);
-    const height = 34;
-    const pad = 3;
-
-    const recent = values.slice(-14);
-    const max = Math.max(...recent, 1);
-    const min = Math.min(...recent, 0);
-    const range = max - min || 1;
-
-    const points = recent.map((value, index) => ({
-        x: pad + (recent.length === 1 ? 0 : (index / (recent.length - 1)) * (width - pad * 2)),
-        y: pad + (1 - (value - min) / range) * (height - pad * 2),
-    }));
-
-    const pathD = points
-        .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
-        .join(" ");
-    const pathLength = points.reduce(
-        (acc, p, i) => (i === 0 ? 0 : acc + Math.hypot(p.x - points[i - 1]!.x, p.y - points[i - 1]!.y)),
-        0,
-    );
-
-    const dash = useSharedValue(reduceMotion ? 0 : pathLength);
-    useEffect(() => {
-        if (width <= 0) return;
-        if (reduceMotion) {
-            dash.value = 0;
-            return;
-        }
-        dash.value = pathLength;
-        dash.value = withTiming(0, { duration: 480 });
-    }, [pathLength, width, reduceMotion, dash]);
-
-    const animatedProps = useAnimatedProps(() => ({
-        strokeDashoffset: dash.value,
-    }));
-
-    if (recent.length === 0 || width <= 0) {
-        return <View style={styles.sparkTrack} onLayout={(e) => setWidth(e.nativeEvent.layout.width)} />;
-    }
-    const last = points[points.length - 1]!;
-
-    return (
-        <View style={styles.sparkTrack} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
-            <Svg width={width} height={height}>
-                <AnimatedPath
-                    d={pathD}
-                    fill="none"
-                    stroke={color.charcoal}
-                    strokeWidth={1.75}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeDasharray={`${pathLength} ${pathLength}`}
-                    strokeDashoffset={pathLength}
-                    animatedProps={animatedProps}
-                />
-                <SvgCircle cx={last.x} cy={last.y} r={2.6} fill={color.brass} />
-            </Svg>
-        </View>
-    );
 }
 
 function WaitingShimmer({ active }: { active: boolean }) {
@@ -373,6 +303,17 @@ export function InvestorCockpit({
         }
     }
 
+    /** From the empty-desk gallery: pre-select the venture, open the pledge
+     *  form, and scroll it into view so the investor lands on the form. */
+    function handlePledgeVenture(ventureId: Id<"ventures">) {
+        setSelectedVentureId(ventureId);
+        setShowPledge(true);
+        // Bring the pledge form into view on the next paint.
+        requestAnimationFrame(() => {
+            scrollRef.current?.scrollTo({ y: 0, animated: true });
+        });
+    }
+
     function handleQueueEmail() {
         const body = emailDraft.trim();
         if (!body || !selectedCommitment) return;
@@ -568,34 +509,15 @@ export function InvestorCockpit({
                 ) : null}
 
                 {empty ? (
-                    <View style={styles.emptyCard}>
-                        <View style={styles.emptyGlyph}>
-                            <View style={styles.emptyRing} />
-                            <View style={[styles.emptyRing, styles.emptyRingInner]} />
-                        </View>
-                        <Text style={styles.emptyTitle}>Nothing on my desk yet</Text>
-                        <Text style={styles.status}>
-                            {product.preset === "demo"
-                                ? "Load seeded deals so Jua has something to follow — or pledge a venture."
-                                : "Start a soft pledge so Jua has a venture to follow."}
-                        </Text>
-                        <Button
-                            label="New pledge"
-                            onPress={() => setShowPledge(true)}
-                            disabled={data.availableVentures.length === 0}
-                            style={styles.emptyBtn}
-                        />
-                        {product.preset === "demo" ? (
-                            <Button
-                                label={isSeeding ? "Loading…" : "Load seeded deals"}
-                                variant="ghost"
-                                onPress={handleSeed}
-                                disabled={isSeeding}
-                                busy={isSeeding}
-                                style={styles.emptyBtn}
-                            />
-                        ) : null}
-                    </View>
+                    <DealsEmptyDesk
+                        ventures={data.availableVentures}
+                        demo={product.preset === "demo"}
+                        isSeeding={isSeeding}
+                        onSeed={handleSeed}
+                        onPledgeVenture={handlePledgeVenture}
+                        onOpenLedger={onOpenLedger}
+                        onOpenGlossary={onOpenGlossary}
+                    />
                 ) : (
                     <>
                         {!focusSingleDeal ? (

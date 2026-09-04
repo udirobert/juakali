@@ -60,7 +60,6 @@ export const styles = StyleSheet.create({
         color: color.brassDeep,
     },
     heroActions: { flexDirection: "row", gap: 8, justifyContent: "center" },
-    emptyBtn: { width: 260 },
     status: { fontFamily: font.body, fontSize: 12, color: color.brassDeep, textAlign: "center" },
     cardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
     cardTitle: {
@@ -93,24 +92,6 @@ export const styles = StyleSheet.create({
     },
     consequenceLine: { fontFamily: font.body, fontSize: 12, lineHeight: 17, color: color.ink },
     chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-    emptyCard: { alignItems: "center", gap: 14, paddingVertical: 28 },
-    emptyGlyph: { width: 72, height: 72, alignItems: "center", justifyContent: "center" },
-    emptyRing: {
-        position: "absolute",
-        width: 64,
-        height: 64,
-        borderRadius: 32,
-        borderWidth: 1.5,
-        borderColor: color.brass,
-        opacity: 0.5,
-    },
-    emptyRingInner: { width: 40, height: 40, borderRadius: 20, opacity: 0.9 },
-    emptyTitle: {
-        fontFamily: font.displayMedium,
-        fontSize: 18,
-        fontWeight: "600",
-        color: color.charcoal,
-    },
     strip: { gap: 8, paddingVertical: 2 },
     stripItem: {
         paddingHorizontal: 12,
@@ -228,7 +209,6 @@ export const styles = StyleSheet.create({
         fontWeight: "700",
         color: color.brassDeep,
     },
-    sparkTrack: { height: 34, justifyContent: "center" },
     insight: {
         gap: 4,
         padding: 12,
