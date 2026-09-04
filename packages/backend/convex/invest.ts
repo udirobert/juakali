@@ -811,6 +811,21 @@ export const investorCockpit = query({
             runsThisWeek: v.number(),
             openProposals: v.number(),
         }),
+        /** A run parked in awaiting_publication — the pipeline's second gate.
+         *  Nothing publishes until the investor approves the exact KPI +
+         *  public summary; the cockpit must surface it or the loop stalls
+         *  invisibly on the Deals surface (Today already does). */
+        pendingPublication: v.union(
+            v.object({
+                id: v.id("agentRuns"),
+                commitmentId: v.id("commitments"),
+                kpiMetric: v.union(v.string(), v.null()),
+                kpiValue: v.union(v.number(), v.null()),
+                approvedSummary: v.union(v.string(), v.null()),
+                createdAt: v.number(),
+            }),
+            v.null()
+        ),
     }),
     handler: async (ctx, args) => {
         // This query contains private commitments, emails, notes, and run
@@ -911,6 +926,41 @@ export const investorCockpit = query({
             agentPresence = built.agentPresence;
         }
 
+        // The second approval gate: a run parked in awaiting_publication pauses
+        // the pipeline until the investor approves the exact KPI + public
+        // summary. Only the focus commitment needs it — the cockpit renders one
+        // selected deal at a time, so one indexed query suffices.
+        let pendingPublication: {
+            id: Id<"agentRuns">;
+            commitmentId: Id<"commitments">;
+            kpiMetric: string | null;
+            kpiValue: number | null;
+            approvedSummary: string | null;
+            createdAt: number;
+        } | null = null;
+        if (focusCommitmentId) {
+            const runs = await ctx.db
+                .query("agentRuns")
+                .withIndex("by_commitmentId", (q) => q.eq("commitmentId", focusCommitmentId))
+                .order("desc")
+                .take(20);
+            const stalled = runs.find((run) => run.status === "awaiting_publication");
+            if (stalled) {
+                pendingPublication = {
+                    id: stalled._id,
+                    commitmentId: stalled.commitmentId,
+                    kpiMetric: stalled.pipeline?.kpiMetric ?? null,
+                    kpiValue:
+                        stalled.pipeline?.kpiValue ??
+                        (stalled.pipeline?.kpiBefore != null || stalled.pipeline?.kpiAfter != null
+                            ? stalled.pipeline?.kpiAfter ?? null
+                            : null),
+                    approvedSummary: stalled.approvedSummary ?? null,
+                    createdAt: stalled.createdAt,
+                };
+            }
+        }
+
         // Browse list: the global ventureBrowse index (one doc, same for every
         // investor) carries the summaries — the cockpit filters to active
         // ventures. Fall back to the scan only for pre-backfill deployments.
@@ -933,6 +983,7 @@ export const investorCockpit = query({
             commitments,
             availableVentures,
             agentPresence,
+            pendingPublication,
         };
     },
 });
