@@ -24,9 +24,11 @@ import type { Id } from "@/convex/_generated/dataModel";
 import type { FunctionReturnType } from "convex/server";
 
 import { api } from "@/convex/_generated/api";
+import { useRouter } from "expo-router";
 import { useProductMode } from "@/lib/product-mode";
 import { daysUntil, formatDueLabel, formatKes, relativeTime } from "@/components/jua-kali/cockpit/format";
 import { DealsEmptyDesk } from "@/components/jua-kali/cockpit/deals-empty-desk";
+import { DealDayZero } from "@/components/jua-kali/cockpit/deal-day-zero";
 import { Sparkline } from "@/components/jua-kali/cockpit/sparkline";
 import { styles } from "@/components/jua-kali/cockpit/investor-cockpit.styles";
 import { SITE_URL } from "@/lib/site";
@@ -259,6 +261,7 @@ export function InvestorCockpit({
     // hunt for its consequence below the fold.
     const scrollRef = useRef<ScrollView>(null);
     const ritualTop = useRef(0);
+    const router = useRouter();
     useEffect(() => {
         if (agentPhase !== "acting") return;
         const timer = setTimeout(() => {
@@ -266,6 +269,11 @@ export function InvestorCockpit({
         }, 200);
         return () => clearTimeout(timer);
     }, [agentPhase]);
+
+    /** Bring the note ritual into view — used by the day-zero CTA. */
+    const scrollToRitual = useCallback(() => {
+        scrollRef.current?.scrollTo({ y: Math.max(0, ritualTop.current - 12), animated: true });
+    }, []);
 
     async function handleSeed() {
         setIsSeeding(true);
@@ -466,6 +474,27 @@ export function InvestorCockpit({
                           return null;
                       })()
                     : null}
+
+                {!dealsOnly && !empty && selectedCommitment && !selectedCommitment.latestDigest ? (
+                    <DealDayZero
+                        ventureName={selectedCommitment.venture.name}
+                        amountKes={selectedCommitment.amountKes}
+                        digestCadence={selectedCommitment.digestCadence}
+                        nextDigestAt={selectedCommitment.nextDigestAt}
+                        onFocusNote={scrollToRitual}
+                    />
+                ) : null}
+
+                {data.pendingPublication &&
+                selectedCommitment?.id === data.pendingPublication.commitmentId ? (
+                    <AuthRequiredGate required={requireAuthToAct}>
+                        <PublicationGateCard
+                            pending={data.pendingPublication}
+                            ventureName={selectedCommitment?.venture.name ?? ""}
+                            onReview={() => router.push(`/approvals/${data.pendingPublication!.id}`)}
+                        />
+                    </AuthRequiredGate>
+                ) : null}
 
                 {showPledge ? (
                     <AuthRequiredGate required={requireAuthToAct}>
@@ -699,6 +728,61 @@ function ProposalCard({
                 <Pressable onPress={onDismiss} disabled={busy} hitSlop={6}>
                     <Text style={styles.discard}>Not now</Text>
                 </Pressable>
+            </Card>
+        </Animated.View>
+    );
+}
+
+/**
+ * The pipeline's second gate: a run parked in awaiting_publication. Jua holds
+ * the proof until the investor approves the exact KPI and public summary —
+ * the card links to the canonical approval screen (the same decision Today
+ * renders). Without it the loop stalls invisibly on the Deals surface.
+ */
+function PublicationGateCard({
+    pending,
+    ventureName,
+    onReview,
+}: {
+    pending: NonNullable<Cockpit["pendingPublication"]>;
+    ventureName: string;
+    onReview: () => void;
+}) {
+    const { down } = useUiMotion();
+    return (
+        <Animated.View entering={down(180)}>
+            <Card variant="trust" style={styles.proposal}>
+                <View style={styles.cardTop}>
+                    <View style={styles.titleWithHint}>
+                        <SunMark size={16} />
+                        <Text style={styles.cardTitle}>Approve publication</Text>
+                    </View>
+                    <Text style={styles.meta}>{relativeTime(pending.createdAt)}</Text>
+                </View>
+                <Text style={styles.proposalBody}>
+                    {ventureName}'s run is paused at the last gate — I will not publish
+                    anything until you approve the exact KPI and public summary.
+                </Text>
+                {pending.kpiMetric != null ? (
+                    <View style={styles.consequence}>
+                        <Text style={styles.consequenceLabel}>KPI to log</Text>
+                        <Text style={styles.consequenceLine}>
+                            · {pending.kpiMetric}
+                            {pending.kpiValue != null
+                                ? `: ${pending.kpiValue.toLocaleString()}`
+                                : ""}
+                        </Text>
+                    </View>
+                ) : null}
+                {pending.approvedSummary ? (
+                    <View style={styles.consequence}>
+                        <Text style={styles.consequenceLabel}>Proposed public summary</Text>
+                        <Text style={styles.consequenceLine} numberOfLines={4}>
+                            “{pending.approvedSummary}”
+                        </Text>
+                    </View>
+                ) : null}
+                <Button label="Review & publish" variant="approve" onPress={onReview} />
             </Card>
         </Animated.View>
     );
@@ -1092,22 +1176,20 @@ function Ritual({
                 </Animated.View>
             ) : !runLive && !optimistic ? (
                 <View style={styles.composer}>
-                    {compact ? (
-                        <ScrollView
-                            horizontal
-                            showsHorizontalScrollIndicator={false}
-                            contentContainerStyle={styles.promptRow}
-                        >
-                            {PROMPTS.map((prompt) => (
-                                <Chip
-                                    key={prompt.label}
-                                    label={prompt.label}
-                                    active={draft === prompt.value}
-                                    onPress={() => onChangeDraft(prompt.value)}
-                                />
-                            ))}
-                        </ScrollView>
-                    ) : null}
+                    <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.promptRow}
+                    >
+                        {PROMPTS.map((prompt) => (
+                            <Chip
+                                key={prompt.label}
+                                label={prompt.label}
+                                active={draft === prompt.value}
+                                onPress={() => onChangeDraft(prompt.value)}
+                            />
+                        ))}
+                    </ScrollView>
                     <TextInput
                         value={draft}
                         onChangeText={onChangeDraft}
