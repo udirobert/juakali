@@ -15,3 +15,9 @@ export function successHaptic(): void {
     if (Platform.OS === "web") return;
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 }
+
+/** Consequential act — approving Jua to run. Heavier than a tap. */
+export function impactHaptic(): void {
+    if (Platform.OS === "web") return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+}

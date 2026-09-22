@@ -1,8 +1,10 @@
-import { Platform, type TextStyle } from "react-native";
+import { Platform, type TextStyle, type ViewStyle } from "react-native";
 
 /** Meeting-ready “Nairobi ledger” tokens — cool stone, charcoal, brass (not cream/terracotta). */
 export const color = {
     stone: "#E6E4DF",
+    /** Slightly cooler field wash under the stone — sylva-style atmosphere, light lane. */
+    field: "#DEDAD3",
     paper: "#F7F6F2",
     /** Warm white for text sitting on brass/charcoal fills. */
     foam: "#FFFDF7",
@@ -16,24 +18,46 @@ export const color = {
     brassBorder: "rgba(166, 124, 45, 0.25)",
     /** Meta text — darkened to ~5.5:1 on paper for WCAG AA at small sizes. */
     mist: "#5E6660",
+    /** Softer secondary label (sylva card-label lane). */
+    mistSoft: "#7A817A",
     line: "rgba(20, 24, 22, 0.1)",
     lineStrong: "rgba(20, 24, 22, 0.18)",
+    /** Translucent panel fill — floating dock / soft chrome. */
+    panel: "rgba(247, 246, 242, 0.86)",
+    panelBorder: "rgba(20, 24, 22, 0.1)",
     success: "#2F5D3A",
     danger: "#8B3A2F",
 };
 export type ColorTokens = typeof color;
 
 /**
- * Radius scale — the app core already lives on {2, 4, 6, 8}; these tokens make
- * it explicit. Nested surfaces should read concentrically (outer = inner + padding),
- * which this 2-step scale satisfies for 8–12px paddings.
+ * Radius scale — soft enough to feel contemporary (sylva dock ~14),
+ * still tight enough for a ledger, not bubble UI.
  */
 export const radius = {
-    xs: 2,
-    sm: 4,
-    md: 6,
-    lg: 8,
+    xs: 4,
+    sm: 6,
+    md: 10,
+    lg: 14,
+    xl: 20,
     pill: 99,
+};
+
+/**
+ * Spacing rhythm — 4pt base. Prefer these over magic numbers so screens
+ * share one breathing pattern (MengTo: lock the system, then iterate).
+ */
+export const space = {
+    1: 4,
+    2: 8,
+    3: 12,
+    4: 16,
+    5: 20,
+    6: 24,
+    7: 32,
+    8: 40,
+    9: 48,
+    10: 64,
 };
 
 /**
@@ -60,6 +84,9 @@ export const motion = {
      * live data", distinct from the sub-300ms interaction language above.
      */
     skeletonPulse: 900,
+    /** Sylva-adjacent ease — soft settle, no bounce. */
+    easeOut: "cubic-bezier(0.16, 1, 0.3, 1)" as const,
+    ease: "cubic-bezier(0.22, 0.61, 0.36, 1)" as const,
 };
 
 /**
@@ -73,6 +100,8 @@ export const sun = {
     noon: color.brassLight,
     /** Horizon hairline the hero sun rises over. */
     horizon: color.lineStrong,
+    /** Soft dawn pool behind the landing sun — atmosphere, not decoration. */
+    glow: "rgba(196, 161, 90, 0.22)",
 };
 
 /** fontVariant for any number that updates live — prevents layout jitter. */
@@ -103,6 +132,8 @@ export const font = {
 
 export const layout = {
     maxWidth: 880,
+    /** Comfortable reading measure for body copy. */
+    proseWidth: 560,
 };
 
 /**
@@ -113,32 +144,48 @@ export const layout = {
 export const elevation = {
     raised: Platform.select({
         web: {
-            boxShadow: "0 1px 2px rgba(20,24,22,0.05), 0 6px 18px rgba(20,24,22,0.05)",
+            boxShadow: "0 1px 2px rgba(20,24,22,0.04), 0 8px 24px rgba(20,24,22,0.06)",
         },
         default: {
             shadowColor: "#141816",
             shadowOpacity: 0.07,
-            shadowRadius: 6,
-            shadowOffset: { width: 0, height: 2 },
-            elevation: 2,
+            shadowRadius: 8,
+            shadowOffset: { width: 0, height: 3 },
+            elevation: 3,
         },
-    }),
+    }) as ViewStyle,
+    /** Floating dock / soft chrome — sylva dock shadow, light lane. */
+    dock: Platform.select({
+        web: {
+            boxShadow:
+                "0 8px 22px rgba(20,24,22,0.10), inset 0 1px 0 rgba(255,253,247,0.7)",
+        },
+        default: {
+            shadowColor: "#141816",
+            shadowOpacity: 0.1,
+            shadowRadius: 12,
+            shadowOffset: { width: 0, height: 4 },
+            elevation: 4,
+        },
+    }) as ViewStyle,
 };
 
 export const type = {
     brand: {
         fontFamily: font.display,
-        fontSize: 42,
+        fontSize: 44,
         fontWeight: "700" as TextStyle["fontWeight"],
-        letterSpacing: -1.4,
+        letterSpacing: -1.6,
         color: color.charcoal,
+        lineHeight: 48,
     },
     title: {
         fontFamily: font.displayMedium,
         fontSize: 28,
         fontWeight: "600" as TextStyle["fontWeight"],
-        letterSpacing: -0.6,
+        letterSpacing: -0.7,
         color: color.charcoal,
+        lineHeight: 34,
     },
     eyebrow: {
         fontFamily: font.bodyBold,
@@ -152,7 +199,7 @@ export const type = {
         fontFamily: font.body,
         fontSize: 15,
         fontWeight: "400" as TextStyle["fontWeight"],
-        lineHeight: 22,
+        lineHeight: 24,
         color: color.ink,
     },
     meta: {
@@ -177,4 +224,20 @@ export const lab = {
     info: "#4A5560",
     line: color.lineStrong,
     tabular: tabularNums,
+};
+
+/**
+ * Web atmosphere washes — radial light pools over stone (sylva lesson:
+ * modelling comes from light, not flat fill). Applied via Atmosphere / CSS.
+ */
+export const atmosphere = {
+    landing:
+        "radial-gradient(64% 48% at 50% 18%, rgba(196,161,90,0.16) 0%, rgba(196,161,90,0) 70%), " +
+        "radial-gradient(70% 55% at 88% 92%, rgba(255,253,247,0.55) 0%, rgba(255,253,247,0) 65%), " +
+        "radial-gradient(55% 40% at 8% 78%, rgba(230,228,223,0.9) 0%, rgba(230,228,223,0) 60%), " +
+        "#E6E4DF",
+    app:
+        "radial-gradient(80% 50% at 50% -10%, rgba(255,253,247,0.7) 0%, rgba(255,253,247,0) 55%), " +
+        "radial-gradient(50% 40% at 100% 100%, rgba(166,124,45,0.06) 0%, rgba(166,124,45,0) 60%), " +
+        "#E6E4DF",
 };

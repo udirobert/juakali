@@ -32,12 +32,17 @@ const STATE_PROGRESS: Record<AgentSunState, number> = {
  * The living sun — brand signature and agent-state language.
  * States: quiet horizon (observing), partial rise (proposing), active rays
  * (executing), sealed noon (verified), interrupted (blocked).
+ *
+ * `ignite` — one-shot flare used at the moment of approval: rays surge toward
+ * noon then settle into executing. The consequential act should feel like
+ * striking a match, not pressing a dull button.
  */
 export function LivingSun({
     progress,
     size = 40,
     working = false,
     agentState,
+    ignite = false,
 }: {
     /** 0 (dawn) .. 1 (noon). Values outside are clamped. Overridden by agentState when set. */
     progress?: number;
@@ -46,14 +51,17 @@ export function LivingSun({
     working?: boolean;
     /** Stateful agent identity — maps to progress + working when provided. */
     agentState?: AgentSunState;
+    /** One-shot approval ignition. */
+    ignite?: boolean;
 }) {
     const reduceMotion = useReducedMotion();
     const resolvedProgress =
         agentState != null ? STATE_PROGRESS[agentState] : (progress ?? 0.3);
-    const resolvedWorking = agentState === "executing" || working;
+    const resolvedWorking = agentState === "executing" || working || ignite;
     const rayCount = agentState === "blocked" ? 6 : RAY_COUNT;
     const p = useSharedValue(resolvedProgress);
     const pulse = useSharedValue(0);
+    const flare = useSharedValue(0);
 
     useEffect(() => {
         const target = Math.min(1, Math.max(0, resolvedProgress));
@@ -70,14 +78,56 @@ export function LivingSun({
         }
     }, [resolvedWorking, reduceMotion, pulse]);
 
+    useEffect(() => {
+        if (!ignite || reduceMotion) {
+            flare.value = 0;
+            return;
+        }
+        flare.value = 0;
+        flare.value = withTiming(1, { duration: 420 }, () => {
+            flare.value = withTiming(0, { duration: 700 });
+        });
+        p.value = withSpring(0.92, { damping: 11, stiffness: 120 });
+    }, [ignite, reduceMotion, flare, p]);
+
     const c = size / 2;
     const baseDotR = size * 0.19;
     const gap = size * 0.045;
     const maxRay = size * 0.2;
     const rayW = Math.max(1.5, size * 0.05);
 
+    const haloProps = useAnimatedProps(() => {
+        const boost = 0.15 + 0.55 * flare.value + 0.2 * pulse.value;
+        const live =
+            agentState === "executing" ||
+            agentState === "proposing" ||
+            flare.value > 0.01;
+        return {
+            r: size * (0.42 + 0.08 * flare.value),
+            opacity: live ? boost * 0.35 : 0,
+        };
+    });
+
+    const coreProps = useAnimatedProps(() => {
+        const colorStops = interpolateColor(
+            p.value,
+            [0, 0.5, 1],
+            [sun.dawn, sun.rising, sun.noon],
+        );
+        const growth = 0.16 + 0.05 * p.value + 0.04 * flare.value;
+        const breathe = 1 + 0.09 * pulse.value + 0.12 * flare.value;
+        return { r: size * growth * breathe, fill: colorStops };
+    });
+
     return (
         <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} fill="none" accessibilityElementsHidden>
+            <AnimatedCircle
+                cx={c}
+                cy={c}
+                r={size * 0.42}
+                fill={sun.glow}
+                animatedProps={haloProps}
+            />
             {Array.from({ length: rayCount }, (_, i) => (
                 <SunRay
                     key={i}
@@ -85,6 +135,7 @@ export function LivingSun({
                     rayCount={rayCount}
                     progress={p}
                     pulse={pulse}
+                    flare={flare}
                     center={c}
                     dotR={baseDotR}
                     gap={gap}
@@ -98,16 +149,7 @@ export function LivingSun({
                 cy={c}
                 r={baseDotR}
                 fill={sun.rising}
-                animatedProps={useAnimatedProps(() => {
-                    const colorStops = interpolateColor(
-                        p.value,
-                        [0, 0.5, 1],
-                        [sun.dawn, sun.rising, sun.noon],
-                    );
-                    const growth = 0.16 + 0.05 * p.value;
-                    const breathe = 1 + 0.09 * pulse.value;
-                    return { r: size * growth * breathe, fill: colorStops };
-                })}
+                animatedProps={coreProps}
             />
         </Svg>
     );
@@ -118,6 +160,7 @@ function SunRay({
     rayCount,
     progress,
     pulse,
+    flare,
     center,
     dotR,
     gap,
@@ -129,6 +172,7 @@ function SunRay({
     rayCount: number;
     progress: SharedValue<number>;
     pulse: SharedValue<number>;
+    flare: SharedValue<number>;
     center: number;
     dotR: number;
     gap: number;
@@ -138,15 +182,20 @@ function SunRay({
 }) {
     const animatedProps = useAnimatedProps(() => {
         const colorStops = interpolateColor(progress.value, [0, 0.5, 1], [sun.dawn, sun.rising, sun.noon]);
-        const litFraction = eclipsed ? 0.15 : 0.25 + 0.75 * progress.value;
+        const litFraction = eclipsed ? 0.15 : 0.25 + 0.75 * progress.value + 0.2 * flare.value;
         const lit = Math.min(1, Math.max(0, litFraction * rayCount - index));
         const angle = ((index * (360 / rayCount) - 90) * Math.PI) / 180;
         const r1 = dotR + gap;
         if (lit <= 0.01) {
             return { x1: center, y1: center, x2: center, y2: center, opacity: 0, stroke: colorStops };
         }
-        const globalScale = 0.8 + 0.2 * progress.value;
-        const len = maxRay * globalScale * (0.55 + 0.45 * lit) * (1 + 0.12 * pulse.value) * (eclipsed ? 0.55 : 1);
+        const globalScale = 0.8 + 0.2 * progress.value + 0.25 * flare.value;
+        const len =
+            maxRay *
+            globalScale *
+            (0.55 + 0.45 * lit) *
+            (1 + 0.12 * pulse.value + 0.2 * flare.value) *
+            (eclipsed ? 0.55 : 1);
         const r2 = r1 + len;
         return {
             x1: center + Math.cos(angle) * r1,

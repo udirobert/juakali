@@ -211,5 +211,5 @@ export function synthesizeBriefingText(args: {
     if (args.venturesMoved > 0) {
         return `${greeting} I handled updates from ${args.venturesMoved} venture${args.venturesMoved === 1 ? "" : "s"}. Nothing needs your decision right now.`;
     }
-    return `${greeting} I'm watching your ventures. When something needs a decision, it will land here.`;
+    return `${greeting} Your desk is clear. Back a venture — or load the demo — and I'll start following it here.`;
 }

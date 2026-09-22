@@ -1,12 +1,17 @@
 import { StyleSheet } from "react-native";
 
-import { color, elevation, font, tabularNums } from "@/components/jua-kali/theme";
+import { color, elevation, font, space, tabularNums } from "@/components/jua-kali/theme";
 
 export const styles = StyleSheet.create({
-    screen: { flex: 1, backgroundColor: color.stone },
-    loadingScreen: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: color.stone },
-    content: { gap: 14, paddingTop: 8 },
-    hero: { gap: 10 },
+    screen: { flex: 1, backgroundColor: "transparent" },
+    loadingScreen: {
+        flex: 1,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "transparent",
+    },
+    content: { gap: space[6], paddingTop: 10 },
+    hero: { gap: 14 },
     heroRow: {
         flexDirection: "row",
         alignItems: "center",
@@ -21,17 +26,19 @@ export const styles = StyleSheet.create({
         color: color.charcoal,
     },
     heroTitle: {
-        fontFamily: font.displayMedium,
-        fontSize: 22,
-        fontWeight: "600",
-        letterSpacing: -0.4,
+        fontFamily: font.display,
+        fontSize: 30,
+        fontWeight: "700",
+        letterSpacing: -0.9,
+        lineHeight: 36,
         color: color.charcoal,
     },
     bridge: {
         fontFamily: font.body,
-        fontSize: 12,
-        lineHeight: 17,
+        fontSize: 14,
+        lineHeight: 20,
         color: color.mist,
+        maxWidth: 420,
     },
     fieldHint: {
         fontFamily: font.body,
@@ -96,7 +103,7 @@ export const styles = StyleSheet.create({
     stripItem: {
         paddingHorizontal: 12,
         paddingVertical: 10,
-        borderRadius: 4,
+        borderRadius: 10,
         backgroundColor: color.paper,
         borderWidth: 1,
         borderColor: color.line,
@@ -107,7 +114,7 @@ export const styles = StyleSheet.create({
     stripName: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.ink },
     stripNameOn: { color: color.charcoal },
     stripAmt: { fontFamily: font.body, fontSize: 11, color: color.brass, fontVariant: tabularNums },
-    stack: { gap: 12 },
+    stack: { gap: space[5] },
     metrics: { flexDirection: "row", gap: 8 },
     metric: { flex: 1, padding: 10, borderRadius: 4, backgroundColor: color.stone, gap: 2 },
     metricValue: {

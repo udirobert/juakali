@@ -18,6 +18,7 @@ import Animated, {
     withTiming,
 } from "react-native-reanimated";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import { useAuthActions } from "@convex-dev/auth/react";
 import type { Id } from "@/convex/_generated/dataModel";
 
 import { api } from "@/convex/_generated/api";
@@ -34,8 +35,8 @@ import {
 import { useProductMode, SOFT_RETURN_MS } from "@/lib/product-mode";
 import { SoftIdentityBar } from "@/components/jua-kali/soft-identity";
 import { LivingSun } from "@/components/jua-kali/living-sun";
-import { IconArrowRight, IconCapital, IconPen, IconTrend } from "@/components/jua-kali/icons";
-import { Button, Card, Chip, Input, SectionLabel } from "@/components/jua-kali/ui";
+import { IconArrowRight } from "@/components/jua-kali/icons";
+import { Atmosphere, Button, Card, Chip, Input, SectionLabel } from "@/components/jua-kali/ui";
 import { color, layout, motion } from "@/components/jua-kali/theme";
 
 type KpiUnit = "meetings" | "revenue_kes" | "jobs";
@@ -226,42 +227,52 @@ function LedgerArtifact() {
 }
 
 /**
- * The arrival of the brand — a brass sun rising over a horizon hairline.
- * The one authored moment on the landing: the sun lifts above the line while
- * its rays ignite from dawn toward morning (progress 0 → 0.35). On web the
- * stage answers the pointer with a few pixels of parallax.
+ * The arrival of the brand — a brass sun rising over a horizon, under a ghost
+ * "JUA" wordmark (sylva craft, our sun). Ambition: the first viewport must
+ * feel like dawn beginning, not a form with a logo.
  */
 function HeroStage({ compact }: { compact: boolean }) {
     const reduceMotion = useReducedMotion();
-    const sunSize = compact ? 76 : 92;
-    const [progress, setProgress] = useState(reduceMotion ? 0.35 : 0);
+    const sunSize = compact ? 96 : 128;
+    const stageH = sunSize * 2.05;
+    const [progress, setProgress] = useState(reduceMotion ? 0.55 : 0);
     const [stageWidth, setStageWidth] = useState(0);
 
     useEffect(() => {
         if (reduceMotion) return;
-        const timer = setTimeout(() => setProgress(0.35), 100);
+        const timer = setTimeout(() => setProgress(0.55), 80);
         return () => clearTimeout(timer);
     }, [reduceMotion]);
 
     const rise = useSharedValue(reduceMotion ? 0 : 1);
     const parallaxX = useSharedValue(0);
+    const ghostIn = useSharedValue(reduceMotion ? 1 : 0);
 
     useEffect(() => {
         if (reduceMotion) return;
-        rise.value = withTiming(0, { duration: motion.hero });
-    }, [rise, reduceMotion]);
+        rise.value = withTiming(0, { duration: motion.hero + 200 });
+        ghostIn.value = withTiming(1, { duration: motion.hero + 400 });
+    }, [rise, ghostIn, reduceMotion]);
 
     const sunStyle = useAnimatedStyle(() => ({
         transform: [
-            { translateY: rise.value * sunSize * 0.55 },
-            { translateX: parallaxX.value * 5 },
+            { translateY: rise.value * sunSize * 0.72 },
+            { translateX: parallaxX.value * 8 },
+            { scale: 1 - rise.value * 0.08 },
         ],
     }));
     const lineStyle = useAnimatedStyle(() => ({
-        transform: [{ translateX: parallaxX.value * -3 }],
+        transform: [{ translateX: parallaxX.value * -4 }],
+        opacity: 0.55 + 0.45 * (1 - rise.value),
+    }));
+    const ghostStyle = useAnimatedStyle(() => ({
+        opacity: 0.045 + 0.03 * ghostIn.value,
+        transform: [
+            { translateX: parallaxX.value * -10 },
+            { scale: 0.96 + 0.04 * ghostIn.value },
+        ],
     }));
 
-    // Web-only pointer answer — a few pixels, capped by the worklet math above.
     const onMouseMove = Platform.select({
         web: (event: { locationX?: number }) => {
             if (reduceMotion || !stageWidth || event.locationX == null) return;
@@ -270,7 +281,6 @@ function HeroStage({ compact }: { compact: boolean }) {
         default: undefined,
     });
 
-    // Web-only pointer answer — a few pixels, capped by the worklet math above.
     const webProps = Platform.select({
         web: { onMouseMove } as unknown as ViewProps,
         default: {} as ViewProps,
@@ -278,18 +288,26 @@ function HeroStage({ compact }: { compact: boolean }) {
 
     return (
         <View
-            style={[styles.stage, { height: sunSize * 1.55 }]}
+            style={[styles.stage, { height: stageH }]}
             onLayout={(event) => setStageWidth(event.nativeEvent.layout.width)}
             {...webProps}
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants"
         >
+            <Animated.Text style={[styles.ghostMark, ghostStyle]} numberOfLines={1}>
+                JUA
+            </Animated.Text>
+            <View style={[styles.stageGlow, { width: sunSize * 2.2, height: sunSize * 1.4 }]} />
             <Animated.View style={[styles.stageLine, lineStyle]} />
             <Animated.View
                 style={[
                     styles.stageSun,
                     sunStyle,
-                    { width: sunSize, height: sunSize, top: sunSize * 0.55 - sunSize * 0.62 },
+                    {
+                        width: sunSize,
+                        height: sunSize,
+                        top: stageH * 0.42 - sunSize * 0.5,
+                    },
                 ]}
             >
                 <LivingSun progress={progress} size={sunSize} />
@@ -298,18 +316,18 @@ function HeroStage({ compact }: { compact: boolean }) {
     );
 }
 
-/** The proof strip — three glyph-marked facts on hairlines, not another box. */
+/** The proof strip — numbered craft signals on hairlines, not another box. */
 function ProofStrip() {
     const items = [
-        { icon: <IconCapital size={15} color={color.brassDeep} />, label: "Soft pledges" },
-        { icon: <IconTrend size={15} color={color.brassDeep} />, label: "Weekly KPIs" },
-        { icon: <IconPen size={15} color={color.brassDeep} />, label: "Public digests" },
+        { index: "01", label: "Soft pledges" },
+        { index: "02", label: "Weekly KPIs" },
+        { index: "03", label: "Public proof" },
     ];
     return (
         <View style={styles.proofStrip}>
             {items.map((item, i) => (
                 <View key={item.label} style={[styles.proofItem, i > 0 && styles.proofItemBorder]}>
-                    {item.icon}
+                    <Text style={styles.proofIndex}>{item.index}</Text>
                     <Text style={styles.proofLabel}>{item.label}</Text>
                 </View>
             ))}
@@ -320,13 +338,18 @@ function ProofStrip() {
 export function InvestorLanding({
     onEnter,
 }: {
-    onEnter: (opts?: { commitmentId?: Id<"commitments"> }) => void;
+    onEnter: (opts?: {
+        commitmentId?: Id<"commitments">;
+        /** Skip private desk — land on public proof for this venture. */
+        ledgerSlug?: string;
+    }) => void;
 }) {
     const insets = useSafeAreaInsets();
     const { width } = useWindowDimensions();
     const compact = width < 420;
     const reduceMotion = useReducedMotion();
     const { isAuthenticated } = useConvexAuth();
+    const { signIn } = useAuthActions();
     const startCommitment = useMutation(api.invest.startCommitment);
     const seedInvestDemo = useMutation(api.invest.seedInvestDemo);
     const softAuth = useQuery(api.softAuth.softAuthConfig);
@@ -338,7 +361,12 @@ export function InvestorLanding({
     const [error, setError] = useState<string | null>(null);
     /** Commitment created in the "save your pledge" step. */
     const [saveCommitmentId, setSaveCommitmentId] = useState<Id<"commitments"> | null>(null);
+    const [savePublicSlug, setSavePublicSlug] = useState<string | null>(null);
     const [saveName, setSaveName] = useState<string | null>(null);
+    /** After guest sign-in, finish seeding onto their desk. */
+    const [pendingDemo, setPendingDemo] = useState(false);
+    /** After guest sign-in, finish creating an own commitment. */
+    const [pendingOwnCommit, setPendingOwnCommit] = useState(false);
 
     const [investorName, setInvestorName] = useState("");
     const [investorEmail, setInvestorEmail] = useState("");
@@ -347,6 +375,41 @@ export function InvestorLanding({
     const [kpiUnit, setKpiUnit] = useState<KpiUnit>("meetings");
     const [kpiTarget, setKpiTarget] = useState("20");
     const [amountKes, setAmountKes] = useState("10000");
+
+    async function finishDemoSeed() {
+        const result = await seedInvestDemo({});
+        if (result.needsAuth) {
+            throw new Error("Sign in required to load demo deals.");
+        }
+        // Land on Today — that's where Jua's open suggestion waits for approval.
+        onEnter({});
+    }
+
+    async function createOwnCommitment() {
+        const amount = Number(amountKes);
+        const target = Number(kpiTarget);
+        const preset = kpiPresets.find((p) => p.unit === kpiUnit)!;
+        const result = await startCommitment({
+            investorName: investorName.trim(),
+            investorEmail: investorEmail.trim() || undefined,
+            ventureName: ventureName.trim(),
+            craftText: craftText.trim() || "General",
+            locationText: "Kenya",
+            kpiLabel: preset.label,
+            kpiUnit,
+            kpiTarget: target,
+            amountKes: amount,
+        });
+        if (Platform.OS === "web" && typeof window !== "undefined") {
+            const url = new URL(window.location.href);
+            url.searchParams.set("c", result.commitmentId);
+            window.history.replaceState({}, "", url.toString());
+        }
+        setSaveCommitmentId(result.commitmentId);
+        setSavePublicSlug(result.publicSlug);
+        setSaveName(investorName.trim().split(/\s+/)[0] ?? null);
+        setMode("save");
+    }
 
     async function handleStart() {
         setError(null);
@@ -369,62 +432,85 @@ export function InvestorLanding({
             return;
         }
 
-        const preset = kpiPresets.find((p) => p.unit === kpiUnit)!;
         setBusy(true);
         try {
-            const result = await startCommitment({
-                investorName: investorName.trim(),
-                investorEmail: investorEmail.trim() || undefined,
-                ventureName: ventureName.trim(),
-                craftText: craftText.trim() || "General",
-                locationText: "Kenya",
-                kpiLabel: preset.label,
-                kpiUnit,
-                kpiTarget: target,
-                amountKes: amount,
-            });
-            if (Platform.OS === "web" && typeof window !== "undefined") {
-                const url = new URL(window.location.href);
-                url.searchParams.set("c", result.commitmentId);
-                window.history.replaceState({}, "", url.toString());
-            }
-            // Capture identity at the moment of intent: save the pledge via
-            // magic link / Google before entering the app.
+            // Wait for the guest session before creating — otherwise the pledge
+            // is orphaned and Deals stays empty.
             if (!isAuthenticated) {
-                setSaveCommitmentId(result.commitmentId);
-                setSaveName(investorName.trim().split(/\s+/)[0] ?? null);
-                setMode("save");
+                await signIn("anonymous");
+                setPendingOwnCommit(true);
                 return;
             }
-            onEnter({ commitmentId: result.commitmentId });
+            await createOwnCommitment();
+            setBusy(false);
         } catch (e) {
             setError(e instanceof Error ? e.message : "Could not start commitment.");
-        } finally {
             setBusy(false);
+        } finally {
+            // pendingOwnCommit path clears busy in its effect
         }
     }
 
-    // Once the save step authenticates, continue into the app with the deal focused.
     useEffect(() => {
-        if (mode !== "save" || !isAuthenticated || !saveCommitmentId) return;
-        onEnter({ commitmentId: saveCommitmentId });
-    }, [mode, isAuthenticated, saveCommitmentId, onEnter]);
+        if (!pendingDemo || !isAuthenticated) return;
+        let cancelled = false;
+        void (async () => {
+            try {
+                await finishDemoSeed();
+            } catch (e) {
+                if (!cancelled) {
+                    setError(e instanceof Error ? e.message : "Could not load example.");
+                    setBusy(false);
+                    setPendingDemo(false);
+                }
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [pendingDemo, isAuthenticated]);
+
+    useEffect(() => {
+        if (!pendingOwnCommit || !isAuthenticated) return;
+        let cancelled = false;
+        void (async () => {
+            try {
+                await createOwnCommitment();
+            } catch (e) {
+                if (!cancelled) {
+                    setError(e instanceof Error ? e.message : "Could not start commitment.");
+                }
+            } finally {
+                if (!cancelled) {
+                    setPendingOwnCommit(false);
+                    setBusy(false);
+                }
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [pendingOwnCommit, isAuthenticated]);
 
     async function handleExample() {
         setBusy(true);
         setError(null);
         try {
-            await seedInvestDemo({});
-            onEnter({});
+            if (!isAuthenticated) {
+                await signIn("anonymous");
+                setPendingDemo(true);
+                return;
+            }
+            await finishDemoSeed();
         } catch (e) {
             setError(e instanceof Error ? e.message : "Could not load example.");
-        } finally {
             setBusy(false);
         }
     }
 
     return (
-        <View style={[styles.screen, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 16 }]}>
+        <Atmosphere variant="landing">
+            <View style={[styles.screen, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 16 }]}>
             <ScrollView
                 contentContainerStyle={[styles.scroll, { maxWidth: layout.maxWidth }]}
                 keyboardShouldPersistTaps="handled"
@@ -452,15 +538,15 @@ export function InvestorLanding({
                                 entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(90)}
                                 style={[styles.headline, compact && styles.headlineCompact]}
                             >
-                                Jua follows every venture you back.
+                                An agent that keeps every venture honest.
                             </Animated.Text>
                             <Animated.Text
                                 entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(140)}
                                 style={styles.subhead}
                             >
-                                Your agent gets the weekly update and shows you what changed — so you keep
-                                commitments moving without chasing people. Soft pledges and public proof are
-                                how the work stays honest.
+                                Soft pledges in. Weekly proof out. Jua mentors the work, you approve
+                                the consequential steps, and the ledger stays public — so busy capital
+                                can stay in the room without chasing anyone.
                             </Animated.Text>
 
                             <Animated.View
@@ -477,12 +563,16 @@ export function InvestorLanding({
                             >
                                 {product.preset === "demo" ? (
                                     <Button
-                                        label={busy ? "Opening…" : "See Jua follow a venture"}
+                                        label={
+                                            busy
+                                                ? "Opening your desk…"
+                                                : "Try the demo — deals on your desk"
+                                        }
                                         onPress={() => void handleExample()}
                                         disabled={busy}
                                         icon={<IconArrowRight size={15} color={color.paper} />}
                                         style={styles.ctaBlockFull}
-                                        accessibilityHint="Loads example deals and opens Today"
+                                        accessibilityHint="Starts a guest session, loads example deals onto your desk, and opens Today"
                                     />
                                 ) : (
                                     <Button
@@ -507,13 +597,17 @@ export function InvestorLanding({
                                 </Pressable>
                                 <ProofStrip />
                             </Animated.View>
+                            {error ? <Text style={styles.error}>{error}</Text> : null}
                         </>
                     ) : null}
 
                     {mode === "form" ? (
                         <View style={styles.form}>
                             <Text style={styles.formTitle}>Start a commitment</Text>
-                            <Text style={styles.formSub}>Three things. The agent handles the rest.</Text>
+                            <Text style={styles.formSub}>
+                                Name yourself, name the venture, set a soft pledge. Jua handles the weekly
+                                follow-up.
+                            </Text>
 
                             <Text style={styles.fieldLabel}>You</Text>
                             <Input
@@ -524,7 +618,7 @@ export function InvestorLanding({
                             <Input
                                 value={investorEmail}
                                 onChangeText={setInvestorEmail}
-                                placeholder="Email (optional)"
+                                placeholder="Email (optional — to keep the deal across devices)"
                                 keyboardType="email-address"
                                 autoCapitalize="none"
                             />
@@ -587,29 +681,41 @@ export function InvestorLanding({
                     {mode === "save" ? (
                         <View style={styles.form}>
                             <Text style={styles.formTitle}>
-                                {saveName ? `Save your pledge, ${saveName}` : "Save your pledge"}
+                                {saveName ? `Deal is on your desk, ${saveName}` : "Deal is on your desk"}
                             </Text>
                             <Text style={styles.formSub}>
-                                Your commitment is recorded. Add your email and this deal follows you —
-                                across sessions and devices.
+                                Add email (or Google) if you want this deal to follow you across devices.
+                                Or open Deals now — your guest session already owns it.
                             </Text>
                             <SoftIdentityBar
                                 forceOpen
                                 heading="Keep this deal"
                                 initialEmail={investorEmail}
                             />
-                            <Pressable
+                            <Button
+                                label="Open my deals"
                                 onPress={() => onEnter({ commitmentId: saveCommitmentId ?? undefined })}
-                            >
-                                <Text style={styles.secondary}>Skip for now — open My deals</Text>
-                            </Pressable>
+                                icon={<IconArrowRight size={15} color={color.paper} />}
+                                style={styles.ctaBlockFull}
+                            />
+                            {savePublicSlug ? (
+                                <Pressable
+                                    onPress={() => onEnter({ ledgerSlug: savePublicSlug })}
+                                    accessibilityRole="button"
+                                >
+                                    <Text style={styles.secondary}>
+                                        or view public proof for this venture →
+                                    </Text>
+                                </Pressable>
+                            ) : null}
                         </View>
                     ) : null}
 
                     <Text style={styles.footnote}>Soft pledge — not a securities offering or live payment.</Text>
                 </Animated.View>
             </ScrollView>
-        </View>
+            </View>
+        </Atmosphere>
     );
 }
 

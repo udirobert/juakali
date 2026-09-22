@@ -8,6 +8,7 @@ import { normalizeKey } from "./juaKaliHelpers";
 import {
     assertCanAct,
     assertInvestorOwnsInvestor,
+    ensureInvestorForUserId,
 } from "./softAuth";
 import {
     createAgentRun,
@@ -135,12 +136,34 @@ async function allocatePublicSlug(ctx: DbCtx, name: string) {
 
 async function upsertInvestorRecord(
     ctx: MutationCtx,
-    args: { displayName: string; email?: string | null; phone?: string | null }
+    args: {
+        displayName: string;
+        email?: string | null;
+        phone?: string | null;
+        /** When the caller is signed in, bind the row so private surfaces resolve. */
+        userId?: Id<"users"> | null;
+    }
 ) {
     const displayName = args.displayName.trim() || "Investor";
     const email = args.email?.trim().toLowerCase() || null;
     const phone = args.phone?.trim() || null;
+    const userId = args.userId ?? null;
     const now = Date.now();
+
+    if (userId) {
+        const byUser = await ctx.db
+            .query("investors")
+            .withIndex("by_userId", (q) => q.eq("userId", userId))
+            .first();
+        if (byUser) {
+            await ctx.db.patch(byUser._id, {
+                displayName: displayName || byUser.displayName,
+                email: email ?? byUser.email ?? null,
+                phone: phone ?? byUser.phone ?? null,
+            });
+            return byUser._id;
+        }
+    }
 
     if (email) {
         const existing = await ctx.db
@@ -151,6 +174,7 @@ async function upsertInvestorRecord(
             await ctx.db.patch(existing._id, {
                 displayName: displayName || existing.displayName,
                 phone: phone ?? existing.phone ?? null,
+                ...(userId && !existing.userId ? { userId } : {}),
             });
             return existing._id;
         }
@@ -160,7 +184,7 @@ async function upsertInvestorRecord(
         displayName,
         email,
         phone,
-        userId: null,
+        userId,
         isDefaultDemo: false,
         createdAt: now,
     });
@@ -287,9 +311,11 @@ export const startCommitment = mutation({
         if (args.amountKes <= 0) throw new Error("amountKes must be positive");
         if (args.kpiTarget <= 0) throw new Error("kpiTarget must be positive");
 
+        const userId = await getAuthUserId(ctx);
         const investorId = await upsertInvestorRecord(ctx, {
             displayName: args.investorName,
             email: args.investorEmail,
+            userId,
         });
 
         const name = args.ventureName.trim();
@@ -1008,10 +1034,43 @@ function emptyTodayBriefing() {
         decision: null,
         publication: null,
         completed: [],
+        digests: [],
         nextScheduled: null,
         stats: { needsDecision: 0, venturesMoved: 0, blocked: 0 },
         autonomyLevel: "ask_every_time" as const,
     };
+}
+
+const todayDigestValidator = v.object({
+    id: v.id("agentDigests"),
+    commitmentId: v.id("commitments"),
+    ventureName: v.string(),
+    summary: v.string(),
+    insights: v.string(),
+    nextAction: v.union(v.string(), v.null()),
+    evidence: v.array(v.string()),
+    createdAt: v.number(),
+});
+
+/** Pull the newest digests off the cockpit projection for Today's bento. */
+function digestsFromCockpit(
+    cockpit: NonNullable<Doc<"investorBriefings">["cockpit"]> | undefined
+) {
+    if (!cockpit) return [];
+    return cockpit
+        .filter((row) => row.latestDigest != null)
+        .map((row) => ({
+            id: row.latestDigest!.id,
+            commitmentId: row.commitmentId,
+            ventureName: row.venture.name,
+            summary: row.latestDigest!.summary,
+            insights: row.latestDigest!.insights,
+            nextAction: row.latestDigest!.nextAction,
+            evidence: row.latestDigest!.evidence,
+            createdAt: row.latestDigest!.createdAt,
+        }))
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .slice(0, 3);
 }
 
 /**
@@ -1073,6 +1132,7 @@ async function buildTodayBriefingFromIndex(
             runId: item.id,
             at: item.updatedAt,
         })),
+        digests: digestsFromCockpit(briefing.cockpit),
         nextScheduled: briefing.nextScheduled,
         stats: { needsDecision, venturesMoved, blocked },
         autonomyLevel,
@@ -1183,10 +1243,48 @@ async function buildTodayBriefingFromScan(
         decision,
         publication,
         completed: completed.slice(0, 8),
+        digests: await digestsFromCommitmentsScan(ctx, commitments),
         nextScheduled,
         stats: { needsDecision, venturesMoved, blocked },
         autonomyLevel,
     };
+}
+
+/** Scan-path digest gather — only used when the briefing index is missing. */
+async function digestsFromCommitmentsScan(
+    ctx: DbCtx,
+    commitments: Doc<"commitments">[]
+) {
+    const digests: Array<{
+        id: Id<"agentDigests">;
+        commitmentId: Id<"commitments">;
+        ventureName: string;
+        summary: string;
+        insights: string;
+        nextAction: string | null;
+        evidence: string[];
+        createdAt: number;
+    }> = [];
+    for (const commitment of commitments.slice(0, 8)) {
+        const latest = await ctx.db
+            .query("agentDigests")
+            .withIndex("by_commitmentId", (q) => q.eq("commitmentId", commitment._id))
+            .order("desc")
+            .first();
+        if (!latest) continue;
+        const venture = await ctx.db.get(commitment.ventureId);
+        digests.push({
+            id: latest._id,
+            commitmentId: commitment._id,
+            ventureName: venture?.name ?? "Venture",
+            summary: latest.summary,
+            insights: latest.insights,
+            nextAction: latest.nextAction ?? null,
+            evidence: latest.evidence ?? [],
+            createdAt: latest.createdAt,
+        });
+    }
+    return digests.sort((a, b) => b.createdAt - a.createdAt).slice(0, 3);
 }
 
 /** Agent-led Today briefing: what happened, what needs a decision, what's next. */
@@ -1207,6 +1305,8 @@ export const todayBriefing = query({
                 at: v.number(),
             })
         ),
+        /** Newest digests for the bento on a filled desk (up to 3). */
+        digests: v.array(todayDigestValidator),
         nextScheduled: v.union(
             v.object({
                 label: v.string(),
@@ -1433,21 +1533,26 @@ export const pledgeCommitment = mutation({
         const venture = await ctx.db.get(args.ventureId);
         if (!venture) throw new Error("Venture not found");
 
+        // Prefer the signed-in caller's desk — never silently attach a pledge
+        // to the shared Wanjiru demo investor (that made invitees "succeed"
+        // into an empty private surface while Proof showed someone else's work).
+        const userId = await getAuthUserId(ctx);
         let investorId = args.investorId ?? null;
-        if (!investorId && (args.investorName?.trim() || args.investorEmail?.trim())) {
+        if (userId) {
+            const linked = await ensureInvestorForUserId(
+                ctx,
+                userId,
+                args.investorName?.trim() || undefined
+            );
+            investorId = linked.investorId;
+        } else if (!investorId && (args.investorName?.trim() || args.investorEmail?.trim())) {
             investorId = await upsertInvestorRecord(ctx, {
                 displayName: args.investorName?.trim() || "Investor",
                 email: args.investorEmail,
             });
         }
         if (!investorId) {
-            investorId = await resolveDefaultInvestorId(ctx);
-        }
-        if (!investorId) {
-            investorId = await upsertInvestorRecord(ctx, {
-                displayName: "Investor",
-                email: null,
-            });
+            throw new Error("Sign in to record a pledge on your desk.");
         }
 
         const investor = await ctx.db.get(investorId);
@@ -1659,6 +1764,10 @@ export const seedInvestDemo = mutation({
         createdCommitments: v.number(),
         createdCheckIns: v.number(),
         createdDigests: v.number(),
+        /** First commitment on the caller's desk — null when they still need to sign in. */
+        commitmentId: v.union(v.id("commitments"), v.null()),
+        /** True when the caller is anonymous: platform data may exist, but their desk is empty. */
+        needsAuth: v.boolean(),
         message: v.string(),
     }),
     handler: async (ctx) => {
@@ -1672,9 +1781,9 @@ export const seedInvestDemo = mutation({
             .first();
 
         let createdInvestors = 0;
-        let investorId = existingDefault?._id ?? null;
-        if (!investorId) {
-            investorId = await ctx.db.insert("investors", {
+        let platformInvestorId = existingDefault?._id ?? null;
+        if (!platformInvestorId) {
+            platformInvestorId = await ctx.db.insert("investors", {
                 displayName: "Wanjiru Kamau",
                 email: "wanjiru@example.com",
                 phone: "+254700111222",
@@ -1768,219 +1877,119 @@ export const seedInvestDemo = mutation({
             createdVentures += 1;
         }
 
-        const existingCommitments = await ctx.db
-            .query("commitments")
-            .withIndex("by_investorId", (q) => q.eq("investorId", investorId!))
-            .take(10);
+        const demoPledges = [
+            {
+                ventureId: ventureIds[0]!,
+                amountKes: 15000,
+                shareBps: 1000,
+                thesis: "Back Amina’s outbound week — pay for airtime + CRM coaching; share 10% of sales cashflow until 2×.",
+                backdateDays: 3,
+                checkIns: [
+                    { metric: "meetings_booked", value: 4, note: "Two SME owners + one clinic admin", periodLabel: "Week 1" },
+                    { metric: "meetings_booked", value: 6, note: "Pipeline filling; one verbal yes", periodLabel: "Week 2" },
+                ],
+                digest: {
+                    summary: "I watched Amina book 10 meetings across two weeks; one verbal commitment is pending a quote.",
+                    insights: "Airtime spend is the bottleneck. I recommend a KES 2,000 top-up and a fixed Tuesday review call.",
+                },
+            },
+            {
+                ventureId: ventureIds[1]!,
+                amountKes: 20000,
+                shareBps: 800,
+                thesis: "Fund Brian’s consumables + PPE; 8% of job revenue until 2×.",
+                backdateDays: 0,
+                checkIns: [
+                    { metric: "jobs_completed", value: 2, note: "Gate repair + grill install", periodLabel: "Week 1" },
+                    { metric: "revenue_kes", value: 7800, note: "Collected via M-Pesa", periodLabel: "Week 1" },
+                ],
+                digest: {
+                    summary: "Two paid jobs completed; I logged KES 7,800 collected. Consumables still thin.",
+                    insights: "Next week I'll push quote discipline and photo evidence of each job for the public ledger.",
+                },
+            },
+        ];
 
         let createdCommitments = 0;
         let createdCheckIns = 0;
         let createdDigests = 0;
-        const commitmentIds: Id<"commitments">[] = [];
 
-        if (existingCommitments.length === 0) {
-            const pledges = [
-                {
-                    ventureId: ventureIds[0]!,
-                    amountKes: 15000,
-                    shareBps: 1000,
-                    thesis: "Back Amina’s outbound week — pay for airtime + CRM coaching; share 10% of sales cashflow until 2×.",
-                    // Backdated activity → Jua has an honest reason to follow up.
-                    backdateDays: 3,
-                    checkIns: [
-                        { metric: "meetings_booked", value: 4, note: "Two SME owners + one clinic admin", periodLabel: "Week 1" },
-                        { metric: "meetings_booked", value: 6, note: "Pipeline filling; one verbal yes", periodLabel: "Week 2" },
-                    ],
-                    digest: {
-                        summary: "I watched Amina book 10 meetings across two weeks; one verbal commitment is pending a quote.",
-                        insights: "Airtime spend is the bottleneck. I recommend a KES 2,000 top-up and a fixed Tuesday review call.",
-                    },
-                },
-                {
-                    ventureId: ventureIds[1]!,
-                    amountKes: 20000,
-                    shareBps: 800,
-                    thesis: "Fund Brian’s consumables + PPE; 8% of job revenue until 2×.",
-                    backdateDays: 0,
-                    checkIns: [
-                        { metric: "jobs_completed", value: 2, note: "Gate repair + grill install", periodLabel: "Week 1" },
-                        { metric: "revenue_kes", value: 7800, note: "Collected via M-Pesa", periodLabel: "Week 1" },
-                    ],
-                    digest: {
-                        summary: "Two paid jobs completed; I logged KES 7,800 collected. Consumables still thin.",
-                        insights: "Next week I'll push quote discipline and photo evidence of each job for the public ledger.",
-                    },
-                },
-            ];
+        // Platform demo investor (Wanjiru) — keeps the public ledger alive for
+        // cold visitors. Private surfaces never resolve to this row anonymously.
+        const existingPlatformCommitments = await ctx.db
+            .query("commitments")
+            .withIndex("by_investorId", (q) => q.eq("investorId", platformInvestorId!))
+            .take(10);
 
-            for (const pledge of pledges) {
-                // Backdated activity reads honestly ("last reported 3 days ago")
-                // and gives Jua a real reason to follow up on first visit.
-                const baseTs = now - (pledge.backdateDays ?? 0) * 24 * 60 * 60 * 1000;
-                const commitmentId = await ctx.db.insert("commitments", {
-                    investorId: investorId!,
-                    ventureId: pledge.ventureId,
-                    amountKes: pledge.amountKes,
-                    shareBps: pledge.shareBps,
-                    capMultiple: 2,
-                    status: "active",
-                    thesis: pledge.thesis,
-                    nextDigestAt: nextFridayEightEAT(now),
-                    digestCadence: "Weekly · Fri 08:00 EAT",
-                    createdAt: baseTs + createdCommitments,
-                    updatedAt: baseTs + createdCommitments,
-                });
-                commitmentIds.push(commitmentId);
-                createdCommitments += 1;
-
-                const venture = await ctx.db.get(pledge.ventureId);
-                const investorEmail = "wanjiru@example.com";
-                const agentAddress = venture?.agentEmail ?? "agent@juakali.demo";
-                await writeLedgerEvent(ctx, {
-                    type: "pledge",
-                    ventureId: pledge.ventureId,
-                    commitmentId,
-                    summary: `Wanjiru Kamau pledged KES ${pledge.amountKes.toLocaleString()} into ${venture?.name ?? "venture"} (${(pledge.shareBps / 100).toFixed(1)}% until 2×)`,
-                    amountKes: pledge.amountKes,
-                    createdAt: baseTs + createdCommitments,
-                });
-
-                for (const checkIn of pledge.checkIns) {
-                    await ctx.db.insert("kpiCheckIns", {
-                        ventureId: pledge.ventureId,
-                        commitmentId,
-                        periodLabel: checkIn.periodLabel,
-                        metric: checkIn.metric,
-                        value: checkIn.value,
-                        note: checkIn.note,
-                        source: "agent",
-                        createdAt: baseTs + createdCheckIns + 10,
-                    });
-                    await writeLedgerEvent(ctx, {
-                        type: "checkin",
-                        ventureId: pledge.ventureId,
-                        commitmentId,
-                        summary: `${venture?.name}: ${checkIn.metric} = ${checkIn.value} — ${checkIn.note}`,
-                        metric: checkIn.metric,
-                        value: checkIn.value,
-                        createdAt: baseTs + createdCheckIns + 11,
-                    });
-                    createdCheckIns += 1;
-                }
-
-                await ctx.db.insert("agentDigests", {
-                    commitmentId,
-                    ventureId: pledge.ventureId,
-                    summary: pledge.digest.summary,
-                    insights: pledge.digest.insights,
-                    createdAt: baseTs + createdDigests + 20,
-                });
-                await writeLedgerEvent(ctx, {
-                    type: "digest",
-                    ventureId: pledge.ventureId,
-                    commitmentId,
-                    summary: `Digest for ${venture?.name}: ${pledge.digest.summary}`,
-                    createdAt: baseTs + createdDigests + 21,
-                });
-                createdDigests += 1;
-
-                await ctx.db.insert("agentEmails", {
-                    commitmentId,
-                    ventureId: pledge.ventureId,
-                    investorId: investorId!,
-                    direction: "inbound",
-                    fromAddress: investorEmail,
-                    toAddress: agentAddress,
-                    subject: `Re: ${venture?.name ?? "venture"} — quick push`,
-                    body: `Please push follow-ups this week and summarize pipeline for me by Friday.`,
-                    createdAt: baseTs + 30,
-                });
-                await ctx.db.insert("agentEmails", {
-                    commitmentId,
-                    ventureId: pledge.ventureId,
-                    investorId: investorId!,
-                    direction: "outbound",
-                    fromAddress: agentAddress,
-                    toAddress: investorEmail,
-                    subject: `Digest: ${venture?.name ?? "venture"}`,
-                    body: `${pledge.digest.summary}\n\n${pledge.digest.insights}\n\n— Jua · JuaKali agent (demo email ritual)`,
-                    createdAt: baseTs + 31,
-                });
-
-                // Jua takes initiative: a real open proposal on the stale venture.
-                if ((pledge.backdateDays ?? 0) > 0 && venture) {
-                    const commitmentDoc = await ctx.db.get(commitmentId);
-                    if (commitmentDoc) {
-                        await createProposalForCommitment(ctx, commitmentDoc, venture, pledge.backdateDays!);
-                    }
-                }
-            }
-
-            // Third venture visible but not yet pledged by default investor
-            await writeLedgerEvent(ctx, {
-                type: "action",
-                ventureId: ventureIds[2]!,
-                summary: "Faith Tailoring Line listed for public investment — seeking first soft pledge for machine servicing.",
-                createdAt: now + 50,
+        if (existingPlatformCommitments.length === 0) {
+            const seeded = await seedPledgesOntoInvestor(ctx, {
+                investorId: platformInvestorId!,
+                investorName: "Wanjiru Kamau",
+                investorEmail: "wanjiru@example.com",
+                pledges: demoPledges,
+                now,
+                writeListingEvent: true,
+                ventureIds,
             });
-
-            // The wisdom loop has history too: a mentor's applied note with a
-            // measured outcome, so both sides of the loop demo truthfully.
-            const existingWisdom = await ctx.db
-                .query("sharedItems")
-                .withIndex("by_ventureId_and_status", (q) =>
-                    q.eq("ventureId", ventureIds[0]!).eq("status", "applied")
-                )
-                .first();
-            if (!existingWisdom) {
-                const appliedAt = now - 4 * 24 * 60 * 60 * 1000;
-                await ctx.db.insert("sharedItems", {
-                    ventureId: ventureIds[0]!,
-                    investorId,
-                    kind: "note",
-                    sourceUrl: null,
-                    title: "Note from your mentor",
-                    body: "Stop selling to everyone. Pick the clinic admins you already met — they know you. Ask each for one referral before Friday and write down who said what.",
-                    charCount: 160,
-                    status: "applied",
-                    parse: {
-                        summary: "Focus the week on referral selling through warm clinic-admin contacts instead of cold outreach.",
-                        principles: [
-                            "Warm referrals close faster than cold outreach",
-                            "Ask for one referral per existing contact",
-                            "Write down every answer — pipeline memory",
-                        ],
-                        application: {
-                            title: "Run the referral sweep this week",
-                            body: "List the clinic admins already met, ask each for one referral before Friday, and log every answer. Jua will measure meetings booked against this and report the delta to your mentor.",
-                        },
-                        confidence: 0.82,
-                        engine: "fallback",
-                    },
-                    appliedAt,
-                    createdAt: appliedAt - 3600_000,
-                });
-                await writeLedgerEvent(ctx, {
-                    type: "wisdom",
-                    ventureId: ventureIds[0]!,
-                    commitmentId: null,
-                    summary: "Wanjiru Kamau shared a note with Amina Sales Pod — Jua applied: Run the referral sweep this week",
-                    createdAt: appliedAt,
-                    evidence: ["agent", "note"],
-                });
-            }
+            createdCommitments += seeded.createdCommitments;
+            createdCheckIns += seeded.createdCheckIns;
+            createdDigests += seeded.createdDigests;
         }
 
-        // Seeding creates ventures, pledges, and check-ins — refresh the
-        // global browse index so the cockpit's browse list is correct.
+        // Caller's personal desk — this is what Today / Deals actually show.
+        const userId = await getAuthUserId(ctx);
+        let personalCommitmentId: Id<"commitments"> | null = null;
+        let needsAuth = !userId;
+
+        if (userId) {
+            const linked = await ensureInvestorForUserId(ctx, userId);
+            const existingPersonal = await ctx.db
+                .query("commitments")
+                .withIndex("by_investorId", (q) => q.eq("investorId", linked.investorId))
+                .take(10);
+
+            if (existingPersonal.length === 0) {
+                const seeded = await seedPledgesOntoInvestor(ctx, {
+                    investorId: linked.investorId,
+                    investorName: linked.displayName,
+                    investorEmail: linked.email ?? `${linked.investorId}@guest.juakali.demo`,
+                    pledges: demoPledges,
+                    now,
+                    writeListingEvent: false,
+                    ventureIds,
+                });
+                createdCommitments += seeded.createdCommitments;
+                createdCheckIns += seeded.createdCheckIns;
+                createdDigests += seeded.createdDigests;
+                personalCommitmentId = seeded.firstCommitmentId;
+            } else {
+                personalCommitmentId = existingPersonal[0]!._id;
+            }
+
+            await syncInvestorBriefing(ctx, linked.investorId);
+            needsAuth = false;
+        }
+
         await syncVentureBrowse(ctx);
 
-        const alreadySeeded =
-            createdInvestors === 0 &&
-            createdVentures === 0 &&
+        if (needsAuth) {
+            return {
+                createdInvestors,
+                createdVentures,
+                createdCommitments,
+                createdCheckIns,
+                createdDigests,
+                commitmentId: null,
+                needsAuth: true,
+                message: "Sign in to put demo deals on your desk.",
+            };
+        }
+
+        const alreadyHadDesk =
             createdCommitments === 0 &&
             createdCheckIns === 0 &&
-            createdDigests === 0;
+            createdDigests === 0 &&
+            personalCommitmentId != null;
 
         return {
             createdInvestors,
@@ -1988,10 +1997,196 @@ export const seedInvestDemo = mutation({
             createdCommitments,
             createdCheckIns,
             createdDigests,
-            message: alreadySeeded ? "Invest demo already seeded" : "Invest demo seeded",
+            commitmentId: personalCommitmentId,
+            needsAuth: false,
+            message: alreadyHadDesk
+                ? "Demo deals are already on your desk."
+                : "Demo deals are on your desk — approve Jua's suggestion to see the loop.",
         };
     },
 });
+
+/** Shared pledge/KPI/digest/proposal writer for platform + personal demo desks. */
+async function seedPledgesOntoInvestor(
+    ctx: MutationCtx,
+    args: {
+        investorId: Id<"investors">;
+        investorName: string;
+        investorEmail: string;
+        pledges: Array<{
+            ventureId: Id<"ventures">;
+            amountKes: number;
+            shareBps: number;
+            thesis: string;
+            backdateDays: number;
+            checkIns: Array<{ metric: string; value: number; note: string; periodLabel: string }>;
+            digest: { summary: string; insights: string };
+        }>;
+        now: number;
+        writeListingEvent: boolean;
+        ventureIds: Id<"ventures">[];
+    }
+) {
+    let createdCommitments = 0;
+    let createdCheckIns = 0;
+    let createdDigests = 0;
+    let firstCommitmentId: Id<"commitments"> | null = null;
+
+    for (const pledge of args.pledges) {
+        const baseTs = args.now - (pledge.backdateDays ?? 0) * 24 * 60 * 60 * 1000;
+        const commitmentId = await ctx.db.insert("commitments", {
+            investorId: args.investorId,
+            ventureId: pledge.ventureId,
+            amountKes: pledge.amountKes,
+            shareBps: pledge.shareBps,
+            capMultiple: 2,
+            status: "active",
+            thesis: pledge.thesis,
+            nextDigestAt: nextFridayEightEAT(args.now),
+            digestCadence: "Weekly · Fri 08:00 EAT",
+            createdAt: baseTs + createdCommitments,
+            updatedAt: baseTs + createdCommitments,
+        });
+        if (!firstCommitmentId) firstCommitmentId = commitmentId;
+        createdCommitments += 1;
+
+        const venture = await ctx.db.get(pledge.ventureId);
+        const agentAddress = venture?.agentEmail ?? "agent@juakali.demo";
+        await writeLedgerEvent(ctx, {
+            type: "pledge",
+            ventureId: pledge.ventureId,
+            commitmentId,
+            summary: `${args.investorName} pledged KES ${pledge.amountKes.toLocaleString()} into ${venture?.name ?? "venture"} (${(pledge.shareBps / 100).toFixed(1)}% until 2×)`,
+            amountKes: pledge.amountKes,
+            createdAt: baseTs + createdCommitments,
+        });
+
+        for (const checkIn of pledge.checkIns) {
+            await ctx.db.insert("kpiCheckIns", {
+                ventureId: pledge.ventureId,
+                commitmentId,
+                periodLabel: checkIn.periodLabel,
+                metric: checkIn.metric,
+                value: checkIn.value,
+                note: checkIn.note,
+                source: "agent",
+                createdAt: baseTs + createdCheckIns + 10,
+            });
+            await writeLedgerEvent(ctx, {
+                type: "checkin",
+                ventureId: pledge.ventureId,
+                commitmentId,
+                summary: `${venture?.name}: ${checkIn.metric} = ${checkIn.value} — ${checkIn.note}`,
+                metric: checkIn.metric,
+                value: checkIn.value,
+                createdAt: baseTs + createdCheckIns + 11,
+            });
+            createdCheckIns += 1;
+        }
+
+        await ctx.db.insert("agentDigests", {
+            commitmentId,
+            ventureId: pledge.ventureId,
+            summary: pledge.digest.summary,
+            insights: pledge.digest.insights,
+            createdAt: baseTs + createdDigests + 20,
+        });
+        await writeLedgerEvent(ctx, {
+            type: "digest",
+            ventureId: pledge.ventureId,
+            commitmentId,
+            summary: `Digest for ${venture?.name}: ${pledge.digest.summary}`,
+            createdAt: baseTs + createdDigests + 21,
+        });
+        createdDigests += 1;
+
+        await ctx.db.insert("agentEmails", {
+            commitmentId,
+            ventureId: pledge.ventureId,
+            investorId: args.investorId,
+            direction: "inbound",
+            fromAddress: args.investorEmail,
+            toAddress: agentAddress,
+            subject: `Re: ${venture?.name ?? "venture"} — quick push`,
+            body: `Please push follow-ups this week and summarize pipeline for me by Friday.`,
+            createdAt: baseTs + 30,
+        });
+        await ctx.db.insert("agentEmails", {
+            commitmentId,
+            ventureId: pledge.ventureId,
+            investorId: args.investorId,
+            direction: "outbound",
+            fromAddress: agentAddress,
+            toAddress: args.investorEmail,
+            subject: `Digest: ${venture?.name ?? "venture"}`,
+            body: `${pledge.digest.summary}\n\n${pledge.digest.insights}\n\n— Jua · JuaKali agent (demo email ritual)`,
+            createdAt: baseTs + 31,
+        });
+
+        if ((pledge.backdateDays ?? 0) > 0 && venture) {
+            const commitmentDoc = await ctx.db.get(commitmentId);
+            if (commitmentDoc) {
+                await createProposalForCommitment(ctx, commitmentDoc, venture, pledge.backdateDays!);
+            }
+        }
+    }
+
+    if (args.writeListingEvent && args.ventureIds[2]) {
+        await writeLedgerEvent(ctx, {
+            type: "action",
+            ventureId: args.ventureIds[2]!,
+            summary: "Faith Tailoring Line listed for public investment — seeking first soft pledge for machine servicing.",
+            createdAt: args.now + 50,
+        });
+
+        const existingWisdom = await ctx.db
+            .query("sharedItems")
+            .withIndex("by_ventureId_and_status", (q) =>
+                q.eq("ventureId", args.ventureIds[0]!).eq("status", "applied")
+            )
+            .first();
+        if (!existingWisdom) {
+            const appliedAt = args.now - 4 * 24 * 60 * 60 * 1000;
+            await ctx.db.insert("sharedItems", {
+                ventureId: args.ventureIds[0]!,
+                investorId: args.investorId,
+                kind: "note",
+                sourceUrl: null,
+                title: "Note from your mentor",
+                body: "Stop selling to everyone. Pick the clinic admins you already met — they know you. Ask each for one referral before Friday and write down who said what.",
+                charCount: 160,
+                status: "applied",
+                parse: {
+                    summary: "Focus the week on referral selling through warm clinic-admin contacts instead of cold outreach.",
+                    principles: [
+                        "Warm referrals close faster than cold outreach",
+                        "Ask for one referral per existing contact",
+                        "Write down every answer — pipeline memory",
+                    ],
+                    application: {
+                        title: "Run the referral sweep this week",
+                        body: "List the clinic admins already met, ask each for one referral before Friday, and log every answer. Jua will measure meetings booked against this and report the delta to your mentor.",
+                    },
+                    confidence: 0.82,
+                    engine: "fallback",
+                },
+                appliedAt,
+                createdAt: appliedAt - 3600_000,
+            });
+            await writeLedgerEvent(ctx, {
+                type: "wisdom",
+                ventureId: args.ventureIds[0]!,
+                commitmentId: null,
+                summary: `${args.investorName} shared a note with Amina Sales Pod — Jua applied: Run the referral sweep this week`,
+                createdAt: appliedAt,
+                evidence: ["agent", "note"],
+            });
+        }
+    }
+
+    return { createdCommitments, createdCheckIns, createdDigests, firstCommitmentId };
+}
+
 
 async function resolveVentureId(
     ctx: DbCtx,

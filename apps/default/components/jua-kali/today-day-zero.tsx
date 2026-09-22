@@ -45,7 +45,7 @@ export function TodayDayZero({
                         {STEPS.map((step, i) => (
                             <View key={step.title} style={styles.step}>
                                 <View style={styles.stepN}>
-                                    <Text style={styles.stepNText}>{i + 1}</Text>
+                                    <Text style={styles.stepNText}>{String(i + 1).padStart(2, "0")}</Text>
                                 </View>
                                 <View style={styles.stepCopy}>
                                     <Text style={styles.stepTitle}>{step.title}</Text>
@@ -87,12 +87,14 @@ export function TodayDayZero({
                 <PressableScale
                     onPress={() => router.push("/(tabs)/deals")}
                     style={styles.cta}
-                    accessibilityLabel="Browse deals"
-                    accessibilityHint="Opens the Deals tab with ventures to back"
+                    accessibilityLabel="Open Deals"
+                    accessibilityHint="Opens the Deals tab to load the demo or back a venture"
                 >
-                    <Text style={styles.ctaText}>Browse deals →</Text>
+                    <Text style={styles.ctaText}>Open Deals →</Text>
                 </PressableScale>
-                <Text style={styles.footnote}>Soft pledges — intent, not escrow or live payments.</Text>
+                <Text style={styles.footnote}>
+                    Soft pledges — intent, not escrow. On Deals, load the demo to see Jua work on your desk.
+                </Text>
             </Animated.View>
         </View>
     );
@@ -100,16 +102,16 @@ export function TodayDayZero({
 
 const STEPS = [
     {
-        title: "Pick a venture",
-        body: "Browse real Jua Kali ventures — the craft, the place, and the target they're working toward.",
+        title: "Put a deal on your desk",
+        body: "Load the demo or back a venture. Soft pledges are intent only — not escrow or payments.",
     },
     {
-        title: "Make a soft commitment",
-        body: "Pledge a revenue share. It's intent, not escrow — a demo of the instrument.",
+        title: "Approve what Jua proposes",
+        body: "Jua mentors weekly and asks before acting. You approve each step.",
     },
     {
-        title: "Approve Jua's work",
-        body: "Jua mentors and checks in weekly. You approve each step, and proof lands on the public ledger.",
+        title: "See proof go public",
+        body: "Approved work lands on the ledger — capital, KPIs, and digests anyone can read.",
     },
 ];
 
@@ -132,16 +134,23 @@ const styles = StyleSheet.create({
     steps: { gap: 14 },
     step: { flexDirection: "row", gap: 12, alignItems: "flex-start" },
     stepN: {
-        width: 24,
-        height: 24,
-        borderRadius: 12,
+        width: 28,
+        height: 28,
+        borderRadius: 14,
         borderWidth: 1,
         borderColor: color.brassBorder,
         backgroundColor: color.brassSoft,
         alignItems: "center",
         justifyContent: "center",
     },
-    stepNText: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.brassDeep },
+    stepNText: {
+        fontFamily: font.bodyBold,
+        fontSize: 11,
+        fontWeight: "700",
+        color: color.brassDeep,
+        letterSpacing: 0.4,
+        fontVariant: ["tabular-nums"],
+    },
     stepCopy: { flex: 1, gap: 2 },
     stepTitle: { fontFamily: font.bodyBold, fontSize: 14, fontWeight: "700", color: color.ink },
     stepBody: { ...type.body, fontSize: 13, lineHeight: 19, color: color.mist },
@@ -165,8 +174,8 @@ const styles = StyleSheet.create({
     ctaBlock: { alignItems: "center", gap: 10 },
     cta: {
         backgroundColor: color.charcoal,
-        borderRadius: 6,
-        paddingVertical: 12,
+        borderRadius: 10,
+        paddingVertical: 13,
         paddingHorizontal: 28,
         alignItems: "center",
     },

@@ -8,7 +8,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { formatKes } from "@/components/jua-kali/cockpit/format";
 import { Sparkline } from "@/components/jua-kali/cockpit/sparkline";
 import { useUiMotion } from "@/components/jua-kali/hooks/use-ui-motion";
-import { IconArrowRight, IconCapital, IconLedger, IconSparkle } from "@/components/jua-kali/icons";
+import { IconArrowRight, IconLedger } from "@/components/jua-kali/icons";
 import { LivingSun } from "@/components/jua-kali/living-sun";
 import { SunMark } from "@/components/jua-kali/sun-mark";
 import { color, font, sun, type } from "@/components/jua-kali/theme";
@@ -21,17 +21,14 @@ const GALLERY_LIMIT = 6;
 
 const LOOP_STEPS = [
     {
-        icon: IconCapital,
         title: "Make a soft pledge",
         body: "Intent only — no escrow, no payments. You set an amount and a revenue share.",
     },
     {
-        icon: IconSparkle,
         title: "Jua mentors weekly",
         body: "Check-ins, hard KPIs with evidence, and a digest that waits for your approval.",
     },
     {
-        icon: IconLedger,
         title: "Proof seals in public",
         body: "Capital → actions → results, on a ledger anyone can read.",
     },
@@ -92,10 +89,10 @@ export function DealsEmptyDesk({
                 <Text style={styles.headline}>Nothing on my desk yet.</Text>
                 <Text style={styles.voice}>
                     {shown.length > 0
-                        ? "The sun is up and I'm ready to work. Back a venture below and I'll follow it every week — logging hard KPIs, writing digests you approve, and sealing each step to the public ledger."
+                        ? "Back a venture below and I'll follow it every week — logging hard KPIs, writing digests you approve, and sealing each step to the public ledger."
                         : demo
-                          ? "The sun is up and I'm ready to work. Load the seeded ventures below and I'll start following them — or check back when a venture opens for pledges."
-                          : "The sun is up and I'm ready to work. No ventures are open for pledges yet — check back soon."}
+                          ? "Load seeded deals onto your desk and I'll start following them — pledges, live KPIs, and a suggestion waiting for your approval."
+                          : "No ventures are open for pledges yet — check back soon."}
                 </Text>
             </Animated.View>
 
@@ -141,11 +138,11 @@ export function DealsEmptyDesk({
                             <Text style={styles.demoTitle}>Rather watch me work first?</Text>
                         </View>
                         <Text style={styles.demoBody}>
-                            Load seeded deals and this desk fills in — pledges, live KPIs, a digest
-                            to approve, and entries on the public ledger.
+                            Loads example deals onto your desk — not a shared demo account. You'll get
+                            pledges, live KPIs, a suggestion to approve, and entries on the public ledger.
                         </Text>
                         <Button
-                            label={isSeeding ? "Loading…" : "Load seeded deals"}
+                            label={isSeeding ? "Loading onto your desk…" : "Load demo onto my desk"}
                             onPress={onSeed}
                             disabled={isSeeding}
                             busy={isSeeding}
@@ -292,7 +289,6 @@ function LoopSteps() {
             <Card>
                 <View style={[styles.loop, row && styles.loopRow]}>
                     {LOOP_STEPS.map((step, i) => {
-                        const StepIcon = step.icon;
                         return (
                             <View
                                 key={step.title}
@@ -303,7 +299,7 @@ function LoopSteps() {
                                 ]}
                             >
                                 <View style={styles.loopBadge}>
-                                    <StepIcon size={15} color={color.brassDeep} />
+                                    <Text style={styles.loopIndex}>{String(i + 1).padStart(2, "0")}</Text>
                                 </View>
                                 <View style={styles.loopCopy}>
                                     <Text style={styles.loopTitle}>{step.title}</Text>
@@ -358,7 +354,7 @@ const styles = StyleSheet.create({
     ventureCard: {
         gap: 9,
         padding: 14,
-        borderRadius: 6,
+        borderRadius: 10,
         backgroundColor: color.paper,
         borderWidth: 1,
         borderColor: color.line,
@@ -438,6 +434,14 @@ const styles = StyleSheet.create({
         backgroundColor: color.brassSoft,
         alignItems: "center",
         justifyContent: "center",
+    },
+    loopIndex: {
+        fontFamily: font.bodyBold,
+        fontSize: 11,
+        fontWeight: "700",
+        color: color.brassDeep,
+        letterSpacing: 0.4,
+        fontVariant: ["tabular-nums"],
     },
     loopCopy: { flex: 1, gap: 2 },
     loopTitle: { fontFamily: font.bodyBold, fontSize: 13, fontWeight: "700", color: color.ink },

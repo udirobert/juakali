@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { color, font, layout } from "@/components/jua-kali/theme";
+import { color, elevation, font, layout, radius } from "@/components/jua-kali/theme";
 
 /** The top-level surfaces and the Lab's sub-tabs — kept here so the shell chrome stays presentational. */
 export type TabId = "home" | "today" | "deals" | "ledger" | "proof" | "venture" | "lab";
@@ -15,6 +15,7 @@ export const LAB_TABS: Array<{ id: LabTabId; label: string }> = [
 /**
  * The app's one tab treatment — three physical layouts (bottom tab / top tab /
  * compact lab chip) driven by `top` and `compact`, with press + selected states.
+ * Dock idiom (sylva): soft capsule, selected fill, no hard underline slab.
  */
 export function TabButton({
     label,
@@ -78,16 +79,18 @@ export function NavTabs({
 }) {
     return (
         <View style={[styles.navInner, top && styles.navInnerTop]}>
-            <View style={[styles.tabRow, top && styles.tabRowTop]}>
-                {primaryTabs.map((tab) => (
-                    <TabButton
-                        key={tab.id}
-                        label={tab.label}
-                        active={activePrimary === tab.id}
-                        onPress={() => onSelectPrimary(tab.id)}
-                        top={top}
-                    />
-                ))}
+            <View style={[styles.dock, top && styles.dockTop, !top && elevation.dock]}>
+                <View style={[styles.tabRow, top && styles.tabRowTop]}>
+                    {primaryTabs.map((tab) => (
+                        <TabButton
+                            key={tab.id}
+                            label={tab.label}
+                            active={activePrimary === tab.id}
+                            onPress={() => onSelectPrimary(tab.id)}
+                            top={top}
+                        />
+                    ))}
+                </View>
             </View>
             {showLab ? (
                 <View style={styles.labRow}>
@@ -108,15 +111,34 @@ export function NavTabs({
 }
 
 const styles = StyleSheet.create({
-    navInner: { width: "100%" },
-    navInnerTop: { flex: 1 },
+    navInner: { width: "100%", alignItems: "center", gap: 6 },
+    navInnerTop: { flex: 1, alignItems: "stretch" },
+    dock: {
+        maxWidth: layout.maxWidth,
+        width: "92%",
+        alignSelf: "center",
+        borderRadius: radius.lg,
+        borderWidth: 1,
+        borderColor: color.panelBorder,
+        backgroundColor: color.panel,
+        paddingVertical: 4,
+        paddingHorizontal: 4,
+    },
+    dockTop: {
+        width: "100%",
+        maxWidth: undefined,
+        backgroundColor: "transparent",
+        borderWidth: 0,
+        paddingVertical: 0,
+        paddingHorizontal: 0,
+        borderRadius: 0,
+    },
     tabRow: {
         flexDirection: "row",
         justifyContent: "center",
-        maxWidth: layout.maxWidth,
         width: "100%",
         alignSelf: "center",
-        paddingHorizontal: 8,
+        gap: 2,
     },
     tabRowTop: {
         justifyContent: "flex-start",
@@ -133,10 +155,11 @@ const styles = StyleSheet.create({
     tab: {
         flex: 1,
         maxWidth: 160,
-        paddingVertical: 14,
+        paddingVertical: 12,
         alignItems: "center",
-        minHeight: 48,
+        minHeight: 44,
         justifyContent: "center",
+        borderRadius: radius.md,
     },
     tabTop: {
         flex: 0,
@@ -144,7 +167,7 @@ const styles = StyleSheet.create({
         paddingVertical: 10,
         minHeight: 44,
         maxWidth: undefined,
-        borderRadius: 4,
+        borderRadius: radius.sm,
     },
     tabCompact: {
         flex: 0,
@@ -153,19 +176,18 @@ const styles = StyleSheet.create({
         minHeight: 36,
     },
     tabActive: {
-        borderTopWidth: 2,
-        borderTopColor: color.brass,
+        backgroundColor: color.brassSoft,
     },
     tabActiveTop: {
         backgroundColor: color.brassSoft,
     },
-    tabPressed: { opacity: 0.6 },
+    tabPressed: { opacity: 0.7 },
     tabText: {
         fontFamily: font.bodyBold,
         color: color.mist,
         fontSize: 13,
         fontWeight: "700",
-        letterSpacing: 0.3,
+        letterSpacing: 0.2,
     },
     tabTextCompact: { fontSize: 11 },
     tabTextActive: { color: color.charcoal },

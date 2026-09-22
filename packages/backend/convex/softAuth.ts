@@ -168,6 +168,76 @@ export const softAuthConfig = query({
     },
 });
 
+/**
+ * Resolve (or create) the investors row for a signed-in user.
+ * Shared by ensureMyInvestor and demo seeding so pledges land on *their* desk.
+ */
+export async function ensureInvestorForUserId(
+    ctx: MutationCtx,
+    userId: Id<"users">,
+    preferredDisplayName?: string
+): Promise<{
+    investorId: Id<"investors">;
+    email: string | null;
+    displayName: string;
+    message: string;
+}> {
+    const user = await ctx.db.get(userId);
+    if (!user) throw new Error("User not found");
+
+    const email = typeof user.email === "string" ? user.email.trim().toLowerCase() : null;
+    const displayName =
+        preferredDisplayName?.trim() ||
+        (typeof user.name === "string" && user.name.trim()) ||
+        (email ? email.split("@")[0]! : "Guest");
+
+    const byUser = await ctx.db
+        .query("investors")
+        .withIndex("by_userId", (q) => q.eq("userId", userId))
+        .first();
+    if (byUser) {
+        await ctx.db.patch(byUser._id, {
+            displayName: displayName || byUser.displayName,
+            email: email ?? byUser.email ?? null,
+        });
+        return {
+            investorId: byUser._id,
+            email: email ?? byUser.email ?? null,
+            displayName: displayName || byUser.displayName,
+            message: "Investor linked.",
+        };
+    }
+
+    if (email) {
+        const byEmail = await ctx.db
+            .query("investors")
+            .withIndex("by_email", (q) => q.eq("email", email))
+            .first();
+        if (byEmail) {
+            await ctx.db.patch(byEmail._id, {
+                userId,
+                displayName: displayName || byEmail.displayName,
+            });
+            return {
+                investorId: byEmail._id,
+                email,
+                displayName: displayName || byEmail.displayName,
+                message: "Investor linked to your email.",
+            };
+        }
+    }
+
+    const investorId = await ctx.db.insert("investors", {
+        displayName,
+        email,
+        phone: null,
+        userId,
+        isDefaultDemo: false,
+        createdAt: Date.now(),
+    });
+    return { investorId, email, displayName, message: "Investor profile created." };
+}
+
 /** Link signed-in user → investors row (by email / userId). */
 export const ensureMyInvestor = mutation({
     args: {
@@ -182,58 +252,12 @@ export const ensureMyInvestor = mutation({
         await rateLimiter.limit(ctx, "investMutate", { key: "ensureInvestor" });
         const userId = await getAuthUserId(ctx);
         if (!userId) throw new Error("Authentication required");
-        const user = await ctx.db.get(userId);
-        if (!user) throw new Error("User not found");
-
-        const email = typeof user.email === "string" ? user.email.trim().toLowerCase() : null;
-        const displayName =
-            args.displayName?.trim() ||
-            (typeof user.name === "string" && user.name.trim()) ||
-            (email ? email.split("@")[0]! : "Investor");
-
-        const byUser = await ctx.db
-            .query("investors")
-            .withIndex("by_userId", (q) => q.eq("userId", userId))
-            .first();
-        if (byUser) {
-            await ctx.db.patch(byUser._id, {
-                displayName: displayName || byUser.displayName,
-                email: email ?? byUser.email ?? null,
-            });
-            return {
-                investorId: byUser._id,
-                email: email ?? byUser.email ?? null,
-                message: "Investor linked.",
-            };
-        }
-
-        if (email) {
-            const byEmail = await ctx.db
-                .query("investors")
-                .withIndex("by_email", (q) => q.eq("email", email))
-                .first();
-            if (byEmail) {
-                await ctx.db.patch(byEmail._id, {
-                    userId,
-                    displayName: displayName || byEmail.displayName,
-                });
-                return {
-                    investorId: byEmail._id,
-                    email,
-                    message: "Investor linked to your email.",
-                };
-            }
-        }
-
-        const investorId = await ctx.db.insert("investors", {
-            displayName,
-            email,
-            phone: null,
-            userId,
-            isDefaultDemo: false,
-            createdAt: Date.now(),
-        });
-        return { investorId, email, message: "Investor profile created." };
+        const linked = await ensureInvestorForUserId(ctx, userId, args.displayName);
+        return {
+            investorId: linked.investorId,
+            email: linked.email,
+            message: linked.message,
+        };
     },
 });
 

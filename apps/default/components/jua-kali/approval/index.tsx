@@ -6,6 +6,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Button, Card, Input, SectionLabel } from "@/components/jua-kali/ui";
 import { LivingSun } from "@/components/jua-kali/living-sun";
+import { impactHaptic, successHaptic } from "@/components/jua-kali/haptics";
 import { color, font, type } from "@/components/jua-kali/theme";
 
 export type ActionPlanView = {
@@ -47,6 +48,9 @@ type ApprovalContextValue = {
     setEditing: (v: boolean) => void;
     busy: boolean;
     setBusy: (v: boolean) => void;
+    /** One-shot sun flare at the moment of consequential approval. */
+    igniting: boolean;
+    setIgniting: (v: boolean) => void;
     statusMessage: string | null;
     setStatusMessage: (v: string | null) => void;
 };
@@ -72,6 +76,7 @@ function ApprovalProvider({
     const [publicSummary, setPublicSummary] = useState(plan.preview.publicSummary ?? "");
     const [editing, setEditing] = useState(false);
     const [busy, setBusy] = useState(false);
+    const [igniting, setIgniting] = useState(false);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
     return (
@@ -86,6 +91,8 @@ function ApprovalProvider({
                 setEditing,
                 busy,
                 setBusy,
+                igniting,
+                setIgniting,
                 statusMessage,
                 setStatusMessage,
             }}
@@ -96,16 +103,21 @@ function ApprovalProvider({
 }
 
 function ApprovalCard({ children }: { children?: ReactNode }) {
-    const { plan } = useApproval();
+    const { plan, igniting, busy } = useApproval();
     const publicSteps = plan.planSteps.filter((s) => s.visibility === "public");
     const privateSteps = plan.planSteps.filter((s) => s.visibility === "private");
+    const sealed = igniting || busy;
 
     return (
         <Card variant="trust" style={styles.card}>
             <View style={styles.head}>
-                <LivingSun size={36} progress={0.45} agentState="proposing" />
+                <LivingSun
+                    size={40}
+                    agentState={sealed ? "executing" : "proposing"}
+                    ignite={igniting}
+                />
                 <View style={styles.headCopy}>
-                    <Text style={styles.eyebrow}>Needs approval</Text>
+                    <Text style={styles.eyebrow}>{sealed ? "Sealing…" : "Needs your seal"}</Text>
                     <Text style={styles.title}>{plan.ventureName}</Text>
                 </View>
             </View>
@@ -223,6 +235,7 @@ function ApprovalActions({
         setEditing,
         busy,
         setBusy,
+        setIgniting,
         statusMessage,
         setStatusMessage,
     } = useApproval();
@@ -231,6 +244,8 @@ function ApprovalActions({
     const updateProposalPlan = useMutation(api.agentRuns.updateProposalPlan);
 
     async function handleApprove() {
+        impactHaptic();
+        setIgniting(true);
         setBusy(true);
         setStatusMessage(null);
         try {
@@ -246,8 +261,10 @@ function ApprovalActions({
                 messageDraft,
                 publicSummary: publicSummary || undefined,
             });
+            successHaptic();
             onApproved?.(result.runId);
         } catch (error) {
+            setIgniting(false);
             setStatusMessage(error instanceof Error ? error.message : "Could not approve.");
         } finally {
             setBusy(false);
@@ -277,7 +294,7 @@ function ApprovalActions({
                     style={styles.actionBtn}
                 />
                 <Button
-                    label={busy ? "Working…" : "Approve once"}
+                    label={busy ? "Igniting…" : "Seal & run"}
                     onPress={() => void handleApprove()}
                     disabled={busy}
                     style={styles.actionBtn}
@@ -316,9 +333,12 @@ export function PublicationApproval({
     const [publicSummary, setPublicSummary] = useState(publication.publicSummary);
     const [editing, setEditing] = useState(false);
     const [busy, setBusy] = useState(false);
+    const [igniting, setIgniting] = useState(false);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
     async function handlePublish() {
+        impactHaptic();
+        setIgniting(true);
         setBusy(true);
         setStatusMessage(null);
         try {
@@ -326,8 +346,10 @@ export function PublicationApproval({
                 runId: publication.id as Id<"agentRuns">,
                 publicSummary: publicSummary.trim() || undefined,
             });
+            successHaptic();
             onPublished?.(result.runId);
         } catch (error) {
+            setIgniting(false);
             setStatusMessage(error instanceof Error ? error.message : "Could not publish.");
         } finally {
             setBusy(false);
@@ -337,9 +359,15 @@ export function PublicationApproval({
     return (
         <Card variant="trust" style={styles.card}>
             <View style={styles.head}>
-                <LivingSun size={36} progress={0.72} agentState="executing" />
+                <LivingSun
+                    size={40}
+                    agentState={igniting || busy ? "verified" : "executing"}
+                    ignite={igniting}
+                />
                 <View style={styles.headCopy}>
-                    <Text style={styles.eyebrow}>Approve publication</Text>
+                    <Text style={styles.eyebrow}>
+                        {igniting || busy ? "Sealing to ledger…" : "Approve publication"}
+                    </Text>
                     <Text style={styles.title}>{publication.ventureName}</Text>
                 </View>
             </View>
@@ -386,7 +414,7 @@ export function PublicationApproval({
                         style={styles.actionBtn}
                     />
                     <Button
-                        label={busy ? "Publishing…" : "Approve & publish"}
+                        label={busy ? "Sealing…" : "Seal to ledger"}
                         onPress={() => void handlePublish()}
                         disabled={busy}
                         style={styles.actionBtn}

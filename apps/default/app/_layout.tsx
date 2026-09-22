@@ -64,8 +64,26 @@ export default function RootLayout() {
             const style = document.createElement("style");
             style.id = baseId;
             style.textContent =
-                "html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; } " +
-                ":focus-visible { outline: 2px solid #A67C2D; outline-offset: 2px; border-radius: 2px; }";
+                "html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; " +
+                "background: #E6E4DF; } " +
+                "body { background: transparent; } " +
+                ":focus-visible { outline: 2px solid #A67C2D; outline-offset: 2px; border-radius: 4px; } " +
+                /* Floating dock chrome for NativeTabs on web (sylva dock idiom, light lane). */ +
+                "nav[role='tablist'], [role='tablist'] { " +
+                "  position: fixed !important; left: 50% !important; transform: translateX(-50%) !important; " +
+                "  bottom: 18px !important; width: min(420px, calc(100% - 28px)) !important; " +
+                "  display: flex !important; gap: 4px !important; padding: 6px !important; " +
+                "  border-radius: 14px !important; border: 1px solid rgba(20,24,22,0.1) !important; " +
+                "  background: linear-gradient(180deg, rgba(255,253,247,0.55), rgba(255,253,247,0) 40%), " +
+                "    rgba(247,246,242,0.88) !important; " +
+                "  box-shadow: 0 8px 22px rgba(20,24,22,0.10), inset 0 1px 0 rgba(255,253,247,0.7) !important; " +
+                "  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); " +
+                "  z-index: 40 !important; " +
+                "} " +
+                "[role='tab'] { border-radius: 10px !important; flex: 1 !important; } " +
+                "[role='tab'][aria-selected='true'] { background: rgba(166,124,45,0.14) !important; } " +
+                /* Room for the floating dock so content isn't clipped. */ +
+                "#root, [data-testid='tabs'], main { padding-bottom: 72px; }";
             document.head.appendChild(style);
         }
     }, []);

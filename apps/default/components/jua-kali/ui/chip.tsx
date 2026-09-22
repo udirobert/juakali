@@ -1,7 +1,7 @@
 import { type ReactNode } from "react";
 import { Pressable, StyleSheet, Text } from "react-native";
 
-import { color, font } from "@/components/jua-kali/theme";
+import { color, font, radius } from "@/components/jua-kali/theme";
 
 /** Toggle chip — venture/KPI pickers and filters. Selected = brass. */
 export function Chip({
@@ -39,7 +39,7 @@ const styles = StyleSheet.create({
         gap: 6,
         paddingHorizontal: 12,
         paddingVertical: 8,
-        borderRadius: 4,
+        borderRadius: radius.sm,
         backgroundColor: color.paper,
         borderWidth: 1,
         borderColor: color.line,

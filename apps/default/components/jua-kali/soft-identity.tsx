@@ -223,7 +223,7 @@ export function SoftIdentityBar({
     );
 }
 
-/** Blocks act surfaces when server requires auth and user is anonymous. */
+/** Blocks act surfaces when the user must be signed in (session guest or email). */
 export function AuthRequiredGate({
     required,
     children,
@@ -244,7 +244,7 @@ export function AuthRequiredGate({
             <Text style={styles.gateTitle}>Sign in to continue</Text>
             <Text style={styles.gateBody}>
                 {message ??
-                    "This build asks you to sign in before pledging or approving agent notes — so your deals stay with you."}
+                    "Sign in so this deal stays on your desk — then you can pledge, approve Jua's notes, and publish proof."}
             </Text>
             <SoftIdentityBar forceOpen initialEmail={initialEmail} />
         </View>
@@ -258,7 +258,7 @@ const styles = StyleSheet.create({
         gap: 10,
         paddingHorizontal: 10,
         paddingVertical: 8,
-        borderRadius: 4,
+        borderRadius: 8,
         borderWidth: 1,
         borderColor: color.lineStrong,
         backgroundColor: color.paper,
@@ -270,11 +270,11 @@ const styles = StyleSheet.create({
     link: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.brass },
     panel: {
         gap: 8,
-        padding: 12,
-        borderRadius: 6,
+        padding: 14,
+        borderRadius: 10,
         borderWidth: 1,
-        borderColor: color.brass,
-        backgroundColor: color.paper,
+        borderColor: color.brassBorder,
+        backgroundColor: color.foam,
     },
     panelHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
     title: {
@@ -285,12 +285,12 @@ const styles = StyleSheet.create({
         textTransform: "uppercase",
         color: color.brassDeep,
     },
-    hint: { fontFamily: font.body, fontSize: 12, lineHeight: 17, color: color.mist },
+    hint: { fontFamily: font.body, fontSize: 13, lineHeight: 19, color: color.mist },
     googleBtn: {
         borderWidth: 1,
         borderColor: color.lineStrong,
-        borderRadius: 4,
-        paddingVertical: 11,
+        borderRadius: 8,
+        paddingVertical: 12,
         alignItems: "center",
         backgroundColor: color.stone,
     },
@@ -298,33 +298,42 @@ const styles = StyleSheet.create({
     input: {
         borderWidth: 1,
         borderColor: color.lineStrong,
-        borderRadius: 4,
+        borderRadius: 8,
         paddingHorizontal: 12,
-        paddingVertical: 10,
-        color: color.ink,
-        backgroundColor: color.stone,
+        paddingVertical: 11,
         fontFamily: font.body,
         fontSize: 15,
+        color: color.ink,
+        backgroundColor: color.paper,
     },
     primary: {
         backgroundColor: color.charcoal,
         paddingVertical: 12,
-        borderRadius: 4,
+        borderRadius: 8,
         alignItems: "center",
     },
-    primaryText: { fontFamily: font.bodyBold, color: color.paper, fontWeight: "700", fontSize: 13 },
+    primaryText: { fontFamily: font.bodyBold, color: color.foam, fontWeight: "700", fontSize: 13 },
     secondary: { paddingVertical: 10, alignItems: "center" },
     secondaryText: { fontFamily: font.bodyBold, fontSize: 13, fontWeight: "700", color: color.brass },
     status: { fontFamily: font.body, fontSize: 12, color: color.mist },
     error: { fontFamily: font.body, fontSize: 12, color: color.danger },
     btnPressed: { transform: [{ scale: motion.pressScale }] },
     disabled: { opacity: 0.5 },
-    gate: { gap: 10, padding: 14 },
+    gate: {
+        gap: 10,
+        padding: 16,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: color.brassBorder,
+        backgroundColor: color.foam,
+    },
     gateTitle: {
         fontFamily: font.displayMedium,
         fontSize: 18,
         fontWeight: "600",
         color: color.charcoal,
+        letterSpacing: -0.3,
     },
-    gateBody: { fontFamily: font.body, fontSize: 13, lineHeight: 18, color: color.mist },
+    gateBody: { fontFamily: font.body, fontSize: 13, lineHeight: 20, color: color.mist },
 });
+

@@ -7,7 +7,7 @@ export default function TabsLayout() {
     return (
         <OnboardingGate>
             <NativeTabs
-                tintColor={color.charcoal}
+                tintColor={color.brassDeep}
                 backgroundColor={color.paper}
                 labelStyle={{
                     color: color.mist,

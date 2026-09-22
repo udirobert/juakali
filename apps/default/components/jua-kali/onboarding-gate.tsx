@@ -51,6 +51,10 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
                     void onboarding.completeLanding().then(() => {
                         if (opts?.commitmentId) {
                             router.replace(`/(tabs)/deals?c=${opts.commitmentId}`);
+                        } else if (opts?.ledgerSlug) {
+                            router.replace(
+                                `/(tabs)/proof?ledger=${encodeURIComponent(opts.ledgerSlug)}`
+                            );
                         } else {
                             router.replace("/(tabs)/today");
                         }

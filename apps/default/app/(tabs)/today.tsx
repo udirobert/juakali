@@ -1,5 +1,4 @@
 import { useCallback, useState } from "react";
-import { View } from "react-native";
 
 import { TodayBriefing } from "@/components/jua-kali/today-briefing";
 import {
@@ -9,8 +8,8 @@ import {
 } from "@/components/jua-kali/help";
 import { useInvestorOnboardingGate } from "@/components/jua-kali/investor-onboarding";
 import { writeCoachDismissed } from "@/components/jua-kali/session-persist";
+import { Atmosphere } from "@/components/jua-kali/ui";
 import { useProductMode } from "@/lib/product-mode";
-import { color } from "@/components/jua-kali/theme";
 
 export default function TodayScreen() {
     const onboarding = useInvestorOnboardingGate();
@@ -29,7 +28,7 @@ export default function TodayScreen() {
     }, [onboarding, product.coachSessionScoped]);
 
     return (
-        <View style={{ flex: 1, backgroundColor: color.stone }}>
+        <Atmosphere variant="app">
             <WelcomeBackBanner
                 visible={onboarding.showWelcomeBack}
                 onDismiss={() => void handleDismissWelcome()}
@@ -56,6 +55,6 @@ export default function TodayScreen() {
                 onClose={() => setGlossaryOpen(false)}
                 focusId={glossaryFocus}
             />
-        </View>
+        </Atmosphere>
     );
 }

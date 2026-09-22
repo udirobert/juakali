@@ -20,6 +20,7 @@ import Animated, {
     withTiming,
 } from "react-native-reanimated";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import { useAuthActions } from "@convex-dev/auth/react";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { FunctionReturnType } from "convex/server";
 
@@ -33,10 +34,12 @@ import { Sparkline } from "@/components/jua-kali/cockpit/sparkline";
 import { styles } from "@/components/jua-kali/cockpit/investor-cockpit.styles";
 import { SITE_URL } from "@/lib/site";
 import { HowItWorksCard, TermHint } from "@/components/jua-kali/help";
-import { successHaptic, tapHaptic } from "@/components/jua-kali/haptics";
+import { DigestCard } from "@/components/jua-kali/digest-bento";
+import { impactHaptic, successHaptic, tapHaptic } from "@/components/jua-kali/haptics";
 import { AuthRequiredGate } from "@/components/jua-kali/soft-identity";
 import { SunMark } from "@/components/jua-kali/sun-mark";
 import { LivingSun } from "@/components/jua-kali/living-sun";
+import { JuaWire } from "@/components/jua-kali/jua-wire";
 import { useUiMotion } from "@/components/jua-kali/hooks/use-ui-motion";
 import { IconCheck, IconSend, IconShare, IconX } from "@/components/jua-kali/icons";
 import { Button, Card, Chip, Input } from "@/components/jua-kali/ui";
@@ -103,7 +106,6 @@ export function InvestorCockpit({
     onDismissCoach,
     onOpenGlossary,
     hideBrand = false,
-    requireAuthToAct = false,
     onOpenLedger,
     onOpenDeal,
     dealsOnly = false,
@@ -116,6 +118,7 @@ export function InvestorCockpit({
     onDismissCoach?: () => void;
     onOpenGlossary?: (focusId?: string) => void;
     hideBrand?: boolean;
+    /** Reserved for act-gated surfaces; AuthRequiredGate handles the gate today. */
     requireAuthToAct?: boolean;
     onOpenLedger?: () => void;
     onOpenDeal?: (dealId: Id<"commitments">) => void;
@@ -137,6 +140,7 @@ export function InvestorCockpit({
         ventureSlug: dealParams.ventureSlug,
     });
     const { isAuthenticated } = useConvexAuth();
+    const { signIn } = useAuthActions();
     const me = useQuery(api.softAuth.whoAmI);
     const product = useProductMode();
     const agentMail = useQuery(api.agentMailPublic.publicStatus);
@@ -150,6 +154,9 @@ export function InvestorCockpit({
     const compact = width < 440;
     const padX = Math.max(14, Math.min(28, (width - layout.maxWidth) / 2 + 16));
     const ui = useUiMotion();
+    /** Ownership actions always need a session (guest or email) — backend asserts it. */
+    const needSession = true;
+    const [pendingSeed, setPendingSeed] = useState(false);
 
     // Cross-route continuity: selected deal, per-deal drafts, and the active
     // run live in the InvestorSessionProvider (above the root Stack), so the
@@ -277,15 +284,48 @@ export function InvestorCockpit({
 
     async function handleSeed() {
         setIsSeeding(true);
+        setStatusMessage(null);
         try {
+            if (!isAuthenticated) {
+                setStatusMessage("Starting a guest session…");
+                await signIn("anonymous");
+                setPendingSeed(true);
+                return;
+            }
             const result = await seedInvestDemo({});
+            if (result.commitmentId) setSelectedCommitmentId(result.commitmentId);
             setStatusMessage(result.message);
+            setIsSeeding(false);
         } catch (error) {
             setStatusMessage(error instanceof Error ? error.message : "Could not seed.");
-        } finally {
             setIsSeeding(false);
         }
     }
+
+    useEffect(() => {
+        if (!pendingSeed || !isAuthenticated) return;
+        let cancelled = false;
+        void (async () => {
+            try {
+                const result = await seedInvestDemo({});
+                if (cancelled) return;
+                if (result.commitmentId) setSelectedCommitmentId(result.commitmentId);
+                setStatusMessage(result.message);
+            } catch (error) {
+                if (!cancelled) {
+                    setStatusMessage(error instanceof Error ? error.message : "Could not seed.");
+                }
+            } finally {
+                if (!cancelled) {
+                    setPendingSeed(false);
+                    setIsSeeding(false);
+                }
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [pendingSeed, isAuthenticated, seedInvestDemo]);
 
     async function handlePledge() {
         if (!selectedVenture) return;
@@ -344,8 +384,9 @@ export function InvestorCockpit({
      */
     const handleApproveEmail = useCallback(async () => {
         if (!pendingBody || !selectedCommitment) return;
+        impactHaptic();
         setAgentPhase("acting");
-        setStatusMessage("Approved — Jua is working.");
+        setStatusMessage("Sealed — Jua is working.");
         setActiveRunCommitmentId(selectedCommitment.id);
         try {
             const result = await startAgentRun({
@@ -353,6 +394,7 @@ export function InvestorCockpit({
                 noteBody: pendingBody,
             });
             setActiveRunId(result.runId);
+            successHaptic();
         } catch (error) {
             setAgentPhase("failed");
             setStatusMessage(error instanceof Error ? error.message : "Could not start run.");
@@ -363,14 +405,16 @@ export function InvestorCockpit({
     const handleApproveProposal = useCallback(
         async (runId: Id<"agentRuns">) => {
             if (!selectedCommitment) return;
+            impactHaptic();
             setAgentPhase("acting");
-            setStatusMessage("Approved — Jua is working.");
+            setStatusMessage("Sealed — Jua is working.");
             setActiveRunId(null);
             setActiveRunCommitmentId(selectedCommitment.id);
             try {
                 const result = await approveProposal({ runId });
                 setActiveRunId(result.runId);
-                void AccessibilityInfo.announceForAccessibility("Approved. Jua is working.");
+                successHaptic();
+                void AccessibilityInfo.announceForAccessibility("Sealed. Jua is working.");
             } catch (error) {
                 setAgentPhase("idle");
                 setStatusMessage(error instanceof Error ? error.message : "Could not approve.");
@@ -433,7 +477,9 @@ export function InvestorCockpit({
                         />
                     </View>
                     {hideBrand ? (
-                        <Text style={styles.bridge}>Deals = act · Proof = public record</Text>
+                        <Text style={styles.bridge}>
+                            Soft pledges in · weekly digests out · public proof when you seal
+                        </Text>
                     ) : null}
                     {statusMessage ? <Text style={styles.status}>{statusMessage}</Text> : null}
                 </View>
@@ -451,7 +497,7 @@ export function InvestorCockpit({
                           const proposal = selectedCommitment?.openProposal ?? null;
                           if (proposal) {
                               return (
-                                  <AuthRequiredGate required={requireAuthToAct}>
+                                  <AuthRequiredGate required={needSession}>
                                       <ProposalCard
                                           ventureName={selectedCommitment!.venture.name}
                                           proposal={proposal}
@@ -487,7 +533,7 @@ export function InvestorCockpit({
 
                 {data.pendingPublication &&
                 selectedCommitment?.id === data.pendingPublication.commitmentId ? (
-                    <AuthRequiredGate required={requireAuthToAct}>
+                    <AuthRequiredGate required={needSession}>
                         <PublicationGateCard
                             pending={data.pendingPublication}
                             ventureName={selectedCommitment?.venture.name ?? ""}
@@ -497,7 +543,10 @@ export function InvestorCockpit({
                 ) : null}
 
                 {showPledge ? (
-                    <AuthRequiredGate required={requireAuthToAct}>
+                    <AuthRequiredGate
+                        required={needSession}
+                        message="Sign in so this pledge lands on your desk — not a shared demo account."
+                    >
                     <Animated.View entering={ui.down(180)}>
                         <Card>
                             <View style={styles.chipRow}>
@@ -581,7 +630,10 @@ export function InvestorCockpit({
                                         ritualTop.current = event.nativeEvent.layout.y;
                                     }}
                                 >
-                                    <AuthRequiredGate required={requireAuthToAct}>
+                                    <AuthRequiredGate
+                                        required={needSession}
+                                        message="Sign in to approve Jua's notes — runs only happen on deals you own."
+                                    >
                                     <Ritual
                                         compact={compact}
                                         commitment={selectedCommitment}
@@ -637,9 +689,8 @@ export function InvestorCockpit({
 }
 
 /**
- * Presence line: Jua is visibly alive between visits — last worked, runs
- * this week, next digest countdown. All derived from real run/ledger data.
- * While a run is live, the mark breathes.
+ * Presence theater: Jua on the wire — last worked, runs this week, next digest.
+ * Grounded in real run/ledger data; the sun breathes only while a run is live.
  */
 function AgentPresence({
     presence,
@@ -657,27 +708,31 @@ function AgentPresence({
         const days = daysUntil(nextDigestAt);
         parts.push(days <= 1 ? "next digest tomorrow" : `next digest in ${days} days`);
     }
+    if (presence.openProposals > 0) {
+        parts.push(
+            presence.openProposals === 1
+                ? "1 suggestion waiting"
+                : `${presence.openProposals} suggestions waiting`
+        );
+    }
 
-    return (
-        <View style={styles.presence} accessibilityRole="text">
-            {/* Static mark at rest; it breathes only while Jua is working. */}
-            {working ? (
-                <LivingSun progress={0.5} size={14} working />
-            ) : (
-                <SunMark size={14} />
-            )}
-            <Text style={styles.presenceText}>
-                Jua · {parts.join(" · ")}
-            </Text>
-            {presence.openProposals > 0 ? (
-                <View style={styles.presenceBadge}>
-                    <Text style={styles.presenceBadgeText}>
-                        {presence.openProposals} suggestion{presence.openProposals === 1 ? "" : "s"}
-                    </Text>
-                </View>
-            ) : null}
-        </View>
-    );
+    const agentState = working
+        ? ("executing" as const)
+        : presence.openProposals > 0
+          ? ("proposing" as const)
+          : presence.runsThisWeek > 0
+            ? ("verified" as const)
+            : ("observing" as const);
+
+    const line = working
+        ? "I'm mid-run on this desk — proof lands when the seal completes."
+        : presence.openProposals > 0
+          ? "I have a move ready. Seal it below and I'll execute."
+          : presence.runsThisWeek > 0
+            ? "Latest work is sealed. I'm watching pledges until the next digest."
+            : "I'm on the wire — watching every pledge between digests.";
+
+    return <JuaWire agentState={agentState} line={line} meta={parts.join(" · ")} />;
 }
 
 /**
@@ -703,14 +758,14 @@ function ProposalCard({
             <Card variant="trust" style={styles.proposal}>
                 <View style={styles.cardTop}>
                     <View style={styles.titleWithHint}>
-                        <SunMark size={16} />
+                        <LivingSun size={18} agentState={busy ? "executing" : "proposing"} ignite={busy} />
                         <Text style={styles.cardTitle}>Jua suggests</Text>
                     </View>
                     <Text style={styles.meta}>proposed {relativeTime(proposal.createdAt)}</Text>
                 </View>
                 <Text style={styles.proposalBody}>{proposal.noteBody}</Text>
                 <View style={styles.consequence}>
-                    <Text style={styles.consequenceLabel}>If you approve, I will</Text>
+                    <Text style={styles.consequenceLabel}>If you seal, I will</Text>
                     {["Log a KPI check-in", "Write an investor digest", "Post to the public ledger", "Reply with evidence"].map(
                         (line) => (
                             <Text key={line} style={styles.consequenceLine}>
@@ -720,7 +775,7 @@ function ProposalCard({
                     )}
                 </View>
                 <Button
-                    label={busy ? "Starting…" : `Approve check-in on ${ventureName}`}
+                    label={busy ? "Igniting…" : `Seal & run · ${ventureName}`}
                     variant="approve"
                     onPress={onApprove}
                     disabled={busy}
@@ -1169,7 +1224,7 @@ function Ritual({
                             )
                         )}
                     </View>
-                    <Button label="Approve & run" variant="approve" onPress={onApprove} />
+                    <Button label="Seal & run" variant="approve" onPress={onApprove} />
                     <Pressable onPress={onDiscard} hitSlop={6}>
                         <Text style={styles.discard}>Discard</Text>
                     </Pressable>
@@ -1318,7 +1373,6 @@ function RunSteps({
 function DigestArtifactCard({
     commitment,
     onOpenLedger,
-    onOpenGlossary,
 }: {
     commitment: Commitment;
     onOpenLedger?: () => void;
@@ -1327,61 +1381,21 @@ function DigestArtifactCard({
     const digest = commitment.latestDigest;
     if (!digest) return null;
 
-    const evidence = digest.evidence.length > 0 ? digest.evidence : ["agent"];
-
     return (
-        <Card variant="artifact">
-            <View style={styles.cardTop}>
-                <View style={styles.titleWithHint}>
-                    <SunMark size={16} />
-                    <Text style={styles.digestTitle}>Digest</Text>
-                    {onOpenGlossary ? <TermHint termId="digest" onOpenGlossary={onOpenGlossary} /> : null}
-                </View>
-                <Text style={styles.digestWhen}>
-                    {new Date(digest.createdAt).toLocaleDateString(undefined, {
-                        month: "short",
-                        day: "numeric",
-                    })}
-                </Text>
-            </View>
-
-            <Text style={styles.digestSummary}>{digest.summary}</Text>
-
-            <View style={styles.digestRule} />
-
-            <View style={styles.digestSection}>
-                <Text style={styles.digestSectionLabel}>Insight</Text>
-                <Text style={styles.digestSectionBody}>{digest.insights}</Text>
-            </View>
-            {digest.nextAction ? (
-                <View style={styles.digestSection}>
-                    <Text style={styles.digestSectionLabel}>Next</Text>
-                    <Text style={styles.digestSectionBody}>{digest.nextAction}</Text>
-                </View>
-            ) : null}
-
-            <View style={styles.digestFoot}>
-                <View style={styles.digestEvidenceRow}>
-                    <Text style={styles.digestEvidenceLabel}>Evidence</Text>
-                    {evidence.map((tag: string) => (
-                        <View key={tag} style={styles.evidenceChip}>
-                            <Text style={styles.evidenceChipText}>{tag}</Text>
-                        </View>
-                    ))}
-                </View>
-                {onOpenLedger ? (
-                    <Pressable onPress={onOpenLedger} hitSlop={8}>
-                        <Text style={styles.runDoneLink}>View on Ledger</Text>
-                    </Pressable>
-                ) : null}
-            </View>
-
-            {/* The seal — proof this document was produced, not typed. */}
-            <View style={styles.sealRow}>
-                <SunMark size={11} />
-                <Text style={styles.sealText}>Sealed by Jua · JuaKali agent</Text>
-            </View>
-        </Card>
+        <DigestCard
+            digest={{
+                id: digest.id,
+                commitmentId: commitment.id,
+                ventureName: commitment.venture.name,
+                summary: digest.summary,
+                insights: digest.insights,
+                nextAction: digest.nextAction,
+                evidence: digest.evidence,
+                createdAt: digest.createdAt,
+            }}
+            featured
+            onOpenLedger={onOpenLedger}
+        />
     );
 }
 

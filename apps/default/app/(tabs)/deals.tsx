@@ -1,10 +1,9 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { View } from "react-native";
 
 import { InvestorCockpit } from "@/components/jua-kali/investor-cockpit";
 import { useRequireAuthToAct } from "@/components/jua-kali/soft-identity";
+import { Atmosphere } from "@/components/jua-kali/ui";
 import type { Id } from "@/convex/_generated/dataModel";
-import { color } from "@/components/jua-kali/theme";
 
 export default function DealsScreen() {
     const params = useLocalSearchParams<{ c?: string; v?: string }>();
@@ -12,7 +11,7 @@ export default function DealsScreen() {
     const requireAuthToAct = useRequireAuthToAct();
 
     return (
-        <View style={{ flex: 1, backgroundColor: color.stone }}>
+        <Atmosphere variant="app">
             <InvestorCockpit
                 initialCommitmentId={params.c as Id<"commitments"> | undefined}
                 initialVentureSlug={params.v}
@@ -21,6 +20,6 @@ export default function DealsScreen() {
                 requireAuthToAct={requireAuthToAct}
                 dealsOnly
             />
-        </View>
+        </Atmosphere>
     );
 }

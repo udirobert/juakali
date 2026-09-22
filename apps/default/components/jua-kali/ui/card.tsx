@@ -1,7 +1,7 @@
 import { type ReactNode } from "react";
 import { StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
 
-import { color, elevation } from "@/components/jua-kali/theme";
+import { color, elevation, radius } from "@/components/jua-kali/theme";
 
 /**
  * The surface system — one card recipe instead of per-file copies.
@@ -44,22 +44,26 @@ const styles = StyleSheet.create({
         backgroundColor: color.paper,
         borderWidth: 1,
         borderColor: color.line,
-        borderRadius: 6,
+        borderRadius: radius.md,
     },
-    trust: { borderColor: color.brass },
+    trust: {
+        borderColor: color.brassBorder,
+        backgroundColor: color.foam,
+    },
     artifact: {
         backgroundColor: color.foam,
+        borderRadius: radius.lg,
         ...elevation.raised,
     },
     /** The brass rule a digest is filed under. */
     artifactRule: {
         position: "absolute",
         top: -1,
-        left: 14,
-        right: 14,
+        left: 16,
+        right: 16,
         height: 2,
         backgroundColor: color.brass,
-        borderTopLeftRadius: 2,
-        borderTopRightRadius: 2,
+        borderTopLeftRadius: radius.xs,
+        borderTopRightRadius: radius.xs,
     },
 });
