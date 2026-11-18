@@ -1,8 +1,11 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { authTables } from "@convex-dev/auth/server";
+import { currencyCodeValidator } from "./schemaCurrency";
 import { actionPlanValidator, autonomyLevelValidator } from "./actionPlan";
 import { ventureSummaryValidator } from "./investorBriefing";
+
+export { currencyCodeValidator } from "./schemaCurrency";
 
 const language = v.union(v.literal("sw"), v.literal("en"), v.literal("mixed"), v.literal("unknown"));
 const telephonyProvider = v.union(v.literal("twilio"), v.literal("africas_talking"), v.literal("mock"));
@@ -18,6 +21,12 @@ const outboundMessageType = v.union(
 );
 
 const kpiUnit = v.union(v.literal("meetings"), v.literal("revenue_kes"), v.literal("jobs"));
+/**
+ * ISO 4217 currency code for money fields. Kenya-first: KES is the default
+ * everywhere; new markets add their code at venture creation and every
+ * money-bearing row carries it so display formatting never guesses.
+ */
+const currencyCode = currencyCodeValidator;
 const commitmentStatus = v.union(
     v.literal("pledged"),
     v.literal("active"),
@@ -315,6 +324,8 @@ export default defineSchema({
         kpiUnit,
         kpiTarget: v.number(),
         peerMedian: v.optional(v.number()),
+        /** ISO currency for this venture's money fields (default KES). */
+        currency: v.optional(currencyCode),
         agentEmail: v.optional(v.string()),
         publicSlug: v.string(),
         masterId: v.optional(v.union(v.id("masters"), v.null())),
@@ -382,6 +393,8 @@ export default defineSchema({
         investorId: v.id("investors"),
         ventureId: v.id("ventures"),
         amountKes: v.number(),
+        /** ISO currency — mirrors venture.currency at creation (default KES). */
+        currency: v.optional(currencyCode),
         shareBps: v.number(),
         capMultiple: v.number(),
         status: commitmentStatus,
@@ -716,6 +729,8 @@ export default defineSchema({
         ventureSlug: v.optional(v.union(v.string(), v.null())),
         summary: v.string(),
         amountKes: v.optional(v.union(v.number(), v.null())),
+        /** ISO currency for amountKes (default KES; legacy rows are KES). */
+        currency: v.optional(currencyCode),
         metric: v.optional(v.union(v.string(), v.null())),
         value: v.optional(v.union(v.number(), v.null())),
         /** Evidence source tags, e.g. ["email", "agent", "photo"]. */

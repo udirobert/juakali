@@ -38,10 +38,7 @@ import { useCountUp } from "@/components/jua-kali/hooks/use-count-up";
 import { useUiMotion } from "@/components/jua-kali/hooks/use-ui-motion";
 import { successHaptic } from "@/components/jua-kali/haptics";
 import { color, layout, motion } from "@/components/jua-kali/theme";
-
-function formatKes(value: number) {
-    return `KES ${value.toLocaleString()}`;
-}
+import { formatMoney } from "@/components/jua-kali/cockpit/format";
 
 // Local mirrors of the publicLedger query shapes (typed codegen returns after
 // `npx convex dev` regenerates _generated/api; explicit annotations keep this
@@ -51,6 +48,7 @@ type LedgerEventRow = {
     type: string;
     summary: string;
     amountKes: number | null;
+    currency?: string | null;
     metric: string | null;
     value: number | null;
     evidence: string[];
@@ -240,7 +238,7 @@ export function PublicLedger({
                             ? "Read-only timeline of pledges, KPIs, and digests from My deals."
                             : "Read-only public proof — capital pledges, KPI check-ins, and digests. Act on My deals; proof lands here."}
                     </Text>
-                    <Text style={styles.total}>{formatKes(Math.round(pledged))}</Text>
+                    <Text style={styles.total}>{formatMoney(Math.round(pledged), data.totals.currency ?? "KES")}</Text>
                     <Text style={styles.totalHint}>
                         {selectedVenture ? `${selectedVenture.name} · soft pledges (demo — not escrow)` : "Soft pledges recorded (demo — not escrow)"}
                     </Text>
@@ -466,7 +464,7 @@ function LedgerRow({
                     {event.amountKes != null ? (
                         <View style={styles.detailLine}>
                             <Text style={styles.detailLabel}>Recorded</Text>
-                            <Text style={styles.detailValue}>{formatKes(event.amountKes)}</Text>
+                            <Text style={styles.detailValue}>{formatMoney(event.amountKes, event.currency ?? "KES")}</Text>
                         </View>
                     ) : null}
                     {event.metric && event.value != null ? (

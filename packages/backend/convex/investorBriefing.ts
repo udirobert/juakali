@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
+import { currencyCodeValidator } from "./schemaCurrency";
 
 type ReadDb = { db: QueryCtx["db"] };
 type WriteDb = { db: MutationCtx["db"] };
@@ -30,6 +31,8 @@ export const ventureSummaryValidator = v.object({
     publicSlug: v.string(),
     status: v.union(v.literal("active"), v.literal("paused"), v.literal("graduated")),
     pledgedKes: v.number(),
+    /** ISO currency for this venture's money (default KES). */
+    currency: currencyCodeValidator,
 });
 
 export async function sumVentureKpis(ctx: ReadDb, ventureId: Id<"ventures">) {
@@ -78,6 +81,7 @@ export async function buildVentureSummary(ctx: ReadDb, ventureId: Id<"ventures">
         publicSlug: venture.publicSlug,
         status: venture.status,
         pledgedKes,
+        currency: venture.currency ?? "KES",
     };
 }
 
@@ -150,6 +154,7 @@ export async function syncInvestorBriefing(ctx: WriteDb, investorId: Id<"investo
             publicSlug: venture.publicSlug,
             status: venture.status,
             pledgedKes,
+            currency: venture.currency ?? "KES",
         });
         checkInsByVenture.set(raw, checkIns);
     }

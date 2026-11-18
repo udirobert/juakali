@@ -5,6 +5,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { rateLimiter } from "./rateLimit";
 import { normalizeKey } from "./juaKaliHelpers";
+import { currencyCodeValidator } from "./schemaCurrency";
 import {
     assertCanAct,
     assertInvestorOwnsInvestor,
@@ -294,6 +295,8 @@ export const startCommitment = mutation({
         kpiTarget: v.number(),
         peerMedian: v.optional(v.number()),
         amountKes: v.number(),
+        /** ISO currency for this deal (default KES while Kenya is the only market). */
+        currency: v.optional(currencyCodeValidator),
         shareBps: v.optional(v.number()),
         capMultiple: v.optional(v.number()),
         thesis: v.optional(v.string()),
@@ -351,6 +354,7 @@ export const startCommitment = mutation({
 
         const shareBps = args.shareBps ?? 1000;
         const capMultiple = args.capMultiple ?? 2;
+        const currency = args.currency ?? "KES";
         const thesis =
             args.thesis?.trim() ||
             `Soft revenue-share pledge into ${name}: ${(shareBps / 100).toFixed(1)}% of cashflow until ${capMultiple}×.`;
@@ -359,6 +363,7 @@ export const startCommitment = mutation({
             investorId,
             ventureId,
             amountKes: Math.round(args.amountKes),
+            currency,
             shareBps,
             capMultiple,
             status: "pledged",
@@ -374,7 +379,7 @@ export const startCommitment = mutation({
             type: "pledge",
             ventureId,
             commitmentId,
-            summary: `${investor?.displayName ?? "Investor"} pledged KES ${Math.round(args.amountKes).toLocaleString()} into ${name} (${(shareBps / 100).toFixed(1)}% until ${capMultiple}×)`,
+            summary: `${investor?.displayName ?? "Investor"} pledged ${currency} ${Math.round(args.amountKes).toLocaleString()} into ${name} (${(shareBps / 100).toFixed(1)}% until ${capMultiple}×)`,
             amountKes: Math.round(args.amountKes),
             createdAt: now,
         });
@@ -488,6 +493,8 @@ export const publicLedger = query({
         ),
         totals: v.object({
             pledgedKes: v.number(),
+            /** ISO currency of the totals (default KES). */
+            currency: currencyCodeValidator,
             checkIns: v.number(),
             activeVentures: v.number(),
             digests: v.number(),
@@ -503,7 +510,7 @@ export const publicLedger = query({
                   .first()
             : null;
         if (slug && !filterVenture) {
-            return { events: [], ventures: [], totals: { pledgedKes: 0, checkIns: 0, activeVentures: 0, digests: 0 } };
+            return { events: [], ventures: [], totals: { pledgedKes: 0, currency: "KES" as const, checkIns: 0, activeVentures: 0, digests: 0 } };
         }
 
         const rows = filterVenture
@@ -587,6 +594,7 @@ export const publicLedger = query({
             ventures,
             totals: {
                 pledgedKes: scopedCommitments.reduce((sum, row) => sum + row.amountKes, 0),
+                currency: filterVenture?.currency ?? "KES",
                 checkIns: filterVenture
                     ? checkIns.filter((row) => row.ventureId === filterVenture._id).length
                     : checkIns.length,
@@ -1705,6 +1713,8 @@ export const pledgeCommitment = mutation({
         investorEmail: v.optional(v.string()),
         ventureId: v.id("ventures"),
         amountKes: v.number(),
+        /** ISO currency for this deal (default KES while Kenya is the only market). */
+        currency: v.optional(currencyCodeValidator),
         shareBps: v.optional(v.number()),
         capMultiple: v.optional(v.number()),
         thesis: v.optional(v.string()),
@@ -1750,6 +1760,7 @@ export const pledgeCommitment = mutation({
         const now = Date.now();
         const shareBps = args.shareBps ?? 1000;
         const capMultiple = args.capMultiple ?? 2;
+        const currency = args.currency ?? "KES";
         const thesis =
             args.thesis?.trim() ||
             `Soft revenue-share pledge into ${venture.name}: ${(shareBps / 100).toFixed(1)}% of cashflow until ${capMultiple}×.`;
@@ -1758,6 +1769,7 @@ export const pledgeCommitment = mutation({
             investorId,
             ventureId: args.ventureId,
             amountKes: Math.round(args.amountKes),
+            currency,
             shareBps,
             capMultiple,
             status: "pledged",
@@ -1772,7 +1784,7 @@ export const pledgeCommitment = mutation({
             type: "pledge",
             ventureId: args.ventureId,
             commitmentId,
-            summary: `${investor.displayName} pledged KES ${Math.round(args.amountKes).toLocaleString()} into ${venture.name} (${(shareBps / 100).toFixed(1)}% until ${capMultiple}×)`,
+            summary: `${investor.displayName} pledged ${currency} ${Math.round(args.amountKes).toLocaleString()} into ${venture.name} (${(shareBps / 100).toFixed(1)}% until ${capMultiple}×)`,
             amountKes: Math.round(args.amountKes),
             createdAt: now,
         });
@@ -2205,6 +2217,7 @@ async function seedPledgesOntoInvestor(
         pledges: Array<{
             ventureId: Id<"ventures">;
             amountKes: number;
+            currency?: "KES" | "USD" | "NGN" | "GHS" | "PHP" | "IDR" | "INR" | "BRL" | "ZAR";
             shareBps: number;
             thesis: string;
             backdateDays: number;
@@ -2245,7 +2258,7 @@ async function seedPledgesOntoInvestor(
             type: "pledge",
             ventureId: pledge.ventureId,
             commitmentId,
-            summary: `${args.investorName} pledged KES ${pledge.amountKes.toLocaleString()} into ${venture?.name ?? "venture"} (${(pledge.shareBps / 100).toFixed(1)}% until 2×)`,
+            summary: `${args.investorName} pledged ${pledge.currency ?? "KES"} ${pledge.amountKes.toLocaleString()} into ${venture?.name ?? "venture"} (${(pledge.shareBps / 100).toFixed(1)}% until 2×)`,
             amountKes: pledge.amountKes,
             createdAt: baseTs + createdCommitments,
         });
@@ -2611,6 +2624,8 @@ export const getPublicLedgerViaMcp = query({
         ),
         totals: v.object({
             pledgedKes: v.number(),
+            /** ISO currency of the totals (default KES). */
+            currency: currencyCodeValidator,
             checkIns: v.number(),
             activeVentures: v.number(),
             digests: v.number(),
@@ -2663,6 +2678,7 @@ export const getPublicLedgerViaMcp = query({
             events,
             totals: {
                 pledgedKes: commitments.reduce((sum, row) => sum + row.amountKes, 0),
+                currency: "KES" as const,
                 checkIns: checkIns.length,
                 activeVentures: ventures.length,
                 digests: digests.length,
@@ -2677,6 +2693,8 @@ export const pledgeViaMcp = mutation({
         ventureSlug: v.optional(v.string()),
         ventureName: v.optional(v.string()),
         amountKes: v.number(),
+        /** ISO currency for this deal (default KES while Kenya is the only market). */
+        currency: v.optional(currencyCodeValidator),
         shareBps: v.optional(v.number()),
         capMultiple: v.optional(v.number()),
         thesis: v.optional(v.string()),
@@ -2708,6 +2726,7 @@ export const pledgeViaMcp = mutation({
         const now = Date.now();
         const shareBps = args.shareBps ?? 1000;
         const capMultiple = args.capMultiple ?? 2;
+        const currency = args.currency ?? "KES";
         const thesis =
             args.thesis?.trim() ||
             `Soft revenue-share pledge into ${venture.name}: ${(shareBps / 100).toFixed(1)}% of cashflow until ${capMultiple}×.`;
@@ -2716,6 +2735,7 @@ export const pledgeViaMcp = mutation({
             investorId,
             ventureId,
             amountKes: Math.round(args.amountKes),
+            currency,
             shareBps,
             capMultiple,
             status: "pledged",
@@ -2730,7 +2750,7 @@ export const pledgeViaMcp = mutation({
             type: "pledge",
             ventureId,
             commitmentId,
-            summary: `${investor.displayName} pledged KES ${Math.round(args.amountKes).toLocaleString()} into ${venture.name} (${(shareBps / 100).toFixed(1)}% until ${capMultiple}×)`,
+            summary: `${investor.displayName} pledged ${currency} ${Math.round(args.amountKes).toLocaleString()} into ${venture.name} (${(shareBps / 100).toFixed(1)}% until ${capMultiple}×)`,
             amountKes: Math.round(args.amountKes),
             createdAt: now,
         });

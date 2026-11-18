@@ -3,8 +3,27 @@
  * investor-cockpit render file for reuse and (future) unit testing.
  */
 
+/** ISO currency display: symbol or code + grouped amount. */
+const CURRENCY_SYMBOLS: Record<string, string> = {
+    KES: "KSh",
+    USD: "$",
+    NGN: "₦",
+    GHS: "₵",
+    PHP: "₱",
+    IDR: "Rp",
+    INR: "₹",
+    BRL: "R$",
+    ZAR: "R",
+};
+
+export function formatMoney(value: number, currency: string = "KES") {
+    const symbol = CURRENCY_SYMBOLS[currency] ?? currency;
+    return `${symbol} ${value.toLocaleString()}`;
+}
+
+/** Back-compat alias — KES remains the default while Kenya is the only market. */
 export function formatKes(value: number) {
-    return `KES ${value.toLocaleString()}`;
+    return formatMoney(value, "KES");
 }
 
 /** Human relative time — makes the agent's activity feel present, not archival. */
