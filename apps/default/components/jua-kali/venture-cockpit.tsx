@@ -20,6 +20,7 @@ import { IconArrowRight, IconLedger, IconSparkle, IconTrend } from "@/components
 import { Button, Card, Chip } from "@/components/jua-kali/ui";
 import { WisdomItemCard } from "@/components/jua-kali/wisdom";
 import { useDictation } from "@/components/jua-kali/hooks/use-dictation";
+import { useFounderQueue } from "@/components/jua-kali/hooks/use-founder-queue";
 import { tapHaptic } from "@/components/jua-kali/haptics";
 import { color, layout } from "@/components/jua-kali/theme";
 import { styles } from "@/components/jua-kali/venture-cockpit/venture-cockpit.styles";
@@ -81,6 +82,18 @@ export function VentureCockpit({ onOpenLedger }: { onOpenLedger?: () => void }) 
     const dictation = useDictation((transcript) =>
         setBody((prev) => (prev ? `${prev} ${transcript}` : transcript)),
     );
+    /** Offline safety net: writes land locally first, flush when online. */
+    const queue = useFounderQueue({
+        selfCheckIn: async (args) => {
+            await logCheckIn(args);
+        },
+        ventureUpdate: async (args) => {
+            await postUpdate({
+                ...args,
+                commitmentId: (args.commitmentId as Id<"commitments"> | undefined) ?? undefined,
+            });
+        },
+    });
 
     useEffect(() => {
         if (!openRequests || openRequests.length !== 1) return;
@@ -116,6 +129,23 @@ export function VentureCockpit({ onOpenLedger }: { onOpenLedger?: () => void }) 
                 setStatus("Select which investor request this update answers.");
                 return;
             }
+            if (!queue.online) {
+                // Offline: save on this device, send when the network returns.
+                await queue.enqueue({
+                    kind: "venture_update",
+                    body: text,
+                    tag,
+                    kpiValue: Number.isFinite(kpiValue) && kpiValue && kpiValue > 0 ? kpiValue : undefined,
+                    verification,
+                    commitmentId: selectedCommitmentId ?? undefined,
+                });
+                setStatus("Saved on this phone — will send when the network returns.");
+                setBody("");
+                setFollowUp("");
+                setKpiText("");
+                setPhase("prompt");
+                return;
+            }
             const result = await postUpdate({
                 body: text,
                 tag,
@@ -143,6 +173,17 @@ export function VentureCockpit({ onOpenLedger }: { onOpenLedger?: () => void }) 
         }
         setSending(true);
         try {
+            if (!queue.online) {
+                await queue.enqueue({
+                    kind: "self_checkin",
+                    value,
+                    body: body.trim() || undefined,
+                    verification,
+                });
+                setStatus("Saved on this phone — will send when the network returns.");
+                setKpiText("");
+                return;
+            }
             const result = await logCheckIn({ value, note: body.trim() || undefined, verification });
             setStatus(result.message);
             setKpiText("");
@@ -257,6 +298,50 @@ export function VentureCockpit({ onOpenLedger }: { onOpenLedger?: () => void }) 
                     </View>
                     {status ? <Text style={styles.status}>{status}</Text> : null}
                 </Card>
+
+                {queue.items.length > 0 ? (
+                    <Card>
+                        <Text style={styles.queueTitle}>
+                            {!queue.online
+                                ? "Offline — saved on this phone"
+                                : queue.items.some((item) => item.status === "failed")
+                                  ? "Needs your attention"
+                                  : "Sending…"}
+                        </Text>
+                        {queue.items.map((item) => (
+                            <View key={item.id} style={styles.queueRow}>
+                                <Text style={styles.queueText} numberOfLines={1}>
+                                    {item.kind === "self_checkin"
+                                        ? `Check-in · ${item.value ?? ""}`
+                                        : `${item.tag ?? "Update"} · ${(item.body ?? "").slice(0, 40)}`}
+                                </Text>
+                                <Text
+                                    style={[
+                                        styles.queueState,
+                                        item.status === "failed" && styles.queueStateFailed,
+                                    ]}
+                                >
+                                    {item.status === "failed"
+                                        ? "failed — tap to retry"
+                                        : item.status === "sending"
+                                          ? "sending…"
+                                          : !queue.online
+                                            ? "waiting for network"
+                                            : "queued"}
+                                </Text>
+                                {item.status === "failed" ? (
+                                    <Pressable
+                                        onPress={() => void queue.retry(item.id)}
+                                        hitSlop={6}
+                                        accessibilityRole="button"
+                                    >
+                                        <Text style={styles.queueRetry}>Retry</Text>
+                                    </Pressable>
+                                ) : null}
+                            </View>
+                        ))}
+                    </Card>
+                ) : null}
 
                 {openRequests && openRequests.length > 0 ? (
                     <Card>

@@ -111,6 +111,28 @@ export const styles = StyleSheet.create({
         paddingVertical: 4,
     },
     verifyRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
+    queueTitle: {
+        fontFamily: font.bodyBold,
+        fontSize: 12,
+        fontWeight: "700",
+        color: color.charcoal,
+        marginBottom: 6,
+    },
+    queueRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+        paddingVertical: 3,
+    },
+    queueText: { flex: 1, fontFamily: font.body, fontSize: 12, color: color.ink },
+    queueState: { fontFamily: font.body, fontSize: 11, color: color.mist },
+    queueStateFailed: { color: color.brassDeep, fontFamily: font.bodyBold },
+    queueRetry: {
+        fontFamily: font.bodyBold,
+        fontSize: 11,
+        fontWeight: "700",
+        color: color.brassDeep,
+    },
     wisdomStack: { gap: 12 },
     checkInRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 4 },
     checkInValue: {

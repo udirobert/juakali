@@ -31,7 +31,7 @@ export function stripFreshParam(): void {
     window.history.replaceState({}, "", url.toString());
 }
 
-async function readLocal(key: string): Promise<string | null> {
+export async function readLocal(key: string): Promise<string | null> {
     try {
         if (Platform.OS === "web" && typeof localStorage !== "undefined") {
             return localStorage.getItem(key);
@@ -42,7 +42,7 @@ async function readLocal(key: string): Promise<string | null> {
     }
 }
 
-async function writeLocal(key: string, value: string): Promise<void> {
+export async function writeLocal(key: string, value: string): Promise<void> {
     try {
         if (Platform.OS === "web" && typeof localStorage !== "undefined") {
             localStorage.setItem(key, value);
@@ -54,7 +54,7 @@ async function writeLocal(key: string, value: string): Promise<void> {
     }
 }
 
-async function removeLocal(key: string): Promise<void> {
+export async function removeLocal(key: string): Promise<void> {
     try {
         if (Platform.OS === "web" && typeof localStorage !== "undefined") {
             localStorage.removeItem(key);
