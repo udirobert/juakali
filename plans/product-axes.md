@@ -57,6 +57,7 @@ URL overrides: `?demo=1` (force demo teaching), `?fresh=1` (clear local gates).
 - [x] Server `REQUIRE_AUTH_TO_ACT` gates pledge / approve / seed / startCommitment
 - [x] `userPrefs` for onboarded / coach / lastOriented when authenticated
 - [x] AgentMail inbox `juakali@agentmail.to` + Svix-verified `/webhooks/agentmail`
+- [x] Evidence verification ladder (self_reported → photo_evidence → third_party) on kpiCheckIns/founderEvidence/agentRuns, surfaced as ledger trust tags (2026-11-18)
 - [ ] Production Resend (`AUTH_RESEND_KEY`) + turn off `SOFT_AUTH_INBOX`
 - [ ] Gmail for human investor
 - [ ] Calendar = cadence copy + optional ICS before OAuth

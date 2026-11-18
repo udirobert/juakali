@@ -3,6 +3,21 @@
 From the level-up plan (Nov 2026). Items marked **[manual]** need an account owner
 (they involve billing or external dashboards); everything else is code-side.
 
+## Phase 2 progress (founder surface) — code-side, shipped 2026-11-18
+
+- [x] **Evidence verification ladder** — `kpiCheckIns.verification`,
+      `founderEvidence.verification`, and `agentRuns.pipeline.verification`
+      carry the rung: `self_reported` → `photo_evidence` → `third_party`.
+      Founder mutations (`postVentureUpdate`, `logSelfCheckIn`) and
+      `submitFounderEvidence` accept it; the run pipeline preserves it.
+- [x] **Trust gradient on the ledger** — `evidenceTags` promotes the rung to
+      visible tags (`verified-photo`, `verified-third-party`); the ledger UI
+      renders them as a distinct chip treatment with human labels.
+- [ ] Founder check-in UI (one-thumb, voice-first, offline queue) — needs the
+      native app surface; the backend mutations are ready for it.
+- [ ] M-PESA statement parse → `third_party` rung (needs a parser + provider).
+- [ ] Android EAS build (needs Expo account + credentials).
+
 ## Done in code (this phase)
 
 - [x] **CI** — `.github/workflows/ci.yml`: typecheck + lint + test + lockfile
