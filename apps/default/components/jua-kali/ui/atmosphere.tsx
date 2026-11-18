@@ -66,12 +66,12 @@ const styles = StyleSheet.create({
         overflow: "hidden",
     },
     wash: {
-        ...StyleSheet.absoluteFillObject,
+        ...StyleSheet.absoluteFill,
         backgroundColor: color.stone,
     },
     grain: Platform.select({
         web: {
-            ...StyleSheet.absoluteFillObject,
+            ...StyleSheet.absoluteFill,
             opacity: 0.035,
             backgroundImage: grainSvg,
             backgroundRepeat: "repeat",
