@@ -13,10 +13,22 @@ From the level-up plan (Nov 2026). Items marked **[manual]** need an account own
 - [x] **Trust gradient on the ledger** — `evidenceTags` promotes the rung to
       visible tags (`verified-photo`, `verified-third-party`); the ledger UI
       renders them as a distinct chip treatment with human labels.
-- [ ] Founder check-in UI (one-thumb, voice-first, offline queue) — needs the
-      native app surface; the backend mutations are ready for it.
+- [x] **Founder check-in UI** — the venture cockpit check-in shows an
+      evidence-ladder picker when a KPI number is entered (my own count /
+      I have a photo / statement or receipt), wired to both mutations.
+- [x] **Investor portfolio roll-up** — `api.invest.portfolio` (authenticated,
+      fail-closed): total deployed, per-deal cap ratio, KPI staleness, pending
+      decisions/publication. `PortfolioStrip` renders on Home when the
+      investor holds >1 deal: tappable per-deal chips (quiet / proposal
+      waiting / % of cap) with stale deals flagged.
+- [x] **Impact stat on the public ledger** — jobs-created from
+      `api.invest.impactTotals` shows on the unfiltered ledger hero.
+- [ ] Voice-first check-in (dictation exists; wire it into the KPI capture
+      step) and offline queue — native app polish, next session.
 - [ ] M-PESA statement parse → `third_party` rung (needs a parser + provider).
 - [ ] Android EAS build (needs Expo account + credentials).
+- [ ] Weekly digest email (Resend) — needs the production Resend key first.
+- [ ] Ledger public JSON API + embeddable widget.
 
 ## Done in code (this phase)
 
