@@ -114,6 +114,14 @@ export const styles = StyleSheet.create({
         textTransform: "uppercase",
         color: color.brassDeep,
     },
+    // Verification rungs read as a distinct trust gradient, not ordinary tags.
+    evidenceChipVerified: {
+        backgroundColor: "rgba(20,24,22,0.06)",
+        borderColor: color.charcoal,
+    },
+    evidenceChipTextVerified: {
+        color: color.charcoal,
+    },
     // The expanded preview — the record at full size.
     rowDetail: {
         gap: 8,

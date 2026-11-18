@@ -423,8 +423,26 @@ function LedgerRow({
                             ? [event.evidence[0]!, `+${event.evidence.length - 1}`]
                             : event.evidence
                         ).map((tag: string) => (
-                            <View key={tag} style={[styles.evidenceChip, compact && styles.evidenceChipNarrow]}>
-                                <Text style={styles.evidenceChipText}>{tag}</Text>
+                            <View
+                                key={tag}
+                                style={[
+                                    styles.evidenceChip,
+                                    compact && styles.evidenceChipNarrow,
+                                    tag.startsWith("verified-") && styles.evidenceChipVerified,
+                                ]}
+                            >
+                                <Text
+                                    style={[
+                                        styles.evidenceChipText,
+                                        tag.startsWith("verified-") && styles.evidenceChipTextVerified,
+                                    ]}
+                                >
+                                    {tag === "verified-photo"
+                                        ? "photo verified"
+                                        : tag === "verified-third-party"
+                                          ? "3rd-party verified"
+                                          : tag}
+                                </Text>
                             </View>
                         ))}
                     </View>

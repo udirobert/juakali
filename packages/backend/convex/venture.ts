@@ -13,6 +13,12 @@ import { assertCanAct } from "./softAuth";
 import { createAgentRun, resumeWaitingRunWithEvidence } from "./agentRuns";
 import { syncInvestorsForVenture, syncVentureBrowse } from "./investorBriefing";
 
+const verificationRung = v.union(
+    v.literal("self_reported"),
+    v.literal("photo_evidence"),
+    v.literal("third_party")
+);
+
 const ventureUpdateTag = v.union(
     v.literal("situation"),
     v.literal("problem"),
@@ -214,6 +220,8 @@ export const postVentureUpdate = mutation({
         body: v.string(),
         tag: ventureUpdateTag,
         kpiValue: v.optional(v.number()),
+        /** Evidence verification rung for the KPI value (ladder rung 1–3). */
+        verification: v.optional(verificationRung),
         /** Required when a venture has multiple investor relationships. */
         commitmentId: v.optional(v.id("commitments")),
     },
@@ -282,6 +290,7 @@ export const postVentureUpdate = mutation({
                 metric: null,
                 value: args.kpiValue,
                 note: `${tagLabel} from the founder: ${body}`,
+                verification: args.verification ?? "self_reported",
                 submittedByUserId: userId,
             });
             if (resumedRunId) {
@@ -301,6 +310,7 @@ export const postVentureUpdate = mutation({
             fromAddressOverride: venture.agentEmail ?? `${venture.publicSlug}@agent.juakali.demo`,
             source: "self",
             evidenceSource: args.kpiValue != null ? "founder_update" : undefined,
+            verification: args.verification ?? "self_reported",
         });
 
         await ctx.db.insert("ledgerEvents", {
@@ -327,6 +337,8 @@ export const logSelfCheckIn = mutation({
     args: {
         value: v.number(),
         note: v.optional(v.string()),
+        /** Evidence verification rung for this self-report (ladder rung 1–3). */
+        verification: v.optional(verificationRung),
     },
     returns: v.object({ message: v.string() }),
     handler: async (ctx, args) => {
@@ -364,6 +376,7 @@ export const logSelfCheckIn = mutation({
             value: args.value,
             note: (args.note ?? "Founder self-report").slice(0, 160),
             source: "self",
+            verification: args.verification ?? "self_reported",
             appliedItemId,
             createdAt: now,
         });
@@ -378,7 +391,11 @@ export const logSelfCheckIn = mutation({
             amountKes: null,
             metric: venture.kpiLabel,
             value: args.value,
-            evidence: ["self"],
+            evidence: args.verification === "photo_evidence"
+                ? ["self", "verified-photo"]
+                : args.verification === "third_party"
+                  ? ["self", "verified-third-party"]
+                  : ["self"],
             createdAt: now,
             publicVisible: true,
         });

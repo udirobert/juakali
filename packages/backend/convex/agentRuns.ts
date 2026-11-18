@@ -214,8 +214,22 @@ function evidenceTags(run: Doc<"agentRuns">): string[] {
             : run.evidenceSource === "investor_entered"
               ? "investor-entered"
               : null;
+    // Verification rung becomes a visible trust tag on every ledger row.
+    const verificationTag =
+        run.pipeline?.verification === "photo_evidence"
+            ? "verified-photo"
+            : run.pipeline?.verification === "third_party"
+              ? "verified-third-party"
+              : null;
     const tags = run.trigger === "proactive" ? ["proactive", primary] : [primary];
-    return Array.from(new Set([...tags, ...(provenance ? [provenance] : []), "agent"]));
+    return Array.from(
+        new Set([
+            ...tags,
+            ...(provenance ? [provenance] : []),
+            ...(verificationTag ? [verificationTag] : []),
+            "agent",
+        ])
+    );
 }
 
 /** First-person origin line for ledger/digest/reply copy. */
@@ -401,6 +415,7 @@ async function insertFounderEvidence(
         value: number;
         note: string;
         source: "founder_update" | "investor_entered";
+        verification?: "self_reported" | "photo_evidence" | "third_party";
         submittedByUserId?: Id<"users"> | null;
     }
 ): Promise<Id<"founderEvidence">> {
@@ -412,6 +427,7 @@ async function insertFounderEvidence(
         value: args.value,
         note: args.note,
         source: args.source,
+        verification: args.verification ?? "self_reported",
         submittedByUserId: args.submittedByUserId ?? null,
         createdAt: Date.now(),
     });
@@ -434,6 +450,7 @@ export async function resumeWaitingRunWithEvidence(
         metric: string | null;
         value: number | null;
         note: string;
+        verification?: "self_reported" | "photo_evidence" | "third_party";
         submittedByUserId?: Id<"users"> | null;
     }
 ): Promise<Id<"agentRuns"> | null> {
@@ -473,6 +490,7 @@ export async function resumeWaitingRunWithEvidence(
         value: args.value,
         note,
         source: "founder_update",
+        verification: args.verification ?? "self_reported",
         submittedByUserId: args.submittedByUserId,
     });
 
@@ -486,7 +504,7 @@ export async function resumeWaitingRunWithEvidence(
         valueOverride: args.value,
         noteBody: note,
         evidenceSource: "founder_update",
-        pipeline: { ...waiting.pipeline, evidenceId },
+        pipeline: { ...waiting.pipeline, evidenceId, verification: args.verification ?? "self_reported" },
         updatedAt: now,
     });
     // Evidence moves the run into the "decisions" bucket for the second approval.
@@ -498,7 +516,8 @@ export async function resumeWaitingRunWithEvidence(
  * Shared run creation (mutations cannot call mutations in Convex, so both
  * the public approve mutation and invest.ts's inbound webhook use this).
  */
-export async function createAgentRun(    ctx: MutationCtx,
+export async function createAgentRun(
+    ctx: MutationCtx,
     args: {
         commitmentId: Id<"commitments">;
         noteBody: string;
@@ -510,6 +529,7 @@ export async function createAgentRun(    ctx: MutationCtx,
         toAddressOverride?: string;
         source: "agent" | "sms" | "manual" | "email_paste" | "self";
         evidenceSource?: "founder_update" | "investor_entered";
+        verification?: "self_reported" | "photo_evidence" | "third_party";
     }
 ) {
     const body = args.noteBody.trim();
@@ -555,6 +575,7 @@ export async function createAgentRun(    ctx: MutationCtx,
         toAddress,
         source: args.source,
         evidenceSource: args.evidenceSource ?? null,
+        pipeline: args.verification ? { verification: args.verification } : undefined,
         steps: initialSteps(),
         actionPlan: undefined,
         correlationId,
@@ -892,6 +913,7 @@ export const stepRecordKpi = internalMutation({
                 source: run.source,
                 evidenceSource: run.evidenceSource ?? null,
                 evidenceId: run.pipeline?.evidenceId ?? null,
+                verification: run.pipeline?.verification ?? "self_reported",
                 appliedItemId,
                 createdAt: now,
             });
@@ -1721,6 +1743,13 @@ export const submitFounderEvidence = mutation({
         metric: v.optional(v.string()),
         value: v.number(),
         note: v.optional(v.string()),
+        verification: v.optional(
+            v.union(
+                v.literal("self_reported"),
+                v.literal("photo_evidence"),
+                v.literal("third_party")
+            )
+        ),
     },
     returns: v.object({ ok: v.boolean(), message: v.string() }),
     handler: async (ctx, args) => {
@@ -1756,6 +1785,7 @@ export const submitFounderEvidence = mutation({
             value: args.value,
             note: args.note?.trim() || run.noteBody,
             source: "investor_entered",
+            verification: args.verification ?? "self_reported",
             submittedByUserId: userId,
         });
 
@@ -1767,6 +1797,7 @@ export const submitFounderEvidence = mutation({
             evidenceSource: "investor_entered" as const,
             updatedAt: now,
         };
+        const verification = args.verification ?? "self_reported";
 
         // Two-step consent: evidence is recorded on the run but NOTHING is
         // logged or published until the investor approves the exact KPI and
@@ -1775,7 +1806,7 @@ export const submitFounderEvidence = mutation({
             ...evidencePatch,
             status: "awaiting_publication",
             autoStarted: false,
-            pipeline: { ...run.pipeline, evidenceId },
+            pipeline: { ...run.pipeline, evidenceId, verification },
         });
         // Evidence moves the run into the decisions bucket for the second approval.
         await syncInvestorBriefing(ctx, run.investorId);

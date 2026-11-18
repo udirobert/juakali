@@ -404,6 +404,14 @@ export default defineSchema({
         value: v.number(),
         note: v.string(),
         source: v.union(v.literal("founder_update"), v.literal("investor_entered")),
+        /** Evidence verification rung (see kpiCheckIns.verification). */
+        verification: v.optional(
+            v.union(
+                v.literal("self_reported"),
+                v.literal("photo_evidence"),
+                v.literal("third_party")
+            )
+        ),
         submittedByUserId: v.optional(v.union(v.id("users"), v.null())),
         createdAt: v.number(),
     })
@@ -424,6 +432,19 @@ export default defineSchema({
         ),
         /** Immutable founder/investor evidence that supports this check-in. */
         evidenceId: v.optional(v.union(v.id("founderEvidence"), v.null())),
+        /**
+         * Evidence verification ladder (Phase 2): how strongly this check-in's
+         * number is corroborated. Rung 1 = self-report, 2 = photo/attachment
+         * evidence, 3 = third-party corroboration (e.g. parsed M-PESA
+         * statement). Drives the trust gradient on ledger rows.
+         */
+        verification: v.optional(
+            v.union(
+                v.literal("self_reported"),
+                v.literal("photo_evidence"),
+                v.literal("third_party")
+            )
+        ),
         /** Set when this check-in measures a piece of applied mentor wisdom. */
         appliedItemId: v.optional(v.union(v.id("sharedItems"), v.null())),
         createdAt: v.number(),
@@ -619,6 +640,14 @@ export default defineSchema({
                 requestEmailId: v.optional(v.id("agentEmails")),
                 /** Immutable evidence record that unlocked the KPI step. */
                 evidenceId: v.optional(v.id("founderEvidence")),
+                /** Evidence verification rung for this run's KPI. */
+                verification: v.optional(
+                    v.union(
+                        v.literal("self_reported"),
+                        v.literal("photo_evidence"),
+                        v.literal("third_party")
+                    )
+                ),
                 /** Ledger event ids — explicit causal edges (parentEventId). */
                 requestEventId: v.optional(v.id("ledgerEvents")),
                 checkinEventId: v.optional(v.id("ledgerEvents")),
