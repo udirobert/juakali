@@ -23,10 +23,21 @@ From the level-up plan (Nov 2026). Items marked **[manual]** need an account own
       waiting / % of cap) with stale deals flagged.
 - [x] **Impact stat on the public ledger** — jobs-created from
       `api.invest.impactTotals` shows on the unfiltered ledger hero.
-- [ ] Voice-first check-in (dictation exists; wire it into the KPI capture
-      step) and offline queue — native app polish, next session.
+- [x] **Voice-first KPI capture** — `POST /voice/kpi-checkin` (bearer-gated
+      via `VOICE_KPI_TOKEN`, per-IP throttled): Gemini transcription
+      (Swahili/English/mixed) + number parsing (digits and Swahili/English
+      number words). Client `useVoiceKpi` hook records, transcribes, and
+      shows "I heard: … — correct?" — nothing logs until the founder
+      confirms. Cockpit has a speak-your-number button beside the KPI input.
+- [x] **Offline check-in queue** — `useFounderQueue`: durable local queue
+      (SecureStore/localStorage), flushes on mount and connectivity regain;
+      offline sends save locally with "Saved on this phone — will send when
+      the network returns"; network failures re-queue, validation failures
+      surface for review with retry; queue card shows per-item state.
 - [ ] M-PESA statement parse → `third_party` rung (needs a parser + provider).
 - [ ] Android EAS build (needs Expo account + credentials).
+- [ ] Native (expo-av) recording for voice KPI on Android — the web
+      MediaRecorder path works today; native falls back to keyboard.
 - [ ] Weekly digest email (Resend) — needs the production Resend key first.
 - [ ] Ledger public JSON API + embeddable widget.
 
