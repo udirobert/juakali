@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Convex codegen must be present for backend typecheck; the generated
+      # _generated/ dir is gitignored, so generate it in CI.
+      - name: Generate Convex types
+        working-directory: packages/backend
+        run: npx convex codegen --typecheck=disable
+        env:
+          CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_PREVIEW_DEPLOYMENT }}
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Test
+        run: npm run test
+      - name: Verify lockfile optional deps
+        run: node scripts/verify-lock-optional-deps.mjs

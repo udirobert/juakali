@@ -20,6 +20,14 @@ crons.interval(
     { olderThanMs: 90_000 }
 );
 
+// Park repeatedly-failed agent runs in dead_letter for ops triage.
+crons.interval(
+    "dead-letter failed agent runs",
+    { minutes: 15 },
+    internal.agentRuns.sweepDeadLetters,
+    {}
+);
+
 // Agent initiative: propose a check-in when a venture's KPIs go stale.
 // Proposals wait for approval — nothing runs until the investor says yes.
 crons.interval("propose proactive check-ins", { hours: 1 }, internal.agentRuns.proposeProactiveCheckIns, {});

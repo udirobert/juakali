@@ -104,7 +104,8 @@ export const runStatusValidator = v.union(
     v.literal("awaiting_publication"),
     v.literal("completed"),
     v.literal("failed"),
-    v.literal("dismissed")
+    v.literal("dismissed"),
+    v.literal("dead_letter")
 );
 
 export const runTriggerValidator = v.union(
@@ -1206,6 +1207,42 @@ export const recoverStaleRuns = internalMutation({
     },
 });
 
+/**
+ * A failed run that has been retried this many times without completing is
+ * parked in `dead_letter` instead of staying in the retryable `failed` bucket.
+ * Ops triages these in Lab/Ops; a retry from dead_letter resets the counter.
+ */
+const DEAD_LETTER_RETRY_THRESHOLD = 3;
+
+/**
+ * Background sweep: park repeatedly-failed runs in dead_letter so the failed
+ * bucket stays actionable (retryable) and permanent failures are surfaced for
+ * ops instead of silently accumulating.
+ */
+export const sweepDeadLetters = internalMutation({
+    args: {},
+    returns: v.object({ parked: v.number() }),
+    handler: async (ctx) => {
+        const failed = await ctx.db
+            .query("agentRuns")
+            .withIndex("by_status", (q) => q.eq("status", "failed"))
+            .take(100);
+        let parked = 0;
+        for (const run of failed) {
+            if ((run.retryCount ?? 0) < DEAD_LETTER_RETRY_THRESHOLD) continue;
+            await ctx.db.patch(run._id, {
+                status: "dead_letter",
+                deadLetteredAt: Date.now(),
+                error: run.error ?? "Parked after repeated retry failures",
+                updatedAt: Date.now(),
+            });
+            await syncInvestorBriefing(ctx, run.investorId);
+            parked++;
+        }
+        return { parked };
+    },
+});
+
 // --- Proactive proposals: Jua suggests work, nothing runs until approval ---
 
 /** How stale a venture's latest KPI may be before Jua proposes a check-in. */
@@ -1831,7 +1868,9 @@ export const retryFailedRun = mutation({
         await rateLimiter.limit(ctx, "investMutate", { key: "agentRun" });
         const failed = await ctx.db.get(args.runId);
         if (!failed) throw new Error("Run not found");
-        if (failed.status !== "failed") throw new Error("Only failed runs can be retried");
+        if (failed.status !== "failed" && failed.status !== "dead_letter") {
+            throw new Error("Only failed runs can be retried");
+        }
         await assertInvestorOwnsRun(ctx, failed);
 
         const investor = await ctx.db.get(failed.investorId);
@@ -1851,6 +1890,9 @@ export const retryFailedRun = mutation({
             status: "running",
             steps,
             error: null,
+            // Count the retry; sweepDeadLetters parks runs that fail repeatedly.
+            retryCount: (failed.retryCount ?? 0) + 1,
+            deadLetteredAt: undefined,
             // Keep correlationId, actionPlan, approvedSummary, pipeline intact.
             updatedAt: now,
         });
@@ -1900,7 +1942,7 @@ async function buildActivityFromScan(
         else if (run.status === "waiting_for_response") waiting.push(run);
         else if (run.status === "proposed" || run.status === "awaiting_publication") {
             blocked.push(run);
-        } else if (run.status === "failed") failed.push(run);
+        } else if (run.status === "failed" || run.status === "dead_letter") failed.push(run);
         else if (run.status === "completed") completed.push(run);
     }
 

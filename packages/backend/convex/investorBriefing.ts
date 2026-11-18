@@ -182,7 +182,7 @@ export async function syncInvestorBriefing(ctx: WriteDb, investorId: Id<"investo
             active.push(base);
         } else if (run.status === "waiting_for_response") {
             waiting.push(base);
-        } else if (run.status === "failed") {
+        } else if (run.status === "failed" || run.status === "dead_letter") {
             failed.push(base);
         } else if (run.status === "completed" && run.updatedAt >= weekAgo) {
             completed.push({

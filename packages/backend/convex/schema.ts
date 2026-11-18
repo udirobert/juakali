@@ -52,7 +52,8 @@ const briefingActivityStatus = v.union(
     v.literal("awaiting_publication"),
     v.literal("completed"),
     v.literal("failed"),
-    v.literal("dismissed")
+    v.literal("dismissed"),
+    v.literal("dead_letter")
 );
 const briefingActivityTrigger = v.union(
     v.literal("approved_note"),
@@ -564,7 +565,8 @@ export default defineSchema({
             v.literal("awaiting_publication"),
             v.literal("completed"),
             v.literal("failed"),
-            v.literal("dismissed")
+            v.literal("dismissed"),
+            v.literal("dead_letter")
         ),
         trigger: v.union(
             v.literal("approved_note"),
@@ -647,6 +649,10 @@ export default defineSchema({
             )
         ),
         error: v.optional(v.union(v.string(), v.null())),
+        /** Dead-letter bookkeeping: how many times the run was retried. */
+        retryCount: v.optional(v.number()),
+        /** When the run was moved to dead_letter (ops triage timestamp). */
+        deadLetteredAt: v.optional(v.number()),
         createdAt: v.number(),
         updatedAt: v.number(),
     })

@@ -20,6 +20,8 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
     // Invest demo surfaces
     investQuery: { kind: "token bucket", rate: 60, period: MINUTE, capacity: 80 },
     investMutate: { kind: "token bucket", rate: 30, period: MINUTE, capacity: 40 },
+    // Public share route (unauthenticated): 120/min per client IP
+    publicShare: { kind: "token bucket", rate: 120, period: MINUTE, capacity: 150 },
 });
 
 // =============================================================================

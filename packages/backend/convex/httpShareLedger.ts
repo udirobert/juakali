@@ -13,6 +13,7 @@
 import { internal } from "./_generated/api";
 import type { ActionCtx } from "./_generated/server";
 import { env } from "./env";
+import { rateLimiter } from "./rateLimit";
 
 // Same source of truth as Convex Auth redirects (env.SITE_URL); the constant
 // is only the fallback for the brief pre-provisioning window.
@@ -21,6 +22,14 @@ const OG_IMAGE = `${SITE_URL}/og.jpg`;
 const CACHE_CONTROL = "public, max-age=300, s-maxage=600";
 
 export default async function shareLedger(ctx: ActionCtx, request: Request): Promise<Response> {
+    // Public, unauthenticated endpoint: throttle per client IP so a scraper
+    // cannot hammer the share route. Cached responses soften the limit.
+    const ip =
+        request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+        request.headers.get("x-nf-client-connection-ip") ||
+        "unknown";
+    await rateLimiter.limit(ctx, "publicShare", { key: ip, throws: false });
+
     const url = new URL(request.url);
     // Netlify query-forwarding preserves the original param name ("ledger").
     const slug = ((url.searchParams.get("ledger") ?? url.searchParams.get("slug")) ?? "")
