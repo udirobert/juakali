@@ -154,6 +154,8 @@ export function PublicLedger({
         limit: 40,
         ventureSlug: slug ?? undefined,
     });
+    /** Aggregate impact (jobs, revenue) — shown on the unfiltered ledger. */
+    const impact = useQuery(api.invest.impactTotals, {});
     const insets = useSafeAreaInsets();
     const { width } = useWindowDimensions();
     const compact = width < 440;
@@ -264,6 +266,12 @@ export function PublicLedger({
                         >
                             <Text style={styles.stat}>{data.totals.digests} digests</Text>
                         </Pressable>
+                        {!slug && impact && impact.jobsCreated > 0 ? (
+                            <>
+                                <Text style={styles.statDot}>·</Text>
+                                <Text style={styles.stat}>{impact.jobsCreated} jobs</Text>
+                            </>
+                        ) : null}
                         <Text style={styles.statDot}>·</Text>
                         <PressableScale
                             onPress={() => void handleShare()}
