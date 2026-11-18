@@ -889,6 +889,44 @@ function AgentArrival({
     );
 }
 
+/**
+ * The exit term, visible: share of cashflow until the multiple cap.
+ * Intent-model estimate (capital is soft) — labeled as such.
+ */
+function CapProgress({
+    commitment,
+}: {
+    commitment: Commitment;
+}) {
+    const { capProgress } = commitment;
+    const pct = Math.round(capProgress.ratio * 100);
+    const fmt = (n: number) => `KES ${Math.round(n).toLocaleString()}`;
+    return (
+        <View style={styles.capBlock}>
+            <View style={styles.capRow}>
+                <Text style={styles.capLabel} numberOfLines={1}>
+                    {(commitment.shareBps / 100).toFixed(1)}% until {commitment.capMultiple}× cap
+                </Text>
+                <Text style={styles.capValue}>
+                    {fmt(capProgress.repaidKes)} / {fmt(capProgress.capKes)}
+                </Text>
+            </View>
+            <View style={styles.progressTrack}>
+                <View
+                    style={[
+                        styles.progressFill,
+                        styles.capFill,
+                        { width: `${Math.max(2, pct)}%` },
+                    ]}
+                />
+            </View>
+            <Text style={styles.capNote}>
+                {pct}% of cap earned back · intent model, not settlement
+            </Text>
+        </View>
+    );
+}
+
 function Scorecard({
     commitment,
     onOpenGlossary,
@@ -944,6 +982,8 @@ function Scorecard({
             {commentary.length > 0 ? (
                 <Text style={styles.commentary}>{commentary.join(" · ")}</Text>
             ) : null}
+
+            <CapProgress commitment={commitment} />
 
             <View style={styles.shareRow}>
                 <Pressable

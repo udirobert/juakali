@@ -203,6 +203,38 @@ export const styles = StyleSheet.create({
         color: color.brassDeep,
         marginTop: 4,
     },
+    // Cap progress (exit term, visible)
+    capBlock: {
+        marginTop: 10,
+        paddingTop: 10,
+        borderTopWidth: StyleSheet.hairlineWidth,
+        borderTopColor: "rgba(20,24,22,0.10)",
+        gap: 6,
+    },
+    capRow: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "baseline",
+        gap: 8,
+    },
+    capLabel: {
+        fontFamily: font.bodyBold,
+        fontSize: 11,
+        fontWeight: "700",
+        color: color.charcoal,
+    },
+    capValue: {
+        fontFamily: font.body,
+        fontSize: 11,
+        color: color.mist,
+        fontVariant: tabularNums,
+    },
+    capFill: { backgroundColor: color.charcoal },
+    capNote: {
+        fontFamily: font.body,
+        fontSize: 10,
+        color: color.mist,
+    },
     shareRow: {
         flexDirection: "row",
         alignItems: "center",
