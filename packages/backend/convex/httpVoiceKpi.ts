@@ -15,6 +15,7 @@
 import type { ActionCtx } from "./_generated/server";
 import { env } from "./env";
 import { rateLimiter } from "./rateLimit";
+import { NUMBER_WORDS, DEFAULT_LOCALE_ORDER } from "./numberWords";
 
 interface GeminiGenerateContentResponse {
     candidates?: Array<{
@@ -29,33 +30,21 @@ function extractText(json: GeminiGenerateContentResponse): string {
     return parts.map((part) => part.text ?? "").join("").trim();
 }
 
-/** Parse the spoken number out of the transcript (digits or simple words). */
-export function parseKpiValue(transcript: string): number | null {
+/** Parse the spoken number out of the transcript (digits or locale number words). */
+export function parseKpiValue(transcript: string, localeOrder: string[] = DEFAULT_LOCALE_ORDER): number | null {
     // Direct digits first: "12,500" / "12500" / "12 500".
     const digits = transcript.replace(/,/g, " ").match(/\d[\d\s]*\d|\d/);
     if (digits) {
         const value = Number(digits[0].replace(/\s/g, ""));
         if (Number.isFinite(value) && value > 0) return value;
     }
-    // Swahili/English number words for small counts (meetings, jobs).
-    const words: Record<string, number> = {
-        moja: 1, one: 1,
-        mbili: 2, two: 2,
-        tatu: 3, three: 3,
-        nne: 4, four: 4,
-        tano: 5, five: 5,
-        sita: 6, six: 6,
-        saba: 7, seven: 7,
-        nane: 8, eight: 8,
-        tisa: 9, nine: 9,
-        kumi: 10, ten: 10,
-        ishirini: 20, twenty: 20,
-        thelathini: 30, thirty: 30,
-        arobaini: 40, forty: 40,
-        hamsini: 50, fifty: 50,
-    };
-    for (const [word, value] of Object.entries(words)) {
-        if (new RegExp(`\\b${word}\\b`, "i").test(transcript)) return value;
+    // Locale number words (small counts: meetings, jobs). Venture locale first.
+    for (const locale of localeOrder) {
+        const words = NUMBER_WORDS[locale];
+        if (!words) continue;
+        for (const [word, value] of Object.entries(words)) {
+            if (new RegExp(`\\b${word}\\b`, "i").test(transcript)) return value;
+        }
     }
     return null;
 }
