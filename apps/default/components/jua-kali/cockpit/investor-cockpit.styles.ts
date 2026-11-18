@@ -235,6 +235,32 @@ export const styles = StyleSheet.create({
         fontSize: 10,
         color: color.mist,
     },
+    // Portfolio strip (multi-deal roll-up)
+    portfolioRow: { flexDirection: "row", gap: 6, flexWrap: "wrap", marginTop: 8 },
+    portfolioChip: {
+        paddingHorizontal: 10,
+        paddingVertical: 7,
+        borderRadius: 6,
+        backgroundColor: color.brassSoft,
+        borderWidth: 1,
+        borderColor: color.brassBorder,
+        maxWidth: "48%",
+        gap: 2,
+    },
+    portfolioChipActive: { borderColor: color.brass, backgroundColor: color.paper },
+    portfolioChipName: {
+        fontFamily: font.bodyBold,
+        fontSize: 12,
+        fontWeight: "700",
+        color: color.charcoal,
+    },
+    portfolioChipNameActive: { color: color.brassDeep },
+    portfolioChipMeta: {
+        fontFamily: font.body,
+        fontSize: 10,
+        color: color.mist,
+    },
+    portfolioChipStale: { color: color.brassDeep, fontFamily: font.bodyBold },
     shareRow: {
         flexDirection: "row",
         alignItems: "center",

@@ -139,6 +139,8 @@ export function InvestorCockpit({
         commitmentId: dealParams.commitmentId,
         ventureSlug: dealParams.ventureSlug,
     });
+    /** Portfolio roll-up for the multi-deal investor (null when signed out). */
+    const portfolio = useQuery(api.invest.portfolio, {});
     const { isAuthenticated } = useConvexAuth();
     const { signIn } = useAuthActions();
     const me = useQuery(api.softAuth.whoAmI);
@@ -492,6 +494,18 @@ export function InvestorCockpit({
                     />
                 ) : null}
 
+                {!dealsOnly && !empty && portfolio && portfolio.dealCount > 1 ? (
+                    <PortfolioStrip
+                        portfolio={portfolio}
+                        selectedCommitmentId={selectedCommitmentId}
+                        onSelect={(id) => {
+                            tapHaptic();
+                            setSelectedCommitmentId(id);
+                            if (onOpenDeal) onOpenDeal(id);
+                        }}
+                    />
+                ) : null}
+
                 {!dealsOnly
                     ? (() => {
                           const proposal = selectedCommitment?.openProposal ?? null;
@@ -692,6 +706,90 @@ export function InvestorCockpit({
  * Presence theater: Jua on the wire — last worked, runs this week, next digest.
  * Grounded in real run/ledger data; the sun breathes only while a run is live.
  */
+/**
+ * Portfolio roll-up for the busy investor with several deals: deployed total,
+ * pending decisions, stale deals — one line each, tappable to focus a deal.
+ */
+function PortfolioStrip({
+    portfolio,
+    selectedCommitmentId,
+    onSelect,
+}: {
+    portfolio: NonNullable<FunctionReturnType<typeof api.invest.portfolio>>;
+    selectedCommitmentId: Id<"commitments"> | null;
+    onSelect: (id: Id<"commitments">) => void;
+}) {
+    const parts: string[] = [];
+    parts.push(`KES ${portfolio.totalPledgedKes.toLocaleString()} across ${portfolio.dealCount} deals`);
+    if (portfolio.pendingDecisions > 0) {
+        parts.push(
+            portfolio.pendingDecisions === 1
+                ? "1 decision waiting"
+                : `${portfolio.pendingDecisions} decisions waiting`
+        );
+    }
+    if (portfolio.pendingPublication > 0) {
+        parts.push(`${portfolio.pendingPublication} to publish`);
+    }
+    if (portfolio.staleDeals.length > 0) {
+        const worst = portfolio.staleDeals[0]!;
+        parts.push(
+            worst.hoursSinceCheckIn != null
+                ? `${worst.ventureName} quiet ${worst.hoursSinceCheckIn}h`
+                : `${worst.ventureName} quiet`
+        );
+    }
+
+    return (
+        <Card>
+            <View style={styles.cardTop}>
+                <View style={styles.titleWithHint}>
+                    <SunMark size={16} />
+                    <Text style={styles.cardTitle} numberOfLines={1}>
+                        Portfolio
+                    </Text>
+                </View>
+                <Text style={styles.meta}>{parts.join(" · ")}</Text>
+            </View>
+            <View style={styles.portfolioRow}>
+                {portfolio.deals.slice(0, 6).map((deal) => {
+                    const stale = (deal.hoursSinceCheckIn ?? Infinity) > 24;
+                    return (
+                        <Pressable
+                            key={deal.commitmentId}
+                            onPress={() => onSelect(deal.commitmentId)}
+                            accessibilityRole="button"
+                            style={[
+                                styles.portfolioChip,
+                                selectedCommitmentId === deal.commitmentId && styles.portfolioChipActive,
+                            ]}
+                        >
+                            <Text
+                                style={[
+                                    styles.portfolioChipName,
+                                    selectedCommitmentId === deal.commitmentId && styles.portfolioChipNameActive,
+                                ]}
+                                numberOfLines={1}
+                            >
+                                {deal.ventureName}
+                            </Text>
+                            <Text style={[styles.portfolioChipMeta, stale && styles.portfolioChipStale]} numberOfLines={1}>
+                                {stale
+                                    ? deal.hoursSinceCheckIn != null
+                                        ? `quiet ${deal.hoursSinceCheckIn}h`
+                                        : "quiet"
+                                    : deal.hasOpenProposal
+                                      ? "proposal waiting"
+                                      : `${Math.round(deal.capRatio * 100)}% of cap`}
+                            </Text>
+                        </Pressable>
+                    );
+                })}
+            </View>
+        </Card>
+    );
+}
+
 function AgentPresence({
     presence,
     nextDigestAt,

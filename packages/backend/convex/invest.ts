@@ -669,6 +669,129 @@ export const impactTotals = query({
 });
 
 /**
+ * Investor portfolio — the one screen for the busy investor with several
+ * deals: total deployed, per-deal staleness (KPI age), pending decisions,
+ * and cap progress. Authenticated owner only (fail-closed like the cockpit).
+ */
+export const portfolio = query({
+    args: {},
+    returns: v.union(
+        v.null(),
+        v.object({
+            totalPledgedKes: v.number(),
+            dealCount: v.number(),
+            pendingDecisions: v.number(),
+            pendingPublication: v.number(),
+            staleDeals: v.array(
+                v.object({
+                    commitmentId: v.id("commitments"),
+                    ventureName: v.string(),
+                    hoursSinceCheckIn: v.union(v.number(), v.null()),
+                })
+            ),
+            deals: v.array(
+                v.object({
+                    commitmentId: v.id("commitments"),
+                    ventureName: v.string(),
+                    ventureSlug: v.string(),
+                    amountKes: v.number(),
+                    status: commitmentStatusValidator,
+                    capRatio: v.number(),
+                    hoursSinceCheckIn: v.union(v.number(), v.null()),
+                    hasOpenProposal: v.boolean(),
+                })
+            ),
+        })
+    ),
+    handler: async (ctx) => {
+        const userId = await getAuthUserId(ctx);
+        const linkedInvestor = userId
+            ? await ctx.db
+                  .query("investors")
+                  .withIndex("by_userId", (q) => q.eq("userId", userId))
+                  .first()
+            : null;
+        if (!linkedInvestor) return null;
+
+        const rows = await ctx.db
+            .query("commitments")
+            .withIndex("by_investorId", (q) => q.eq("investorId", linkedInvestor._id))
+            .order("desc")
+            .take(50);
+
+        const now = Date.now();
+        const STALE_MS = 24 * 60 * 60 * 1000;
+        const deals: Array<{
+            commitmentId: Id<"commitments">;
+            ventureName: string;
+            ventureSlug: string;
+            amountKes: number;
+            status: Doc<"commitments">["status"];
+            capRatio: number;
+            hoursSinceCheckIn: number | null;
+            hasOpenProposal: boolean;
+        }> = [];
+        let pendingDecisions = 0;
+        let pendingPublication = 0;
+
+        for (const row of rows) {
+            const venture = await ctx.db.get(row.ventureId);
+            if (!venture) continue;
+
+            const latestCheckIn = await ctx.db
+                .query("kpiCheckIns")
+                .withIndex("by_ventureId", (q) => q.eq("ventureId", row.ventureId))
+                .order("desc")
+                .take(1);
+            const hoursSinceCheckIn = latestCheckIn[0]
+                ? Math.floor((now - latestCheckIn[0]!.createdAt) / 3_600_000)
+                : null;
+
+            const runs = await ctx.db
+                .query("agentRuns")
+                .withIndex("by_commitmentId", (q) => q.eq("commitmentId", row._id))
+                .order("desc")
+                .take(20);
+            const hasOpenProposal = runs.some((run) => run.status === "proposed");
+            pendingDecisions += runs.filter((run) => run.status === "proposed").length;
+            pendingPublication += runs.filter((run) => run.status === "awaiting_publication").length;
+
+            const capKes = row.amountKes * row.capMultiple;
+            const { kpiTotal } = await sumVentureKpis(ctx, row.ventureId);
+            const repaidKes = (kpiTotal * row.shareBps) / 10_000;
+
+            deals.push({
+                commitmentId: row._id,
+                ventureName: venture.name,
+                ventureSlug: venture.publicSlug,
+                amountKes: row.amountKes,
+                status: row.status,
+                capRatio: capKes > 0 ? Math.min(1, repaidKes / capKes) : 0,
+                hoursSinceCheckIn,
+                hasOpenProposal,
+            });
+        }
+
+        const staleDeals = deals
+            .filter((deal) => (deal.hoursSinceCheckIn ?? Infinity) * 3_600_000 > STALE_MS)
+            .map((deal) => ({
+                commitmentId: deal.commitmentId,
+                ventureName: deal.ventureName,
+                hoursSinceCheckIn: deal.hoursSinceCheckIn,
+            }));
+
+        return {
+            totalPledgedKes: rows.reduce((sum, row) => sum + row.amountKes, 0),
+            dealCount: deals.length,
+            pendingDecisions,
+            pendingPublication,
+            staleDeals,
+            deals,
+        };
+    },
+});
+
+/**
  * Assemble one cockpit commitment row from a commitment doc + its projection
  * (either from the briefing index or from the scan fallback). Keeps the two
  * paths producing the identical shape.
