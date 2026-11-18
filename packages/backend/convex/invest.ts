@@ -624,6 +624,51 @@ export const listVentures = query({
 });
 
 /**
+ * Public aggregate impact — the page a development-finance partner would
+ * forward. Unauthenticated by design (public-by-default). Jobs = cumulative
+ * jobs KPI across ventures; revenue = cumulative revenue_kes KPI; deployed =
+ * soft pledges (labeled intent, not settlement).
+ */
+export const impactTotals = query({
+    args: {},
+    returns: v.object({
+        venturesCount: v.number(),
+        activeVentures: v.number(),
+        pledgedKes: v.number(),
+        investorsCount: v.number(),
+        jobsCreated: v.number(),
+        revenueKes: v.number(),
+        checkIns: v.number(),
+        digests: v.number(),
+    }),
+    handler: async (ctx) => {
+        const ventures = await ctx.db.query("ventures").take(500);
+        const commitments = await ctx.db.query("commitments").take(500);
+        const checkIns = await ctx.db.query("kpiCheckIns").take(1000);
+        const digests = await ctx.db.query("agentDigests").take(1000);
+        const investorIds = new Set(commitments.map((row) => String(row.investorId)));
+
+        let jobsCreated = 0;
+        let revenueKes = 0;
+        for (const row of checkIns) {
+            if (row.metric === "jobs") jobsCreated += row.value;
+            else if (row.metric === "revenue_kes") revenueKes += row.value;
+        }
+
+        return {
+            venturesCount: ventures.length,
+            activeVentures: ventures.filter((row) => row.status === "active").length,
+            pledgedKes: commitments.reduce((sum, row) => sum + row.amountKes, 0),
+            investorsCount: investorIds.size,
+            jobsCreated,
+            revenueKes,
+            checkIns: checkIns.length,
+            digests: digests.length,
+        };
+    },
+});
+
+/**
  * Assemble one cockpit commitment row from a commitment doc + its projection
  * (either from the briefing index or from the scan fallback). Keeps the two
  * paths producing the identical shape.
@@ -632,6 +677,20 @@ function commitmentFromProjection(
     row: Doc<"commitments">,
     proj: NonNullable<Doc<"investorBriefings">["cockpit"]>[number]
 ) {
+    /**
+     * Cap progress: how much of the revenue-share multiple has been earned
+     * back. Repaid is the venture's cumulative revenue KPI × this
+     * commitment's share; the cap is amountKes × capMultiple. This is an
+     * intent-model estimate (capital is soft), but making the exit term
+     * visible is the point — the cap should never be invisible.
+     */
+    const capKes = row.amountKes * row.capMultiple;
+    const repaidKes = ((proj.venture.kpiTotal ?? 0) * row.shareBps) / 10_000;
+    const capProgress = {
+        capKes,
+        repaidKes,
+        ratio: capKes > 0 ? Math.min(1, repaidKes / capKes) : 0,
+    };
     return {
         id: row._id,
         amountKes: row.amountKes,
@@ -647,6 +706,7 @@ function commitmentFromProjection(
         recentCheckIns: proj.recentCheckIns,
         recentEmails: proj.recentEmails,
         openProposal: proj.openProposal,
+        capProgress,
     };
 }
 
@@ -828,6 +888,12 @@ export const investorCockpit = query({
                     }),
                     v.null()
                 ),
+                /** Revenue-share cap progress (repaid vs cap, intent-model). */
+                capProgress: v.object({
+                    capKes: v.number(),
+                    repaidKes: v.number(),
+                    ratio: v.number(),
+                }),
             })
         ),
         availableVentures: v.array(ventureSummaryValidator),
