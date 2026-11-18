@@ -110,6 +110,7 @@ export const styles = StyleSheet.create({
         textAlign: "center",
         paddingVertical: 4,
     },
+    verifyRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
     wisdomStack: { gap: 12 },
     checkInRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 4 },
     checkInValue: {

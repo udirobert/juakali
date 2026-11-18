@@ -26,6 +26,14 @@ import { styles } from "@/components/jua-kali/venture-cockpit/venture-cockpit.st
 
 type UpdateTag = "situation" | "problem" | "opportunity" | "win";
 type CheckInPhase = "prompt" | "capture" | "followup" | "preview" | "form";
+type Verification = "self_reported" | "photo_evidence" | "third_party";
+
+/** Evidence ladder — how strongly the number is corroborated. */
+const VERIFICATIONS: Array<{ id: Verification; label: string; hint: string }> = [
+    { id: "self_reported", label: "My own count", hint: "self-reported" },
+    { id: "photo_evidence", label: "I have a photo", hint: "photo evidence" },
+    { id: "third_party", label: "Statement / receipt", hint: "3rd-party verified" },
+];
 
 const TAGS: Array<{ id: UpdateTag; label: string }> = [
     { id: "situation", label: "Situation" },
@@ -65,6 +73,7 @@ export function VentureCockpit({ onOpenLedger }: { onOpenLedger?: () => void }) 
     const [body, setBody] = useState("");
     const [followUp, setFollowUp] = useState("");
     const [kpiText, setKpiText] = useState("");
+    const [verification, setVerification] = useState<Verification>("self_reported");
     const [status, setStatus] = useState<string | null>(null);
     const [sending, setSending] = useState(false);
     const [phase, setPhase] = useState<CheckInPhase>("prompt");
@@ -111,6 +120,7 @@ export function VentureCockpit({ onOpenLedger }: { onOpenLedger?: () => void }) 
                 body: text,
                 tag,
                 kpiValue: Number.isFinite(kpiValue) && kpiValue && kpiValue > 0 ? kpiValue : undefined,
+                verification,
                 commitmentId: selectedCommitmentId ?? undefined,
             });
             setStatus(result.message);
@@ -133,7 +143,7 @@ export function VentureCockpit({ onOpenLedger }: { onOpenLedger?: () => void }) 
         }
         setSending(true);
         try {
-            const result = await logCheckIn({ value, note: body.trim() || undefined });
+            const result = await logCheckIn({ value, note: body.trim() || undefined, verification });
             setStatus(result.message);
             setKpiText("");
         } catch (e) {
@@ -394,6 +404,21 @@ export function VentureCockpit({ onOpenLedger }: { onOpenLedger?: () => void }) 
                                 />
                                 <Button label="Send to Jua" onPress={() => void handleUpdate()} busy={sending} />
                             </View>
+                            {kpiText.trim() ? (
+                                <View style={styles.verifyRow}>
+                                    {VERIFICATIONS.map((v) => (
+                                        <Chip
+                                            key={v.id}
+                                            label={v.label}
+                                            active={verification === v.id}
+                                            onPress={() => {
+                                                tapHaptic();
+                                                setVerification(v.id);
+                                            }}
+                                        />
+                                    ))}
+                                </View>
+                            ) : null}
                             <Pressable onPress={() => void handleCheckIn()} hitSlop={6} accessibilityRole="button">
                                 <Text style={styles.selfLink}>Log this number only (self check-in)</Text>
                             </Pressable>
