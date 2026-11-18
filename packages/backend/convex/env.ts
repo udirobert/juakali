@@ -59,6 +59,8 @@ const fullSchema = {
     AUTH_RESEND_KEY: v.optional(v.string()),
     SOFT_AUTH_INBOX: v.optional(v.string()),
     SOFT_AUTH_INBOX_SECRET: v.optional(v.string()),
+    /** Bearer token for the voice KPI transcription endpoint (/voice/kpi-checkin). */
+    VOICE_KPI_TOKEN: v.optional(v.string()),
     REQUIRE_AUTH_TO_ACT: v.optional(v.string()),
     REVENUECAT_WEBHOOK_SECRET: v.optional(v.string()),
     GOOGLE_API_KEY: v.optional(v.string()),

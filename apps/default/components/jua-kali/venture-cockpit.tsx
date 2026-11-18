@@ -21,6 +21,7 @@ import { Button, Card, Chip } from "@/components/jua-kali/ui";
 import { WisdomItemCard } from "@/components/jua-kali/wisdom";
 import { useDictation } from "@/components/jua-kali/hooks/use-dictation";
 import { useFounderQueue } from "@/components/jua-kali/hooks/use-founder-queue";
+import { useVoiceKpi } from "@/components/jua-kali/hooks/use-voice-kpi";
 import { tapHaptic } from "@/components/jua-kali/haptics";
 import { color, layout } from "@/components/jua-kali/theme";
 import { styles } from "@/components/jua-kali/venture-cockpit/venture-cockpit.styles";
@@ -93,6 +94,11 @@ export function VentureCockpit({ onOpenLedger }: { onOpenLedger?: () => void }) 
                 commitmentId: (args.commitmentId as Id<"commitments"> | undefined) ?? undefined,
             });
         },
+    });
+    /** Voice-first KPI: speak the number, confirm what was heard, log. */
+    const voiceKpi = useVoiceKpi((value) => {
+        setKpiText(String(value));
+        setStatus(`Heard your number — ${value}. Check it, then send.`);
     });
 
     useEffect(() => {
@@ -504,6 +510,50 @@ export function VentureCockpit({ onOpenLedger }: { onOpenLedger?: () => void }) 
                                     ))}
                                 </View>
                             ) : null}
+                            {voiceKpi.supported ? (
+                                <View style={styles.voiceRow}>
+                                    <Pressable
+                                        onPress={() => {
+                                            tapHaptic();
+                                            if (voiceKpi.recording) voiceKpi.stop();
+                                            else voiceKpi.start();
+                                        }}
+                                        style={[styles.micButton, voiceKpi.recording && styles.micListening]}
+                                        accessibilityRole="button"
+                                        accessibilityLabel={voiceKpi.recording ? "Stop recording" : "Speak your number"}
+                                    >
+                                        <IconSparkle size={16} color={voiceKpi.recording ? color.paper : color.brassDeep} />
+                                    </Pressable>
+                                    <Text style={styles.voiceHint}>
+                                        {voiceKpi.transcribing
+                                            ? "Listening…"
+                                            : voiceKpi.recording
+                                              ? "Tap to stop"
+                                              : "Or speak your number"}
+                                    </Text>
+                                </View>
+                            ) : null}
+                            {voiceKpi.draft ? (
+                                <View style={styles.voiceConfirm}>
+                                    <Text style={styles.voiceConfirmText} numberOfLines={2}>
+                                        I heard: {voiceKpi.draft.transcript}
+                                    </Text>
+                                    <Text style={styles.voiceConfirmValue}>
+                                        {voiceKpi.draft.value != null
+                                            ? `Number: ${voiceKpi.draft.value.toLocaleString()}`
+                                            : "No number heard — say it again"}
+                                    </Text>
+                                    {voiceKpi.draft.value != null ? (
+                                        <View style={styles.verifyRow}>
+                                            <Chip label="Correct" active onPress={voiceKpi.confirm} />
+                                            <Chip label="Try again" active={false} onPress={voiceKpi.clear} />
+                                        </View>
+                                    ) : (
+                                        <Chip label="Try again" active={false} onPress={voiceKpi.clear} />
+                                    )}
+                                </View>
+                            ) : null}
+                            {voiceKpi.error ? <Text style={styles.status}>{voiceKpi.error}</Text> : null}
                             <Pressable onPress={() => void handleCheckIn()} hitSlop={6} accessibilityRole="button">
                                 <Text style={styles.selfLink}>Log this number only (self check-in)</Text>
                             </Pressable>

@@ -3,6 +3,7 @@ import { httpAction } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { auth } from "./auth";
 import shareLedger from "./httpShareLedger";
+import voiceKpiCheckin from "./httpVoiceKpi";
 import { env } from "./env";
 
 const http = httpRouter();
@@ -408,6 +409,13 @@ http.route({
     path: "/share/ledger",
     method: "GET",
     handler: httpAction(shareLedger),
+});
+
+// Voice-first KPI capture: transcribe + parse, client confirms before logging.
+http.route({
+    path: "/voice/kpi-checkin",
+    method: "POST",
+    handler: httpAction(voiceKpiCheckin),
 });
 
 export default http;
