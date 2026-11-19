@@ -33,6 +33,27 @@ Busy investor
 - `packages/agent` — Gemini + tool executor. **Deployed to Cloud Run** as `juakali-agent` (region `us-central1`, cognivern project).
 - `packages/mcp-server` — MCP server exposing the same Convex tools over the Model Context Protocol.
 
+## BCH settlement layer (BCH Blaze 2026)
+
+Two layers, per-field ownership — the chain is a settlement + proof layer, not a database. Convex stays the system of record.
+
+- **Chain owns**: settlement status (a commitment is `funded` only when its tx confirms — Convex caches the txid, never claims settlement), the venture's BCH↔Nostr identity binding proof, covenant state.
+- **Convex owns**: everything else — KPI detail, notes, photos, emails, agent runs, digests, corrections and disputes. Chain entries can't be edited; `correctionOf`/`disputeState` absorb real-world amendments off-chain.
+- **Nostr carries**: signed attestations and identity announcements — portable reputation that survives juakali-the-company. Third-party-verified KPI check-ins publish as signed events on the venture's npub.
+- **Anchors are one-way**: the chain commits to the off-chain record (hashes only, never private content); the record never waits on the chain.
+
+On-chain settlement is an **upgrade path per commitment**, not a product migration: a pledge starts soft, upgrades when both parties have wallets, and the fidelity badge flips `soft → live` on that deal only. Adoption gradient: soft → assisted (sponsored venture address, Paytaca onboarding) → self-custody.
+
+Investor side is `lib/bch/` + `@wizardconnect/react` in `apps/default` — the dapp constructs the PUSD/BCH send to the venture's `bchAddress`, the wallet (Paytaca/Selene; Cashonize on chipnet for dev) signs, the app broadcasts and records the txid via `recordPledgeFunding`; `ledgerEvents.onchainRef` renders the proof. XO covenant templates (Migrate to XO bounty) carry the tranche-release lifecycle. Full plan: [plans/bch-blaze-2026.plan.md](../plans/bch-blaze-2026.plan.md).
+
+Implementation notes (first slice):
+
+- `lib/bch/` — `network.ts` (electrum provider via mainnet-js `getNetworkProvider`, explorer URLs), `address.ts` (cashaddr ⇄ locking bytecode via libauth), `tx.ts` (UTXO selection + unsigned libauth `Transaction` + `sourceOutputs`/`inputPaths` for the hdwalletv1 sign request; CashToken-aware — token-category input selection, `token` on recipient/change outputs, excess-token change, foreign-token UTXOs never spent; gated by `EXPO_PUBLIC_BCH_PLEDGE_TOKEN`), `use-bch-wallet.ts` hook (WizardConnect session → 20-address gap-limit scan including token UTXOs → sign → broadcast).
+- Backend: `setVentureSettlement`, `recordPledgeFunding`, `recordRepayment` mutations; `ledgerEvents.txid`/`onchainRef`; commitments carry `settlementAsset`/`settlementNetwork`/`pledgeTxid`/`repaidTotal` — all additive-optional, legacy rows validate.
+- **Metro shim**: `@bitauth/libauth`'s `crypto/default-crypto-instances.js` uses top-level await to instantiate WASM — Metro can't parse it, and Hermes has no `WebAssembly` at all. `metro.config.js` `resolveRequest` redirects that one module to `lib/bch/libauth-crypto-shim.ts`, which lazy-inits behind `ensureBchCrypto()` (called before wallet connect). On-chain funding is therefore **web-only** for this slice; native shows the card only if a WASM-free path lands later.
+- `EXPO_PUBLIC_BCH_NETWORK` selects `chipnet` (default) or `mainnet`. Chipnet tx proof renders on `blockexplorer.cash/chipnet`.
+- **Ledger-print UI layer**: `lib/print/halftone.ts` (ordered-dither core) + `LedgerPrintImage` (web canvas / native photo fallback) render field imagery as newspaper plates; `VerifyLens` on the proof screen masks away presentation to expose raw record fields (hold-to-inspect); `ScrollReveal` (IntersectionObserver) reveals ledger rows on scroll; `lib/motion/flip.ts` (WAAPI FLIP, no deps) morphs deal chips into the detail stack; `SettlementRail` + `OnchainSeal` make the pledge→funded→repaid journey and txids legible.
+
 ## What "live in production" looked like during the build window
 
 - Cloud Run service: **publicly URL-reachable**, version-revisioned, logs visible in GCP console.

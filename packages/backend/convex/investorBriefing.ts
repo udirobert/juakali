@@ -33,6 +33,10 @@ export const ventureSummaryValidator = v.object({
     pledgedKes: v.number(),
     /** ISO currency for this venture's money (default KES). */
     currency: currencyCodeValidator,
+    /** On-chain receiving identity (BCH Blaze 2026). Optional so stored
+     *  briefing projections written before settlement shipped still validate. */
+    bchAddress: v.optional(v.union(v.string(), v.null())),
+    nostrPubkey: v.optional(v.union(v.string(), v.null())),
 });
 
 export async function sumVentureKpis(ctx: ReadDb, ventureId: Id<"ventures">) {
@@ -82,6 +86,8 @@ export async function buildVentureSummary(ctx: ReadDb, ventureId: Id<"ventures">
         status: venture.status,
         pledgedKes,
         currency: venture.currency ?? "KES",
+        bchAddress: venture.bchAddress ?? null,
+        nostrPubkey: venture.nostrPubkey ?? null,
     };
 }
 

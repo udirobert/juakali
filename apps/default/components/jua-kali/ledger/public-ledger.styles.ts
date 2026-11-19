@@ -145,6 +145,14 @@ export const styles = StyleSheet.create({
         color: color.ink,
     },
     detailValueNum: { fontVariant: tabularNums },
+    /** Brass pip on a ledger row whose entry is anchored to a BCH txid. */
+    chainDot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: color.brass,
+        marginLeft: 2,
+    },
     evidenceChipBig: { paddingVertical: 5, paddingHorizontal: 9 },
     evidenceChipTextBig: { fontSize: 10, letterSpacing: 0.6 },
     // Narrow-screen density: collapsed rows breathe less, and many evidence

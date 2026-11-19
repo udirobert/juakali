@@ -27,6 +27,20 @@
   to = "https://zealous-scorpion-285.convex.site/share/ledger?slug=:splat"
   status = 200
 
+# Public JSON ledger API — same data the app reads, open for citation.
+[[redirects]]
+  from = "/api/ledger"
+  to = "https://zealous-scorpion-285.convex.site/api/ledger"
+  status = 200
+  force = true
+
+# Embeddable deal widget — partners drop <script src="/embed.js" data-deal="<slug>"></script>.
+[[redirects]]
+  from = "/embed.js"
+  to = "https://zealous-scorpion-285.convex.site/embed.js"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

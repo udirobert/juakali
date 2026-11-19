@@ -111,6 +111,13 @@ export const styles = StyleSheet.create({
         gap: 2,
     },
     stripItemOn: { borderColor: color.brass, backgroundColor: color.brassSoft },
+    stripNameRow: { flexDirection: "row", alignItems: "center", gap: 5 },
+    stripSettled: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: color.brassDeep,
+    },
     stripName: { fontFamily: font.bodyBold, fontSize: 12, fontWeight: "700", color: color.ink },
     stripNameOn: { color: color.charcoal },
     stripAmt: { fontFamily: font.body, fontSize: 11, color: color.brass, fontVariant: tabularNums },

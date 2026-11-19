@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { ActivityIndicator, Platform, View } from "react-native";
-import { Redirect, useRouter } from "expo-router";
+import { Redirect, useRouter, useSegments } from "expo-router";
 import { useConvexAuth } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 
@@ -20,8 +20,13 @@ function hasDeepLinkSkip(): boolean {
 export function OnboardingGate({ children }: { children: ReactNode }) {
     const onboarding = useInvestorOnboardingGate();
     const router = useRouter();
+    const segments = useSegments();
     const { isAuthenticated } = useConvexAuth();
     const { signIn } = useAuthActions();
+
+    // The public ledger is public — the proof tab renders for anyone, landed
+    // or not. Every other tab stays behind the product shell.
+    const isProofRoute = segments[segments.length - 1] === "proof";
 
     useEffect(() => {
         if (!__DEV__ || Platform.OS !== "web" || typeof window === "undefined") return;
@@ -44,7 +49,7 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
         );
     }
 
-    if (onboarding.showLanding && !hasDeepLinkSkip()) {
+    if (onboarding.showLanding && !hasDeepLinkSkip() && !isProofRoute) {
         return (
             <InvestorLanding
                 onEnter={(opts) => {
@@ -55,6 +60,8 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
                             router.replace(
                                 `/(tabs)/proof?ledger=${encodeURIComponent(opts.ledgerSlug)}`
                             );
+                        } else if (opts?.publicLedger) {
+                            router.replace("/(tabs)/proof");
                         } else {
                             router.replace("/(tabs)/today");
                         }

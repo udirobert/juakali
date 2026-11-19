@@ -4,6 +4,8 @@ import { api, internal } from "./_generated/api";
 import { auth } from "./auth";
 import shareLedger from "./httpShareLedger";
 import voiceKpiCheckin from "./httpVoiceKpi";
+import ledgerApi from "./httpLedgerApi";
+import embedJs from "./httpEmbedJs";
 import { env } from "./env";
 
 const http = httpRouter();
@@ -416,6 +418,25 @@ http.route({
     path: "/voice/kpi-checkin",
     method: "POST",
     handler: httpAction(voiceKpiCheckin),
+});
+
+// Public JSON ledger API — the feed journalists, NGOs, and accelerators cite.
+http.route({
+    path: "/api/ledger",
+    method: "GET",
+    handler: httpAction(ledgerApi),
+});
+http.route({
+    path: "/api/ledger",
+    method: "OPTIONS",
+    handler: httpAction(ledgerApi),
+});
+
+// Embeddable deal widget loader — one script tag for partners.
+http.route({
+    path: "/embed.js",
+    method: "GET",
+    handler: httpAction(embedJs),
 });
 
 export default http;

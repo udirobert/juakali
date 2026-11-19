@@ -1,5 +1,5 @@
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Head, useLocalSearchParams, useRouter } from "expo-router";
+import { Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "convex/react";
 
@@ -7,8 +7,11 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { LivingSun } from "@/components/jua-kali/living-sun";
 import { DetailSkeleton } from "@/components/jua-kali/loaders/detail-skeleton";
+import { OnchainSeal } from "@/components/jua-kali/onchain-seal";
+import { VerifyLens } from "@/components/jua-kali/verify-lens";
 import { SectionLabel } from "@/components/jua-kali/ui";
-import { color, type } from "@/components/jua-kali/theme";
+import { color, font, radius, type } from "@/components/jua-kali/theme";
+import { explorerTxUrl } from "@/lib/bch/network";
 
 const CHAIN_LABELS: Record<string, string> = {
     pledge: "Investor intent",
@@ -16,6 +19,7 @@ const CHAIN_LABELS: Record<string, string> = {
     digest: "Jua digest",
     action: "Agent execution",
     wisdom: "Mentor wisdom",
+    repayment: "On-chain repayment",
 };
 
 function chainLabel(link: { type: string; evidence: string[] }): string {
@@ -50,6 +54,10 @@ export default function ProofEventScreen() {
             style={{ flex: 1, backgroundColor: color.stone }}
             contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 16 }]}
         >
+            <Head>
+                <title>{`${event.ventureName ?? "Venture"} — JuaKali public proof`}</title>
+                <meta name="description" content={event.summary} />
+            </Head>
             <Pressable onPress={() => router.back()} hitSlop={10}>
                 <Text style={styles.link}>← Back</Text>
             </Pressable>
@@ -65,6 +73,54 @@ export default function ProofEventScreen() {
                 {event.publicVisible ? "Public" : "Private"} · Initiator:{" "}
                 {event.initiator ?? "unknown"} · {event.disputeState ?? "none"}
             </Text>
+
+            <VerifyLens
+                rawLines={[
+                    ["record", `ledgerEvents/${event.id}`],
+                    ["type", event.type],
+                    ["createdAt", new Date(event.createdAt).toISOString()],
+                    ["initiator", event.initiator ?? "—"],
+                    ["visibility", event.publicVisible ? "public" : "private"],
+                    ["disputeState", event.disputeState ?? "none"],
+                    ["correlationId", event.correlationId ?? "—"],
+                    ...(event.txid ? ([["txid", event.txid]] as [string, string][]) : []),
+                    ...(event.onchainRef
+                        ? ([["settlement", event.onchainRef]] as [string, string][])
+                        : []),
+                ]}
+            />
+
+            {event.txid ? (
+                <View style={styles.evidenceSlab}>
+                    <View style={styles.evidenceHead}>
+                        <Text style={styles.evidenceEyebrow}>Settled on Bitcoin Cash</Text>
+                        <Text style={styles.evidenceNet}>
+                            {event.onchainRef?.includes("/chipnet/") ? "chipnet" : "mainnet"}
+                        </Text>
+                    </View>
+                    <OnchainSeal
+                        txid={event.txid}
+                        network={event.onchainRef?.includes("/chipnet/") ? "chipnet" : "mainnet"}
+                        onchainRef={event.onchainRef}
+                    />
+                    <Text selectable style={styles.txid}>
+                        {event.txid}
+                    </Text>
+                    <Pressable
+                        onPress={() =>
+                            void Linking.openURL(event.onchainRef ?? explorerTxUrl(event.txid!))
+                        }
+                        hitSlop={6}
+                        accessibilityRole="link"
+                    >
+                        <Text style={styles.link}>Verify independently on the explorer →</Text>
+                    </Pressable>
+                    <Text style={styles.evidenceNote}>
+                        This txid is the fingerprint — anyone can confirm the transfer on-chain
+                        without trusting this ledger.
+                    </Text>
+                </View>
+            ) : null}
 
             <SectionLabel>Causal chain</SectionLabel>
             {event.chain.map((link, index) => (
@@ -108,6 +164,30 @@ const styles = StyleSheet.create({
     body: { ...type.body, fontSize: 15, lineHeight: 22 },
     meta: { ...type.meta },
     link: { ...type.meta, color: color.brassDeep, fontWeight: "700" },
+    txid: {
+        ...type.meta,
+        fontFamily: Platform.select({ ios: "Menlo", default: "monospace" }),
+        fontSize: 11,
+    },
+    evidenceSlab: {
+        gap: 10,
+        padding: 14,
+        borderRadius: radius.md,
+        borderWidth: 1,
+        borderColor: color.brassBorder,
+        backgroundColor: color.foam,
+    },
+    evidenceHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+    evidenceEyebrow: { ...type.eyebrow, fontSize: 10 },
+    evidenceNet: {
+        fontFamily: font.bodyBold,
+        fontSize: 9,
+        fontWeight: "700",
+        letterSpacing: 0.8,
+        textTransform: "uppercase",
+        color: color.mist,
+    },
+    evidenceNote: { ...type.meta, fontSize: 11, lineHeight: 16, color: color.mistSoft },
     chainRow: { flexDirection: "row", gap: 10, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: color.line },
     chainN: { ...type.meta, width: 20, color: color.brassDeep, fontWeight: "700" },
     chainType: { ...type.meta, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 },

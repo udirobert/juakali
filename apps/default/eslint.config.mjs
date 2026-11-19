@@ -10,7 +10,7 @@ export default [
         // pattern (`require("./assets/icon.png")` is what Metro resolves
         // at bundle time -- ES `import` doesn't work for asset URIs).
         // Off in app code (`*.tsx`) and Metro config; on everywhere else.
-        files: ["metro.config.js", "**/*.tsx"],
+        files: ["**/metro.config.js", "**/*.tsx"],
         rules: {
             "@typescript-eslint/no-require-imports": "off",
         },

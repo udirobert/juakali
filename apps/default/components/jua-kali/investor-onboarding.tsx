@@ -34,6 +34,7 @@ import {
 } from "@/components/jua-kali/session-persist";
 import { useProductMode, SOFT_RETURN_MS } from "@/lib/product-mode";
 import { SoftIdentityBar } from "@/components/jua-kali/soft-identity";
+import { FieldPrintStrip } from "@/components/jua-kali/field-print";
 import { LivingSun } from "@/components/jua-kali/living-sun";
 import { IconArrowRight } from "@/components/jua-kali/icons";
 import { Atmosphere, Button, Card, Chip, Input, SectionLabel } from "@/components/jua-kali/ui";
@@ -194,11 +195,16 @@ type LedgerArtifactEvent = {
 };
 
 /** The pitch artifact: the public ledger itself, live. */
-function LedgerArtifact() {
+function LedgerArtifact({ onOpen }: { onOpen: () => void }) {
     const ledger = useQuery(api.invest.publicLedger, { limit: 3 });
     const events = (ledger?.events ?? []) as LedgerArtifactEvent[];
 
     return (
+        <Pressable
+            onPress={onOpen}
+            accessibilityRole="button"
+            accessibilityLabel="Open the full public ledger"
+        >
         <Card variant="artifact" style={styles.artifact}>
             <View style={styles.artifactHead}>
                 <Text style={styles.artifactTitle}>Public ledger</Text>
@@ -222,7 +228,9 @@ function LedgerArtifact() {
                     </View>
                 ))
             )}
+            <Text style={styles.artifactMore}>Read the full record →</Text>
         </Card>
+        </Pressable>
     );
 }
 
@@ -342,6 +350,8 @@ export function InvestorLanding({
         commitmentId?: Id<"commitments">;
         /** Skip private desk — land on public proof for this venture. */
         ledgerSlug?: string;
+        /** Land on the full public ledger — the record itself, unscoped. */
+        publicLedger?: boolean;
     }) => void;
 }) {
     const insets = useSafeAreaInsets();
@@ -550,11 +560,18 @@ export function InvestorLanding({
                             </Animated.Text>
 
                             <Animated.View
+                                entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(160)}
+                                style={styles.artifactBlock}
+                            >
+                                <FieldPrintStrip />
+                            </Animated.View>
+
+                            <Animated.View
                                 entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(190)}
                                 style={styles.artifactBlock}
                             >
                                 <SectionLabel>The ledger, live</SectionLabel>
-                                <LedgerArtifact />
+                                <LedgerArtifact onOpen={() => onEnter({ publicLedger: true })} />
                             </Animated.View>
 
                             <Animated.View
@@ -593,6 +610,14 @@ export function InvestorLanding({
                                         {product.preset === "demo"
                                             ? "or start your own commitment →"
                                             : "Enter Today without a pledge →"}
+                                    </Text>
+                                </Pressable>
+                                <Pressable
+                                    onPress={() => onEnter({ publicLedger: true })}
+                                    accessibilityRole="button"
+                                >
+                                    <Text style={styles.secondary}>
+                                        or read the public record →
                                     </Text>
                                 </Pressable>
                                 <ProofStrip />

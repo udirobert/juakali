@@ -35,12 +35,14 @@ import { styles } from "@/components/jua-kali/cockpit/investor-cockpit.styles";
 import { SITE_URL } from "@/lib/site";
 import { HowItWorksCard, TermHint } from "@/components/jua-kali/help";
 import { DigestCard } from "@/components/jua-kali/digest-bento";
+import { FundOnBchCard } from "@/components/jua-kali/fund-on-bch";
 import { impactHaptic, successHaptic, tapHaptic } from "@/components/jua-kali/haptics";
 import { AuthRequiredGate } from "@/components/jua-kali/soft-identity";
 import { SunMark } from "@/components/jua-kali/sun-mark";
 import { LivingSun } from "@/components/jua-kali/living-sun";
 import { JuaWire } from "@/components/jua-kali/jua-wire";
 import { useUiMotion } from "@/components/jua-kali/hooks/use-ui-motion";
+import { consumeFlipSource, flipMorph, recordFlipSource } from "@/lib/motion/flip";
 import { IconCheck, IconSend, IconShare, IconX } from "@/components/jua-kali/icons";
 import { Button, Card, Chip, Input } from "@/components/jua-kali/ui";
 import { ShareWisdomCard, WisdomItemCard } from "@/components/jua-kali/wisdom";
@@ -202,6 +204,10 @@ export function InvestorCockpit({
     const [isPledging, setIsPledging] = useState(false);
     const [showPledge, setShowPledge] = useState(false);
 
+    // FLIP deal transition (web): strip chip rect → detail stack morph.
+    const chipEls = useRef(new Map<string, HTMLElement>());
+    const stackHostRef = useRef<View>(null);
+
     /**
      * Thin status line only: the commitment's latest run (id/status/trigger).
      * The heavy per-step subscription lives inside Ritual, so step commits
@@ -224,6 +230,18 @@ export function InvestorCockpit({
         const id = selectedCommitmentId ?? data.focusCommitmentId ?? data.commitments[0]!.id;
         return data.commitments.find((row) => row.id === id) ?? data.commitments[0]!;
     }, [data, selectedCommitmentId]);
+
+    // When a strip chip's recorded rect is waiting, morph a ghost from it to
+    // the detail stack — covers in-place selection and the /deals/[id] route,
+    // since both render this same stack.
+    useEffect(() => {
+        if (process.env.EXPO_OS !== "web" || ui.reduceMotion || !selectedCommitment) return;
+        const from = consumeFlipSource(selectedCommitment.id);
+        const target = stackHostRef.current as unknown as HTMLElement | null;
+        if (from && target) {
+            flipMorph(target, from);
+        }
+    }, [selectedCommitment, ui.reduceMotion]);
 
     // If the selected commitment changes, drop any run state that belongs to the old one.
     useEffect(() => {
@@ -619,15 +637,34 @@ export function InvestorCockpit({
                                 return (
                                     <Pressable
                                         key={row.id}
+                                        ref={(node) => {
+                                            if (node instanceof HTMLElement) {
+                                                chipEls.current.set(row.id, node);
+                                            } else {
+                                                chipEls.current.delete(row.id);
+                                            }
+                                        }}
                                         onPress={() => {
+                                            const el = chipEls.current.get(row.id);
+                                            if (process.env.EXPO_OS === "web" && el) {
+                                                recordFlipSource(row.id, el.getBoundingClientRect());
+                                            }
                                             setSelectedCommitmentId(row.id);
                                             onOpenDeal?.(row.id);
                                         }}
                                         style={[styles.stripItem, on && styles.stripItemOn]}
                                     >
-                                        <Text style={[styles.stripName, on && styles.stripNameOn]} numberOfLines={1}>
-                                            {row.venture.name}
-                                        </Text>
+                                        <View style={styles.stripNameRow}>
+                                            {row.pledgeTxid ? (
+                                                <View
+                                                    style={styles.stripSettled}
+                                                    accessibilityLabel="Settled on Bitcoin Cash"
+                                                />
+                                            ) : null}
+                                            <Text style={[styles.stripName, on && styles.stripNameOn]} numberOfLines={1}>
+                                                {row.venture.name}
+                                            </Text>
+                                        </View>
                                         <Text style={styles.stripAmt}>{formatKes(row.amountKes)}</Text>
                                     </Pressable>
                                 );
@@ -636,7 +673,7 @@ export function InvestorCockpit({
                         ) : null}
 
                         {selectedCommitment ? (
-                            <View style={styles.stack}>
+                            <View ref={stackHostRef} style={styles.stack}>
                                 {/* The action leads: note-to-Jua first, proof
                                     second, teaching one tap away at the bottom. */}
                                 <View
@@ -673,6 +710,7 @@ export function InvestorCockpit({
                                     commitment={selectedCommitment}
                                     onOpenGlossary={onOpenGlossary}
                                 />
+                                <FundOnBchCard commitmentId={selectedCommitment.id} />
                                 <WisdomForCommitment
                                     ventureId={selectedCommitment.venture.id}
                                     ventureName={selectedCommitment.venture.name}
@@ -1047,6 +1085,11 @@ function Scorecard({
     }
     const lastCheckIn = commitment.recentCheckIns[0];
     if (lastCheckIn) commentary.push(`last check-in ${relativeTime(lastCheckIn.createdAt)}`);
+    if (commitment.pledgeTxid) {
+        commentary.push(
+            `capital settled on-chain (${commitment.settlementNetwork === "mainnet" ? "BCH mainnet" : "BCH chipnet"})`
+        );
+    }
 
     return (
         <Card>

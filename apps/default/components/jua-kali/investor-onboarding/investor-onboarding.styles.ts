@@ -157,6 +157,16 @@ export const styles = StyleSheet.create({
         color: color.ink,
     },
     artifactWhen: { fontFamily: font.bodyMedium, fontSize: 11, color: color.mistSoft },
+    artifactMore: {
+        fontFamily: font.bodyBold,
+        fontSize: 12,
+        fontWeight: "700",
+        color: color.brassDeep,
+        marginTop: 10,
+        paddingTop: 10,
+        borderTopWidth: 1,
+        borderTopColor: color.line,
+    },
     ctaBlock: { width: "100%", alignItems: "center", gap: 4 },
     ctaBlockFull: { width: "100%", maxWidth: 360 },
     secondary: {

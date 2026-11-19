@@ -14,6 +14,8 @@
     "lint": "expo lint"
   },
   "dependencies": {
+    "@bch-wc2/interfaces": "^0.0.16",
+    "@bitauth/libauth": "^3.1.0-next.8",
     "@convex-dev/auth": "^0.0.90",
     "@expo-google-fonts/fraunces": "^0.4.1",
     "@expo-google-fonts/ibm-plex-sans": "^0.4.1",
@@ -21,6 +23,8 @@
     "@react-navigation/bottom-tabs": "^7.3.10",
     "@react-navigation/elements": "^2.3.8",
     "@react-navigation/native": "^7.1.6",
+    "@wizardconnect/dapp": "^0.2.8",
+    "@wizardconnect/react": "^0.2.7",
     "convex": "1.38.0",
     "convex-helpers": "0.1.113",
     "expo": "^57.0.13",
@@ -41,6 +45,8 @@
     "expo-symbols": "~57.0.2",
     "expo-system-ui": "~57.0.2",
     "expo-web-browser": "~57.0.2",
+    "mainnet-js": "^3.1.7",
+    "nostr-tools": "^2.26.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.2",

@@ -8,7 +8,9 @@ import { normalizeKey } from "./juaKaliHelpers";
 import { currencyCodeValidator } from "./schemaCurrency";
 import {
     assertCanAct,
+    assertInvestorOwnsCommitment,
     assertInvestorOwnsInvestor,
+    assertVentureOwner,
     ensureInvestorForUserId,
 } from "./softAuth";
 import {
@@ -53,7 +55,8 @@ const ledgerTypeValidator = v.union(
     v.literal("checkin"),
     v.literal("digest"),
     v.literal("action"),
-    v.literal("wisdom")
+    v.literal("wisdom"),
+    v.literal("repayment")
 );
 
 function nextFridayEightEAT(fromMs: number = Date.now()) {
@@ -68,7 +71,7 @@ function nextFridayEightEAT(fromMs: number = Date.now()) {
 async function writeLedgerEvent(
     ctx: MutationCtx,
     args: {
-        type: "pledge" | "checkin" | "digest" | "action" | "wisdom";
+        type: "pledge" | "checkin" | "digest" | "action" | "wisdom" | "repayment";
         ventureId?: Id<"ventures"> | null;
         commitmentId?: Id<"commitments"> | null;
         summary: string;
@@ -77,6 +80,8 @@ async function writeLedgerEvent(
         value?: number | null;
         evidence?: string[];
         publicVisible?: boolean;
+        txid?: string | null;
+        onchainRef?: string | null;
         createdAt: number;
     }
 ) {
@@ -103,6 +108,8 @@ async function writeLedgerEvent(
         evidence: args.evidence,
         createdAt: args.createdAt,
         publicVisible: args.publicVisible ?? true,
+        txid: args.txid ?? null,
+        onchainRef: args.onchainRef ?? null,
     });
 }
 
@@ -412,6 +419,14 @@ export const getDeal = query({
             status: commitmentStatusValidator,
             publicSlug: v.string(),
             ventureName: v.string(),
+            bchAddress: v.union(v.string(), v.null()),
+            settlementAsset: v.union(v.string(), v.null()),
+            settlementNetwork: v.union(v.string(), v.null()),
+            pledgeTxid: v.union(v.string(), v.null()),
+            fundedAt: v.union(v.number(), v.null()),
+            settlementAddress: v.union(v.string(), v.null()),
+            repaidTotal: v.union(v.number(), v.null()),
+            repayTxids: v.array(v.string()),
         }),
         v.null()
     ),
@@ -429,6 +444,14 @@ export const getDeal = query({
                 status: commitment.status,
                 publicSlug: venture.publicSlug,
                 ventureName: venture.name,
+                bchAddress: venture.bchAddress ?? null,
+                settlementAsset: commitment.settlementAsset ?? null,
+                settlementNetwork: commitment.settlementNetwork ?? null,
+                pledgeTxid: commitment.pledgeTxid ?? null,
+                fundedAt: commitment.fundedAt ?? null,
+                settlementAddress: commitment.settlementAddress ?? null,
+                repaidTotal: commitment.repaidTotal ?? null,
+                repayTxids: commitment.repayTxids ?? [],
             };
         }
         if (args.ventureSlug) {
@@ -452,6 +475,14 @@ export const getDeal = query({
                 status: commitment.status,
                 publicSlug: venture.publicSlug,
                 ventureName: venture.name,
+                bchAddress: venture.bchAddress ?? null,
+                settlementAsset: commitment.settlementAsset ?? null,
+                settlementNetwork: commitment.settlementNetwork ?? null,
+                pledgeTxid: commitment.pledgeTxid ?? null,
+                fundedAt: commitment.fundedAt ?? null,
+                settlementAddress: commitment.settlementAddress ?? null,
+                repaidTotal: commitment.repaidTotal ?? null,
+                repayTxids: commitment.repayTxids ?? [],
             };
         }
         return null;
@@ -481,6 +512,8 @@ export const publicLedger = query({
                 runId: v.union(v.id("agentRuns"), v.null()),
                 initiator: v.union(v.string(), v.null()),
                 publicVisible: v.boolean(),
+                txid: v.union(v.string(), v.null()),
+                onchainRef: v.union(v.string(), v.null()),
             })
         ),
         /** Ventures with at least one public event (filter chips). */
@@ -553,6 +586,8 @@ export const publicLedger = query({
                 runId: row.runId ?? null,
                 initiator: row.initiator ?? null,
                 publicVisible: row.publicVisible,
+                txid: row.txid ?? null,
+                onchainRef: row.onchainRef ?? null,
             });
             if (events.length >= limit) break;
         }
@@ -832,6 +867,12 @@ function commitmentFromProjection(
         nextDigestAt: row.nextDigestAt ?? null,
         digestCadence: row.digestCadence ?? null,
         createdAt: row.createdAt,
+        settlementAsset: row.settlementAsset ?? null,
+        settlementNetwork: row.settlementNetwork ?? null,
+        settlementAddress: row.settlementAddress ?? null,
+        pledgeTxid: row.pledgeTxid ?? null,
+        fundedAt: row.fundedAt ?? null,
+        repaidTotal: row.repaidTotal ?? null,
         venture: proj.venture,
         latestDigest: proj.latestDigest,
         recentCheckIns: proj.recentCheckIns,
@@ -975,6 +1016,12 @@ export const investorCockpit = query({
                 nextDigestAt: v.union(v.number(), v.null()),
                 digestCadence: v.union(v.string(), v.null()),
                 createdAt: v.number(),
+                settlementAsset: v.union(v.string(), v.null()),
+                settlementNetwork: v.union(v.string(), v.null()),
+                settlementAddress: v.union(v.string(), v.null()),
+                pledgeTxid: v.union(v.string(), v.null()),
+                fundedAt: v.union(v.number(), v.null()),
+                repaidTotal: v.union(v.number(), v.null()),
                 venture: ventureSummaryValidator,
                 latestDigest: v.union(
                     v.object({
@@ -1588,6 +1635,8 @@ export const proofEvent = query({
             /** The run whose approval authorized this effect, if any. */
             approvalRunId: v.union(v.id("agentRuns"), v.null()),
             parentEventId: v.union(v.id("ledgerEvents"), v.null()),
+            txid: v.union(v.string(), v.null()),
+            onchainRef: v.union(v.string(), v.null()),
             chain: v.array(
                 v.object({
                     id: v.id("ledgerEvents"),
@@ -1671,6 +1720,8 @@ export const proofEvent = query({
             correlationId: event.correlationId ?? null,
             approvalRunId: event.approvalRunId ?? null,
             parentEventId: event.parentEventId ?? null,
+            txid: event.txid ?? null,
+            onchainRef: event.onchainRef ?? null,
             chain: visibleChain.map((row) => ({
                 id: row._id,
                 type: row.type,
@@ -1798,6 +1849,165 @@ export const pledgeCommitment = mutation({
             investorId,
             message: `Pledged KES ${Math.round(args.amountKes).toLocaleString()} into ${venture.name}.`,
         };
+    },
+});
+
+// ---------------------------------------------------------------------------
+// BCH settlement (BCH Blaze 2026). The chain is the source of truth for value
+// transfer — these mutations only cache txids/addresses that the client already
+// broadcast and anyone can verify on an explorer. Private data never leaves
+// Convex; on-chain rows only reference txids.
+// ---------------------------------------------------------------------------
+
+const bchNetworkValidator = v.union(v.literal("chipnet"), v.literal("mainnet"));
+const settlementAssetValidator = v.union(v.literal("bch"), v.literal("pusd"));
+
+/** Set (or update) a venture's on-chain receiving identity. */
+export const setVentureSettlement = mutation({
+    args: {
+        ventureId: v.id("ventures"),
+        bchAddress: v.string(),
+        nostrPubkey: v.optional(v.union(v.string(), v.null())),
+        bindingProof: v.optional(v.union(v.string(), v.null())),
+    },
+    returns: v.object({ ventureId: v.id("ventures"), message: v.string() }),
+    handler: async (ctx, args) => {
+        await rateLimiter.limit(ctx, "investMutate", { key: "settlement" });
+        const venture = await ctx.db.get(args.ventureId);
+        if (!venture) throw new Error("Venture not found");
+
+        // Real deployments: the venture owner links their wallet. Demo seeds
+        // have no ventureOwners row — let the first authenticated caller bind
+        // once so the hackathon demo can wire settlement without a founder
+        // round-trip. Once a binding exists, only the owner may rotate it.
+        const ownerRows = await ctx.db
+            .query("ventureOwners")
+            .withIndex("by_ventureId", (q) => q.eq("ventureId", args.ventureId))
+            .take(1);
+        const userId = await getAuthUserId(ctx);
+        if (ownerRows.length > 0) {
+            await assertVentureOwner(ctx, args.ventureId);
+        } else if (venture.bchAddress) {
+            if (!userId) throw new Error("Authentication required");
+            const owner = await ctx.db
+                .query("ventureOwners")
+                .withIndex("by_userId", (q) => q.eq("userId", userId))
+                .first();
+            if (!owner || owner.ventureId !== args.ventureId) {
+                throw new Error("Venture settlement address already bound");
+            }
+        } else if (!userId) {
+            await assertCanAct(ctx);
+        }
+
+        const addr = args.bchAddress.trim();
+        if (!/^(bitcoincash|bchtest):[a-z0-9]{42,}$/.test(addr)) {
+            throw new Error("bchAddress must be a cashaddr (bitcoincash:… or bchtest:…)");
+        }
+        await ctx.db.patch(args.ventureId, {
+            bchAddress: addr,
+            ...(args.nostrPubkey !== undefined ? { nostrPubkey: args.nostrPubkey } : {}),
+            ...(args.bindingProof !== undefined ? { bindingProof: args.bindingProof } : {}),
+            updatedAt: Date.now(),
+        });
+        return { ventureId: args.ventureId, message: `Settlement address set for ${venture.name}.` };
+    },
+});
+
+/**
+ * Cache an on-chain funding txid on a commitment. Call after the wallet signs
+ * and the dapp broadcasts — settlement status derives from the chain; this row
+ * is the product-layer index of that fact.
+ */
+export const recordPledgeFunding = mutation({
+    args: {
+        commitmentId: v.id("commitments"),
+        txid: v.string(),
+        asset: settlementAssetValidator,
+        network: bchNetworkValidator,
+        settlementAddress: v.string(),
+        /** Satoshis (bch) or token base units (pusd) sent. */
+        amount: v.number(),
+        onchainRef: v.optional(v.string()),
+    },
+    returns: v.object({ commitmentId: v.id("commitments"), message: v.string() }),
+    handler: async (ctx, args) => {
+        await assertCanAct(ctx);
+        await rateLimiter.limit(ctx, "investMutate", { key: "settlement" });
+        const investorId = await assertInvestorOwnsCommitment(ctx, args.commitmentId);
+        const commitment = await ctx.db.get(args.commitmentId);
+        if (!commitment) throw new Error("Commitment not found");
+        if (!/^[0-9a-f]{64}$/i.test(args.txid)) throw new Error("txid must be a 64-hex digest");
+        if (args.amount <= 0) throw new Error("amount must be positive");
+
+        const venture = await ctx.db.get(commitment.ventureId);
+        const investor = await ctx.db.get(investorId);
+        const now = Date.now();
+        await ctx.db.patch(args.commitmentId, {
+            settlementAsset: args.asset,
+            settlementNetwork: args.network,
+            settlementAddress: args.settlementAddress,
+            pledgeTxid: args.txid,
+            fundedAt: now,
+            status: commitment.status === "pledged" ? "active" : commitment.status,
+            updatedAt: now,
+        });
+        await writeLedgerEvent(ctx, {
+            type: "pledge",
+            ventureId: commitment.ventureId,
+            commitmentId: args.commitmentId,
+            summary: `${investor?.displayName ?? "Investor"} funded ${venture?.name ?? "the venture"} on-chain — ${args.amount} ${args.asset === "bch" ? "sats" : "PUSD units"} (${args.network})`,
+            evidence: ["onchain", "wizardconnect"],
+            txid: args.txid,
+            onchainRef: args.onchainRef ?? null,
+            createdAt: now,
+        });
+        await syncInvestorBriefing(ctx, investorId);
+        return { commitmentId: args.commitmentId, message: "Funding recorded." };
+    },
+});
+
+/** Cache an on-chain repayment txid against a commitment. */
+export const recordRepayment = mutation({
+    args: {
+        commitmentId: v.id("commitments"),
+        txid: v.string(),
+        network: bchNetworkValidator,
+        /** Satoshis (bch) or token base units (pusd) repaid in this tx. */
+        amount: v.number(),
+        onchainRef: v.optional(v.string()),
+    },
+    returns: v.object({ commitmentId: v.id("commitments"), message: v.string() }),
+    handler: async (ctx, args) => {
+        await assertCanAct(ctx);
+        await rateLimiter.limit(ctx, "investMutate", { key: "settlement" });
+        const investorId = await assertInvestorOwnsCommitment(ctx, args.commitmentId);
+        const commitment = await ctx.db.get(args.commitmentId);
+        if (!commitment) throw new Error("Commitment not found");
+        if (!/^[0-9a-f]{64}$/i.test(args.txid)) throw new Error("txid must be a 64-hex digest");
+        if (args.amount <= 0) throw new Error("amount must be positive");
+
+        const venture = await ctx.db.get(commitment.ventureId);
+        const now = Date.now();
+        const repaidTotal = (commitment.repaidTotal ?? 0) + args.amount;
+        const repayTxids = [...(commitment.repayTxids ?? []), args.txid];
+        await ctx.db.patch(args.commitmentId, {
+            repaidTotal,
+            repayTxids,
+            updatedAt: now,
+        });
+        await writeLedgerEvent(ctx, {
+            type: "repayment",
+            ventureId: commitment.ventureId,
+            commitmentId: args.commitmentId,
+            summary: `${venture?.name ?? "Venture"} repaid ${args.amount} ${commitment.settlementAsset === "pusd" ? "PUSD units" : "sats"} on-chain (${args.network})`,
+            evidence: ["onchain"],
+            txid: args.txid,
+            onchainRef: args.onchainRef ?? null,
+            createdAt: now,
+        });
+        await syncInvestorBriefing(ctx, investorId);
+        return { commitmentId: args.commitmentId, message: "Repayment recorded." };
     },
 });
 

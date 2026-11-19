@@ -45,7 +45,8 @@ const ledgerEventType = v.union(
     v.literal("checkin"),
     v.literal("digest"),
     v.literal("action"),
-    v.literal("wisdom")
+    v.literal("wisdom"),
+    v.literal("repayment")
 );
 const sharedKind = v.union(
     v.literal("article"),
@@ -330,6 +331,29 @@ export default defineSchema({
         publicSlug: v.string(),
         masterId: v.optional(v.union(v.id("masters"), v.null())),
         apprenticeId: v.optional(v.union(v.id("apprentices"), v.null())),
+        /**
+         * BCH settlement identity (BCH Blaze 2026). CashToken-aware cashaddr
+         * the venture receives pledges on. Optional — a venture without one
+         * stays on soft pledges until the assisted/self-custody upgrade.
+         */
+        bchAddress: v.optional(v.union(v.string(), v.null())),
+        /** Self-sovereign venture identity: Nostr pubkey bound to bchAddress. */
+        nostrPubkey: v.optional(v.union(v.string(), v.null())),
+        /**
+         * Cryptographic binding proof between bchAddress and nostrPubkey:
+         * a BCH signed message over the npub + the Nostr event id that
+         * carries the reverse attestation. Third parties verify both sides.
+         */
+        identityProof: v.optional(
+            v.union(
+                v.object({
+                    bchSignature: v.string(),
+                    nostrEventId: v.string(),
+                    boundAt: v.number(),
+                }),
+                v.null()
+            )
+        ),
         status: v.union(v.literal("active"), v.literal("paused"), v.literal("graduated")),
         createdAt: v.number(),
         updatedAt: v.number(),
@@ -399,6 +423,26 @@ export default defineSchema({
         capMultiple: v.number(),
         status: commitmentStatus,
         thesis: v.string(),
+        /**
+         * Settlement mode (BCH Blaze 2026). "soft" = intent only (default).
+         * "bch"/"pusd" = funded on Bitcoin Cash mainnet/chipnet; settlement
+         * status derives from the chain — these fields cache, never claim.
+         */
+        settlementAsset: v.optional(
+            v.union(v.literal("soft"), v.literal("bch"), v.literal("pusd"), v.null())
+        ),
+        /** Venture's receiving address captured at funding time. */
+        settlementAddress: v.optional(v.union(v.string(), v.null())),
+        /** Network the settlement tx lives on (bchtest chipnet / mainnet). */
+        settlementNetwork: v.optional(
+            v.union(v.literal("chipnet"), v.literal("mainnet"), v.null())
+        ),
+        /** Funding transaction id once broadcast. */
+        pledgeTxid: v.optional(v.union(v.string(), v.null())),
+        fundedAt: v.optional(v.number()),
+        /** Cumulative repaid, in the settlement asset's base units. */
+        repaidTotal: v.optional(v.number()),
+        repayTxids: v.optional(v.array(v.string())),
         nextDigestAt: v.optional(v.number()),
         digestCadence: v.optional(v.string()),
         createdAt: v.number(),
@@ -460,6 +504,12 @@ export default defineSchema({
         ),
         /** Set when this check-in measures a piece of applied mentor wisdom. */
         appliedItemId: v.optional(v.union(v.id("sharedItems"), v.null())),
+        /**
+         * Nostr attestation (BCH Blaze 2026): event id once this check-in is
+         * published as a signed event on the venture's npub — portable
+         * reputation any app can verify.
+         */
+        nostrEventId: v.optional(v.union(v.string(), v.null())),
         createdAt: v.number(),
     })
         .index("by_ventureId", ["ventureId"])
@@ -754,6 +804,10 @@ export default defineSchema({
         disputeState: v.optional(
             v.union(v.literal("none"), v.literal("corrected"), v.literal("disputed"))
         ),
+        /** Funding/repayment tx id when this event records on-chain settlement. */
+        txid: v.optional(v.union(v.string(), v.null())),
+        /** Explorer link or chain ref rendered as the proof on the public feed. */
+        onchainRef: v.optional(v.union(v.string(), v.null())),
     })
         .index("by_publicVisible_and_createdAt", ["publicVisible", "createdAt"])
         .index("by_ventureId", ["ventureId"])

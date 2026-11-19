@@ -4,16 +4,18 @@ Busy investors make soft **revenue-share** microcommitments into Kenya informal-
 
 Built for the [Gemini X Prize](https://www.geminixprize.com/). See [docs/xprize-submission.md](docs/xprize-submission.md) for the submission-facing summary and [docs/ops.md](docs/ops.md) for the internal ops/cleanup checklist. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains the loop, what is AI and what isn't.
 
+Entering [BCH Blaze 2026](https://dorahacks.io/hackathon/bchblaze2026): soft pledges become real **PUSD/BCH micro-commitments** on Bitcoin Cash — WizardConnect wallet funding, on-chain settlement proofs on the public ledger, and a venture identity bound BCH↔Nostr. Plan and bounty map: [plans/bch-blaze-2026.plan.md](plans/bch-blaze-2026.plan.md).
+
 Voice/SMS/USSD matching remains Lab scaffolding from the earlier Rapid Agent Hackathon prototype.
 
-> Demo only: soft pledges — not securities, escrow, or live payments. Agent inbox inbound (`juakali@agentmail.to`) is live. The Gemini agent is publicly deployed to Google Cloud Run (see submission summary for URL + model).
+> Capital: soft pledges by default — **not securities, escrow, or investment contracts**. On-chain pledge funding (PUSD/BCH) is an opt-in per-commitment settlement mode landing for BCH Blaze; a commitment shows `live` fidelity only once its funding tx is confirmed on-chain. Agent inbox inbound (`juakali@agentmail.to`) is live. The Gemini agent is publicly deployed to Google Cloud Run (see submission summary for URL + model).
 
 ## How it works
 
-1. Soft pledge into a venture (share of cashflow until a multiple cap).
+1. Pledge into a venture (share of cashflow until a multiple cap) — soft intent by default, or fund it for real in PUSD/BCH via a WizardConnect wallet.
 2. Email ritual — in-app queue → approve, **or** email `juakali@agentmail.to` (AgentMail inbound, Svix-verified). Agent logs KPIs, digests, replies. Gmail for the human investor later.
-3. Hard KPIs (meetings, revenue KES, jobs) with evidence tags.
-4. Investor home + public ledger (“invest in public”).
+3. Hard KPIs (meetings, revenue KES, jobs) with evidence tags — third-party-verified check-ins publish as signed Nostr attestations on the venture's portable identity.
+4. Investor home + public ledger (“invest in public”) — funded pledges carry txid links so anyone can verify the capital leg on-chain.
 
 Product UX, demo script, and decisions: [plans/invest-in-public-mvp.plan.md](plans/invest-in-public-mvp.plan.md).  
 Product axes (identity × fidelity × teaching): [plans/product-axes.md](plans/product-axes.md).  
@@ -99,7 +101,7 @@ Point your MCP client at that package with `JUAKALI_BACKEND_URL` set to your Con
 
 ## Stack
 
-Gemini 2.5 Flash · Cloud Run · MCP · Convex · Expo · AgentMail (`juakali@agentmail.to`) · Twilio / Africa’s Talking (funnel)
+Gemini 2.5 Flash · Cloud Run · MCP · Convex · Expo · AgentMail (`juakali@agentmail.to`) · Twilio / Africa’s Talking (funnel) · Bitcoin Cash settlement layer (WizardConnect · CashTokens/PUSD · Nostr identity)
 
 Pre-commit (Husky): gitleaks on staged changes + ESLint via lint-staged (`apps/default`, `packages/backend`). Requires [`gitleaks`](https://github.com/gitleaks/gitleaks#installing) on your PATH.
 ## Shipaton 2026 readiness

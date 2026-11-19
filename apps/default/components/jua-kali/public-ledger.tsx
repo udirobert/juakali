@@ -20,6 +20,9 @@ import { useQuery } from "convex/react";
 
 import { api } from "@/convex/_generated/api";
 import { SITE_URL } from "@/lib/site";
+import { OnchainSeal } from "@/components/jua-kali/onchain-seal";
+import { FieldPrintStrip } from "@/components/jua-kali/field-print";
+import { ScrollReveal } from "@/components/jua-kali/scroll-reveal";
 import { styles } from "@/components/jua-kali/ledger/public-ledger.styles";
 import { TermHint } from "@/components/jua-kali/help";
 import { SunMark } from "@/components/jua-kali/sun-mark";
@@ -59,6 +62,8 @@ type LedgerEventRow = {
     runId?: string | null;
     initiator?: string | null;
     publicVisible?: boolean;
+    txid?: string | null;
+    onchainRef?: string | null;
 };
 
 type LedgerVenture = {
@@ -86,6 +91,8 @@ function typeLabel(type: string) {
             return "Digest";
         case "wisdom":
             return "Wisdom";
+        case "repayment":
+            return "Repayment";
         default:
             return "Action";
     }
@@ -100,6 +107,8 @@ function typeGlyph(type: string, size = 12) {
             return <IconTrend size={size} color={color.brassDeep} />;
         case "digest":
             return <IconPen size={size} color={color.brassDeep} />;
+        case "repayment":
+            return <IconCapital size={size} color={color.success} />;
         case "wisdom":
             return <IconSparkle size={size} color={color.brassDeep} />;
         default:
@@ -286,6 +295,8 @@ export function PublicLedger({
                     </View>
                 </View>
 
+                {!compact && !slug ? <FieldPrintStrip /> : null}
+
                 {data.ventures.length > 1 ? (
                     <ScrollView
                         horizontal
@@ -317,8 +328,9 @@ export function PublicLedger({
                         </Text>
                     ) : (
                         data.events.map((event: LedgerEventRow, idx: number) => (
-                            <Animated.View
+                            <ScrollReveal
                                 key={event.id}
+                                delay={Math.min(idx, 7) * motion.stagger}
                                 entering={
                                     firstPresent && !reduceMotion
                                         ? FadeIn.duration(motion.base).delay(Math.min(idx, 7) * motion.stagger)
@@ -341,7 +353,7 @@ export function PublicLedger({
                                     }
                                     onOpenGlossary={onOpenGlossary}
                                 />
-                            </Animated.View>
+                            </ScrollReveal>
                         ))
                     )}
                 </View>
@@ -394,6 +406,12 @@ function LedgerRow({
                     <View style={styles.typeRow}>
                         {typeGlyph(event.type)}
                         <Text style={styles.type}>{typeLabel(event.type)}</Text>
+                        {event.txid ? (
+                            <View
+                                style={styles.chainDot}
+                                accessibilityLabel="Anchored to a Bitcoin Cash transaction"
+                            />
+                        ) : null}
                         {onOpenGlossary ? (
                             <TermHint termId={typeHint(event.type)} onOpenGlossary={onOpenGlossary} />
                         ) : null}
@@ -487,6 +505,17 @@ function LedgerRow({
                                     </View>
                                 ))}
                             </View>
+                        </View>
+                    ) : null}
+                    {event.txid ? (
+                        <View style={styles.detailLine}>
+                            <Text style={styles.detailLabel}>On-chain tx</Text>
+                            <OnchainSeal
+                                txid={event.txid}
+                                network={event.onchainRef?.includes("/chipnet/") ? "chipnet" : "mainnet"}
+                                onchainRef={event.onchainRef}
+                                size="sm"
+                            />
                         </View>
                     ) : null}
                 </Animated.View>
