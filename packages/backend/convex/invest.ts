@@ -437,6 +437,9 @@ export const getDeal = query({
             settlementAddress: v.union(v.string(), v.null()),
             repaidTotal: v.union(v.number(), v.null()),
             repayTxids: v.array(v.string()),
+            fundedAmount: v.union(v.number(), v.null()),
+            craftText: v.union(v.string(), v.null()),
+            locationText: v.union(v.string(), v.null()),
         }),
         v.null()
     ),
@@ -464,6 +467,9 @@ export const getDeal = query({
                 settlementAddress: commitment.settlementAddress ?? null,
                 repaidTotal: commitment.repaidTotal ?? null,
                 repayTxids: commitment.repayTxids ?? [],
+                fundedAmount: commitment.fundedAmount ?? null,
+                craftText: venture.craftText ?? null,
+                locationText: venture.locationText ?? null,
             };
         }
         if (args.ventureSlug) {
@@ -497,6 +503,9 @@ export const getDeal = query({
                 settlementAddress: commitment.settlementAddress ?? null,
                 repaidTotal: commitment.repaidTotal ?? null,
                 repayTxids: commitment.repayTxids ?? [],
+                fundedAmount: commitment.fundedAmount ?? null,
+                craftText: venture.craftText ?? null,
+                locationText: venture.locationText ?? null,
             };
         }
         return null;
@@ -2014,6 +2023,7 @@ export const recordPledgeFunding = mutation({
             settlementAddress: args.settlementAddress,
             pledgeTxid: args.txid,
             fundedAt: now,
+            fundedAmount: args.amount,
             status: commitment.status === "pledged" ? "active" : commitment.status,
             updatedAt: now,
         });

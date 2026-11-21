@@ -444,6 +444,8 @@ export default defineSchema({
         /** Funding transaction id once broadcast. */
         pledgeTxid: v.optional(v.union(v.string(), v.null())),
         fundedAt: v.optional(v.number()),
+        /** Sats (or token base units) carried by the funding tx — receipt data. */
+        fundedAmount: v.optional(v.number()),
         /** Cumulative repaid, in the settlement asset's base units. */
         repaidTotal: v.optional(v.number()),
         repayTxids: v.optional(v.array(v.string())),

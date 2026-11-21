@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Linking, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Link } from "expo-router";
 import { useMutation, useQuery } from "convex/react";
 
 import { api } from "@/convex/_generated/api";
@@ -269,6 +270,14 @@ function FundOnBchCardReady({ commitmentId }: { commitmentId: Id<"commitments"> 
                         network={fundedNetwork}
                         onchainRef={explorerTxUrl(deal.pledgeTxid!, fundedNetwork)}
                     />
+                    <Link
+                        href={{ pathname: "/receipt/[commitmentId]", params: { commitmentId } }}
+                        asChild
+                    >
+                        <Pressable hitSlop={6}>
+                            <Text style={styles.link}>Shareable receipt →</Text>
+                        </Pressable>
+                    </Link>
                     {deal.repaidTotal && deal.repaidTotal > 0 ? (
                         <Text style={styles.meta}>
                             Repaid: {deal.repaidTotal.toLocaleString()} sats across{" "}

@@ -26,6 +26,7 @@ import type * as httpVoiceKpi from "../httpVoiceKpi.js";
 import type * as invest from "../invest.js";
 import type * as investorBriefing from "../investorBriefing.js";
 import type * as juaKaliHelpers from "../juaKaliHelpers.js";
+import type * as maintenance from "../maintenance.js";
 import type * as migrations from "../migrations.js";
 import type * as numberWords from "../numberWords.js";
 import type * as railVerify from "../railVerify.js";
@@ -69,6 +70,7 @@ declare const fullApi: ApiFromModules<{
   invest: typeof invest;
   investorBriefing: typeof investorBriefing;
   juaKaliHelpers: typeof juaKaliHelpers;
+  maintenance: typeof maintenance;
   migrations: typeof migrations;
   numberWords: typeof numberWords;
   railVerify: typeof railVerify;
