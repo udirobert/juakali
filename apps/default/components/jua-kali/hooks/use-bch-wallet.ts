@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWizardConnect } from "@wizardconnect/react";
-import { hexToBin } from "@bitauth/libauth";
+import { binToHex, encodeTransaction, hexToBin } from "@bitauth/libauth";
 
 import { lockingBytecodeForAddress, pubkeyToP2pkhAddress } from "@/lib/bch/address";
 import { BCH_NETWORK, electrum } from "@/lib/bch/network";
@@ -63,6 +63,8 @@ export function useBchWallet() {
         setScanning(true);
         setScanError(null);
         try {
+            // Session restore skips connect() — crypto may still be cold here.
+            await ensureBchCrypto();
             const provider = electrum();
             const utxos: FundedUtxo[] = [];
             let receiveIndex = 0;
@@ -155,6 +157,7 @@ export function useBchWallet() {
             const manager = wc.manager;
             if (!manager || !scan) throw new Error("Wallet not connected");
             if (!scan.changeAddress) throw new Error("No change path available in this session");
+            await ensureBchCrypto();
 
             const built = buildPledgeSpend({
                 utxos: scan.utxos,
@@ -164,10 +167,41 @@ export function useBchWallet() {
                 token: args.token,
             });
 
+            // The relay JSON can't carry BigInt/Uint8Array — hdwalletv1's
+            // canonical wire format is tx hex + source outputs with hex binary
+            // and `<bigint: Nn>` values (same as @wizardconnect/core's private
+            // hdwalletv1-serialize.js).
+            const bigintTag = (v: bigint) => `<bigint: ${v}n>`;
+            // Typed as libauth inputs/outputs upstream, but the wire format is
+            // the tagged-JSON encoding below — the cast bridges the two.
+            type RelaySourceOutput = {
+                outpointTransactionHash: string;
+                outpointIndex: number;
+                unlockingBytecode: string;
+                sequenceNumber: number;
+                valueSatoshis: string;
+                lockingBytecode: string;
+                token?: { category: string; amount: string };
+            };
             const response = await manager.signTransaction({
                 transaction: {
-                    transaction: built.transaction,
-                    sourceOutputs: built.sourceOutputs,
+                    transaction: binToHex(encodeTransaction(built.transaction)),
+                    sourceOutputs: built.sourceOutputs.map((so): RelaySourceOutput => ({
+                        outpointTransactionHash: binToHex(so.outpointTransactionHash),
+                        outpointIndex: so.outpointIndex,
+                        unlockingBytecode: binToHex(so.unlockingBytecode),
+                        sequenceNumber: so.sequenceNumber,
+                        valueSatoshis: bigintTag(so.valueSatoshis),
+                        lockingBytecode: binToHex(so.lockingBytecode),
+                        ...(so.token
+                            ? {
+                                  token: {
+                                      category: binToHex(so.token.category),
+                                      amount: bigintTag(so.token.amount),
+                                  },
+                              }
+                            : {}),
+                    })) as unknown as Parameters<typeof manager.signTransaction>[0]["transaction"]["sourceOutputs"],
                     userPrompt: args.userPrompt,
                 },
                 inputPaths: built.inputPaths as [number, string, number][],

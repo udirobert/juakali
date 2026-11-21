@@ -42,6 +42,7 @@ export type BuiltSpend = {
         unlockingBytecode: Uint8Array;
         lockingBytecode: Uint8Array;
         valueSatoshis: bigint;
+        token?: { category: Uint8Array; amount: bigint };
     }[];
     /** [inputIndex, pathName, addressIndex] per input — WizardConnect hdwalletv1. */
     inputPaths: [number, string, number][];
@@ -180,6 +181,9 @@ export function buildPledgeSpend(args: {
             ...inputs[i]!,
             lockingBytecode: u.lockingBytecode,
             valueSatoshis: u.satoshis,
+            // Token-bearing inputs must carry their token data — the wallet
+            // needs the full source output to compute the sighash preimage.
+            ...(u.token ? { token: { category: u.token.category, amount: u.token.amount } } : {}),
         })),
         inputPaths: selected.map((u, i) => [i, u.pathName, u.addressIndex]),
         changeSatoshis: change,

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Linking, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useMutation, useQuery } from "convex/react";
 
@@ -12,6 +12,7 @@ import { Button, Card, Input } from "@/components/jua-kali/ui";
 import { color, font, radius, type as typeStyle } from "@/components/jua-kali/theme";
 import { explorerAddressUrl, explorerTxUrl } from "@/lib/bch/network";
 import { shortAddress } from "@/lib/bch/address";
+import { ensureBchCrypto } from "@/lib/bch/libauth-crypto-shim";
 
 const mono = Platform.select({ ios: "Menlo", default: "monospace" });
 
@@ -21,6 +22,27 @@ const mono = Platform.select({ ios: "Menlo", default: "monospace" });
  * chipnet is test coins, Convex only caches what the chain already proved.
  */
 export function FundOnBchCard({ commitmentId }: { commitmentId: Id<"commitments"> }) {
+    const deal = useQuery(api.invest.getDeal, { commitmentId });
+    // WizardConnect restores a stored session in a mount-time effect whose
+    // relay client needs libauth WASM — so the wallet hook can only mount once
+    // crypto is ready, or the restore path crashes with a cold `secp256k1`.
+    const [cryptoReady, setCryptoReady] = useState(false);
+    useEffect(() => {
+        if (Platform.OS !== "web") return;
+        void ensureBchCrypto()
+            .then(() => setCryptoReady(true))
+            .catch(() => setCryptoReady(false));
+    }, []);
+
+    if (!deal) return null;
+    // Native runtimes lack WebAssembly — libauth crypto (and therefore
+    // WizardConnect) is web-only for the BLAZE slice.
+    if (Platform.OS !== "web") return null;
+    if (!cryptoReady) return null;
+    return <FundOnBchCardReady commitmentId={commitmentId} />;
+}
+
+function FundOnBchCardReady({ commitmentId }: { commitmentId: Id<"commitments"> }) {
     const deal = useQuery(api.invest.getDeal, { commitmentId });
     const recordFunding = useMutation(api.invest.recordPledgeFunding);
     const setSettlement = useMutation(api.invest.setVentureSettlement);
@@ -272,9 +294,9 @@ export function FundOnBchCard({ commitmentId }: { commitmentId: Id<"commitments"
                                 <View style={styles.walletDot} />
                                 <Text style={styles.meta}>
                                     {wallet.walletName ?? "Wallet"} ·{" "}
-                                    {wallet.scanning
+                                    {wallet.scanning || !wallet.scan
                                         ? "scanning addresses…"
-                                        : `${Number(wallet.scan!.balanceSats).toLocaleString()} sats spendable`}
+                                        : `${Number(wallet.scan.balanceSats).toLocaleString()} sats spendable`}
                                 </Text>
                             </View>
                             <Input
