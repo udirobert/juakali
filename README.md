@@ -1,8 +1,8 @@
 # JuaKali — Invest in Public
 
-Busy investors make soft **revenue-share** microcommitments into Kenya informal-sector (“Jua Kali”) apprentice ventures. An AI agent mentors the investee, logs hard KPIs, and publishes a transparent public ledger — Gemini on Google Cloud.
+Busy investors make soft **revenue-share** microcommitments into Kenya informal-sector (“Jua Kali”) apprentice ventures. An AI agent mentors the investee, logs self-reported KPIs, and publishes a transparent public ledger — Gemini on Google Cloud. Separately, `/workspace/private` hosts an optional **private** backer–lead pair (one per account) that never touches the public ledger.
 
-Built for the [Gemini X Prize](https://www.geminixprize.com/). See [docs/xprize-submission.md](docs/xprize-submission.md) for the submission-facing summary and [docs/ops.md](docs/ops.md) for the internal ops/cleanup checklist. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains the loop, what is AI and what isn't.
+Built for the [Gemini X Prize](https://www.geminixprize.com/). See [docs/xprize-submission.md](docs/xprize-submission.md) for the submission-facing summary and [docs/ops.md](docs/ops.md) for the internal ops/cleanup checklist. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains the loop, what is AI and what isn't. [docs/weekly-follow-up-pilot.md](docs/weekly-follow-up-pilot.md) describes the small founder–backer follow-up pilot.
 
 Entering [BCH Blaze 2026](https://dorahacks.io/hackathon/bchblaze2026): soft pledges become real **PUSD/BCH micro-commitments** on Bitcoin Cash — WizardConnect wallet funding, on-chain settlement proofs on the public ledger, and a venture identity bound BCH↔Nostr. Plan and bounty map: [plans/bch-blaze-2026.plan.md](plans/bch-blaze-2026.plan.md).
 
@@ -14,14 +14,51 @@ Voice/SMS/USSD matching remains Lab scaffolding from the earlier Rapid Agent Hac
 
 ## How it works
 
-1. Pledge into a venture (share of cashflow until a multiple cap) — soft intent by default, or fund it for real in PUSD/BCH via a WizardConnect wallet.
+1. Pledge into a venture (share of cashflow until a multiple cap) — you preview the exact public entry, then **Publish soft pledge**; it's recorded intent, and no money moves. Funding it for real in PUSD/BCH via a WizardConnect wallet is a separate opt-in.
 2. Email ritual — in-app queue → approve, **or** email `juakali@agentmail.to` (AgentMail inbound, Svix-verified). Agent logs KPIs, digests, replies. Gmail for the human investor later.
-3. Hard KPIs (meetings, revenue KES, jobs) with evidence tags — third-party-verified check-ins publish as signed Nostr attestations on the venture's portable identity.
-4. Investor home + public ledger (“invest in public”) — funded pledges carry txid links so anyone can verify the capital leg on-chain.
+3. KPIs (meetings, revenue KES, jobs) are **founder-reported** (or investor-entered — tagged as such) — not independent proof. Evidence tags distinguish claims (`photo mentioned`, `receipt mentioned`) and `statement-text matched` (a payment artifact whose text lines up) from actual verification. None of these labels independently verifies the number.
+4. Investor home + public ledger (“invest in public”) — funded pledges may carry txid links so anyone can inspect the capital leg on-chain. A recorded txid is a pointer to inspect, not a claim of confirmed settlement by the app; chipnet entries are test-network only. Only a KES pledge with sufficient post-pledge reported KES revenue gets a share estimate. A reported zero is not missing data; recorded repayments are separate.
 
 Product UX, demo script, and decisions: [plans/invest-in-public-mvp.plan.md](plans/invest-in-public-mvp.plan.md).  
 Product axes (identity × fidelity × teaching): [plans/product-axes.md](plans/product-axes.md).  
 Historical matcher: [plans/jua-kali-apprenticeship-matcher.plan.md](plans/jua-kali-apprenticeship-matcher.plan.md).
+
+## Private workspace
+
+`/workspace/private` — a private "service book" for one venture lead and one
+backer (any industry; the pair names their own measure, unit, and optional
+pricing focus). It is a separate path: dedicated
+`privateWorkspaces`/`privateWorkspaceWeeks` tables, no public-ledger entries,
+no pledges, no money moved, no email sent. `/workspace/kitchen` redirects here.
+
+- **Auth requirements** — both members must sign in with a verified, non-anonymous
+  email (magic link or OAuth). The whole feature is closed while
+  `SOFT_AUTH_INBOX=1` (the demo inbox exposes login links). Invites are by
+  email address, shared manually — the app never sends them; the invitee sees
+  only a consent preview (workspace name + inviter) before joining.
+- **Discovery & activation** — a read-only `overview` query returns minimal
+  state (invited / pending / request / report / feedback / active / complete)
+  plus the workspace name — never report content, asks, amounts, or the other
+  member's email — so Home, the landing pitch, and Account can show a "Your
+  workspaces" entry card. Accepting an invitation is always an explicit tap on
+  `/workspace/private` after a consent preview — nothing joins you
+  automatically, and invitations are shared manually, never sent. The invite
+  email address and the member's sign-in address are the same account
+  mechanism, but workspace invitations aren't emailed; email sign-in can
+  still send a magic link.
+- **The loop** — on join, four Friday weeks are scheduled (deadline 18:00 EAT /
+  15:00 UTC). Each week the lead files one value for their measure (zero
+  counts; decimals allowed if the pair chose them), a note, and an optional
+  help request; the backer answers the oldest outstanding ask with "I can
+  help" / "Let's talk" / "Not this week"; the lead later marks helped / not
+  yet. Four in-app Friday briefs appear once each week closes — quiet weeks
+  read "No check-in received", never a fabricated zero. A funding
+  understanding (gift / loan / revenue share) is optional and planning-only.
+  After four weeks a review screen appears for the pair to decide together.
+- **Midweek visibility** — a report without a help request stays private to
+  the lead until its Friday close; the backer sees only that a report exists.
+  A report carrying an explicit ask is visible to the backer immediately so
+  the request can surface midweek.
 
 ## Architecture
 
@@ -71,7 +108,7 @@ cd packages/agent && bun run dev     # Terminal 2
 cd apps/default && bun run start     # Terminal 3
 ```
 
-Open **Home** → **Seed** for sample pledges, KPIs, email, and ledger events.
+Open the app and tap **See what needs your decision** on the landing — it opens a sample desk with example pledges, KPIs, email, and ledger events (no real ventures or money).
 
 ## Deploy (investor review)
 

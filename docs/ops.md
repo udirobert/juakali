@@ -60,6 +60,24 @@ gcloud run deploy juakali-agent \
   --project=cognivern
 ```
 
+## Staging-first checks (before prod)
+
+Private workspace ships new public functions (`api.privateWorkspace.*`), so
+order matters — deploy the backend **before** the web build, or the app
+queries functions that don't exist yet (cf. the 2026-08-27 incident below).
+
+1. `cd packages/backend && npx vitest run && npx tsc --noEmit` — all green.
+2. Deploy backend to **staging**, then the web build.
+3. On staging: keep `SOFT_AUTH_INBOX` **disabled** (the private workspace
+   correctly refuses while it's on). Configure Resend if using email magic
+   links, or use a verified OAuth account. Both members must sign in with a
+   real verified email — anonymous/demo accounts get the `verify` state,
+   never workspace data.
+4. Confirm the entry cards appear (`overview` on Home/landing/Account) and
+   the lobby shows only a consent preview — nothing here writes to the
+   public ledger or moves money; expect zero rows in `ledgerEvents` /
+   `commitments` / `agentRuns` from workspace actions.
+
 ## Convex backend deploy
 
 ```bash

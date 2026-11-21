@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { currencyCodeValidator } from "./schemaCurrency";
+import { reportedRevenueKes } from "./publicCopy";
 
 type ReadDb = { db: QueryCtx["db"] };
 type WriteDb = { db: MutationCtx["db"] };
@@ -40,15 +41,30 @@ export const ventureSummaryValidator = v.object({
     nostrPubkey: v.optional(v.union(v.string(), v.null())),
 });
 
+/**
+ * Canonical KPI metric names written for each venture unit, including legacy
+ * aliases seeded before the `*_completed`/`*_booked` convention landed.
+ */
+const VENTURE_METRICS: Record<string, readonly string[]> = {
+    revenue_kes: ["revenue_kes"],
+    jobs: ["jobs_completed", "jobs"],
+    meetings: ["meetings_booked", "meetings"],
+};
+
 export async function sumVentureKpis(ctx: ReadDb, ventureId: Id<"ventures">) {
     const checkIns = await ctx.db
         .query("kpiCheckIns")
         .withIndex("by_ventureId", (q) => q.eq("ventureId", ventureId))
         .take(200);
     checkIns.sort((a, b) => b.createdAt - a.createdAt);
-    const kpiTotal = checkIns.reduce((sum, row) => sum + row.value, 0);
-    const kpiLatest = checkIns.length > 0 ? checkIns[0]!.value : 0;
-    return { kpiTotal, kpiLatest, checkIns };
+    const venture = await ctx.db.get(ventureId);
+    const metrics = VENTURE_METRICS[venture?.kpiUnit ?? "revenue_kes"] ?? [];
+    // Operating totals/sparkline only ever aggregate the venture's own metric
+    // — jobs and meetings must never inflate a money-typed KPI or vice versa.
+    const operating = checkIns.filter((row) => metrics.includes(row.metric));
+    const kpiTotal = operating.reduce((sum, row) => sum + row.value, 0);
+    const kpiLatest = operating.length > 0 ? operating[0]!.value : 0;
+    return { kpiTotal, kpiLatest, checkIns, operating };
 }
 
 export async function pledgedForVenture(ctx: ReadDb, ventureId: Id<"ventures">) {
@@ -62,9 +78,9 @@ export async function pledgedForVenture(ctx: ReadDb, ventureId: Id<"ventures">) 
 export async function buildVentureSummary(ctx: ReadDb, ventureId: Id<"ventures">) {
     const venture = await ctx.db.get(ventureId);
     if (!venture) return null;
-    const { kpiTotal, kpiLatest, checkIns } = await sumVentureKpis(ctx, venture._id);
+    const { kpiTotal, kpiLatest, operating } = await sumVentureKpis(ctx, venture._id);
     const pledgedKes = await pledgedForVenture(ctx, venture._id);
-    const sparkline = checkIns
+    const sparkline = operating
         .slice()
         .reverse()
         .slice(-4)
@@ -137,9 +153,9 @@ export async function syncInvestorBriefing(ctx: WriteDb, investorId: Id<"investo
     for (const raw of ventureIds) {
         const venture = await ctx.db.get(raw as Id<"ventures">);
         if (!venture) continue;
-        const { kpiTotal, kpiLatest, checkIns } = await sumVentureKpis(ctx, venture._id);
+        const { kpiTotal, kpiLatest, checkIns, operating } = await sumVentureKpis(ctx, venture._id);
         const pledgedKes = await pledgedForVenture(ctx, venture._id);
-        const sparkline = checkIns
+        const sparkline = operating
             .slice()
             .reverse()
             .slice(-4)
@@ -291,6 +307,7 @@ export async function syncInvestorBriefing(ctx: WriteDb, investorId: Id<"investo
                       createdAt: openRun.createdAt,
                   }
                 : null,
+            reportedRevenueKes: reportedRevenueKes(checkIns, commitment.createdAt),
         });
     }
 

@@ -4,6 +4,13 @@ import { authTables } from "@convex-dev/auth/server";
 import { currencyCodeValidator } from "./schemaCurrency";
 import { actionPlanValidator, autonomyLevelValidator } from "./actionPlan";
 import { ventureSummaryValidator } from "./investorBriefing";
+import {
+    measureValidator,
+    requestKindValidator,
+    responseValidator,
+    outcomeValidator,
+    supportKindValidator,
+} from "./privateWorkspaceFields";
 
 export { currencyCodeValidator } from "./schemaCurrency";
 
@@ -135,6 +142,12 @@ const cockpitCommitmentValidator = v.object({
         }),
         v.null()
     ),
+    /**
+     * Sum of self-reported `revenue_kes` check-ins recorded after this
+     * commitment was created. Null when the bounded read cannot establish a
+     * complete total — never derived from non-revenue metrics.
+     */
+    reportedRevenueKes: v.optional(v.union(v.number(), v.null())),
 });
 
 const briefingPresenceValidator = v.object({
@@ -475,6 +488,11 @@ export default defineSchema({
                 v.literal("third_party")
             )
         ),
+        /**
+         * A document the founder/investor *mentions* having (e.g. "photo",
+         * "receipt") — a claim carried for display, never a verified rung.
+         */
+        claimedDoc: v.optional(v.string()),
         submittedByUserId: v.optional(v.union(v.id("users"), v.null())),
         createdAt: v.number(),
     })
@@ -717,6 +735,11 @@ export default defineSchema({
                         v.literal("third_party")
                     )
                 ),
+                /**
+                 * Document mentioned by the submitter ("photo" | "receipt") —
+                 * shown as a mention tag, not a verification rung.
+                 */
+                claimedDoc: v.optional(v.string()),
                 /** Ledger event ids — explicit causal edges (parentEventId). */
                 requestEventId: v.optional(v.id("ledgerEvents")),
                 checkinEventId: v.optional(v.id("ledgerEvents")),
@@ -820,6 +843,57 @@ export default defineSchema({
         .index("by_createdAt", ["createdAt"])
         .index("by_correlationId", ["correlationId"])
         .index("by_runId", ["runId"]),
+
+    /**
+     * Private backer–venture-lead workspace. Deliberately separate from
+     * ventures/commitments: nothing here touches the public ledger, agent
+     * runs, or money rails. Membership is by verified user id only — email is
+     * only the pre-acceptance invite key. Industry-agnostic: the tracked
+     * measure is free text chosen by the pair.
+     */
+    privateWorkspaces: defineTable({
+        backerId: v.id("users"),
+        /** Normalized (trimmed, lowercase) invite address — invite key only. */
+        leadEmail: v.string(),
+        leadId: v.optional(v.id("users")),
+        name: v.string(),
+        /** The one thing the lead counts each week, in their words. */
+        measure: measureValidator,
+        /** Optional funding understanding; absent means not tracking money. */
+        supportKind: v.optional(supportKindValidator),
+        /** Optional agreed planning budget in whole KES — never moves money. */
+        budgetKes: v.optional(v.number()),
+        /** Optional plain-phrase pricing focus used in the pricing suggestion. */
+        pricingFocus: v.optional(v.string()),
+        /** Optional relationship descriptor (e.g. "mentor") — never permissioning. */
+        relationship: v.optional(v.string()),
+        firstFriday: v.optional(v.number()),
+        createdAt: v.number(),
+        updatedAt: v.number(),
+    })
+        .index("by_backer", ["backerId"])
+        .index("by_lead", ["leadId"])
+        .index("by_invitee", ["leadEmail", "leadId"]),
+
+    /** One row per pilot week (four per workspace), created on acceptance. */
+    privateWorkspaceWeeks: defineTable({
+        workspaceId: v.id("privateWorkspaces"),
+        week: v.number(),
+        /** Friday 18:00 EAT (15:00 UTC) deadline timestamp. */
+        deadline: v.number(),
+        closed: v.boolean(),
+        report: v.optional(
+            v.object({
+                value: v.number(),
+                note: v.string(),
+                ask: v.optional(v.string()),
+                requestKind: v.optional(requestKindValidator),
+                reportedAt: v.number(),
+            })
+        ),
+        response: v.optional(responseValidator),
+        outcome: v.optional(outcomeValidator),
+    }).index("by_workspace_week", ["workspaceId", "week"]),
 
     /** RevenueCat entitlements per investor (native monetization — scaffolded, dormant). */
     subscriptions: defineTable({

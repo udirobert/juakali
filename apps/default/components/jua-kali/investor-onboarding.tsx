@@ -22,6 +22,7 @@ import { useAuthActions } from "@convex-dev/auth/react";
 import type { Id } from "@/convex/_generated/dataModel";
 
 import { api } from "@/convex/_generated/api";
+import { formatPublicPledge, publicLedgerSummary } from "@/convex/publicCopy";
 import { styles } from "@/components/jua-kali/investor-onboarding/investor-onboarding.styles";
 import {
     clearDemoGates,
@@ -35,6 +36,7 @@ import {
 import { useProductMode, SOFT_RETURN_MS } from "@/lib/product-mode";
 import { SoftIdentityBar } from "@/components/jua-kali/soft-identity";
 import { FieldPrintStrip } from "@/components/jua-kali/field-print";
+import { WorkspaceEntry } from "@/components/jua-kali/workspace-entry";
 import { LivingSun } from "@/components/jua-kali/living-sun";
 import { IconArrowRight } from "@/components/jua-kali/icons";
 import { Atmosphere, Button, Card, Chip, Input, SectionLabel } from "@/components/jua-kali/ui";
@@ -191,6 +193,8 @@ type LedgerArtifactEvent = {
     id: string;
     type: string;
     summary: string;
+    ventureName?: string | null;
+    onchainRef?: string | null;
     createdAt: number;
 };
 
@@ -222,7 +226,7 @@ function LedgerArtifact({ onOpen }: { onOpen: () => void }) {
                     >
                         <Text style={styles.artifactType}>{ledgerTypeLabel(event.type)}</Text>
                         <Text style={styles.artifactSummary} numberOfLines={1}>
-                            {event.summary}
+                            {publicLedgerSummary(event)}
                         </Text>
                         <Text style={styles.artifactWhen}>{ledgerWhen(event.createdAt)}</Text>
                     </View>
@@ -234,6 +238,39 @@ function LedgerArtifact({ onOpen }: { onOpen: () => void }) {
     );
 }
 
+/** Latest weekly exchange on the public ledger — a digest, not a pitch. */
+function WeeklyDigestArtifact() {
+    const ledger = useQuery(api.invest.publicLedger, { limit: 20 });
+    const events = (ledger?.events ?? []) as (LedgerArtifactEvent & {
+        ventureName?: string | null;
+        onchainRef?: string | null;
+    })[];
+    const digest = events.find((event) => event.type === "digest") ?? null;
+
+    return (
+        <Card variant="artifact" style={styles.artifact}>
+            <View style={styles.artifactHead}>
+                <Text style={styles.artifactTitle}>
+                    {digest ? "Latest weekly update" : "Example weekly update"}
+                </Text>
+                <Text style={styles.artifactLive}>
+                    {digest ? `${digest.ventureName ?? "Venture"} · ${ledgerWhen(digest.createdAt)}` : "Illustrative"}
+                </Text>
+            </View>
+            <Text style={styles.digestBody}>
+                {digest
+                    ? publicLedgerSummary(digest)
+                    : "Two paid jobs. KES 7,800 collected. Help needed: welding supplies."}
+            </Text>
+            {!digest ? (
+                <Text style={styles.digestNote}>
+                    A sample — real updates arrive from the ventures you back.
+                </Text>
+            ) : null}
+        </Card>
+    );
+}
+
 /**
  * The arrival of the brand — a brass sun rising over a horizon, under a ghost
  * "JUA" wordmark (sylva craft, our sun). Ambition: the first viewport must
@@ -241,8 +278,8 @@ function LedgerArtifact({ onOpen }: { onOpen: () => void }) {
  */
 function HeroStage({ compact }: { compact: boolean }) {
     const reduceMotion = useReducedMotion();
-    const sunSize = compact ? 96 : 128;
-    const stageH = sunSize * 2.05;
+    const sunSize = compact ? 64 : 96;
+    const stageH = sunSize * 1.7;
     const [progress, setProgress] = useState(reduceMotion ? 0.55 : 0);
     const [stageWidth, setStageWidth] = useState(0);
 
@@ -378,6 +415,8 @@ export function InvestorLanding({
     /** After guest sign-in, finish creating an own commitment. */
     const [pendingOwnCommit, setPendingOwnCommit] = useState(false);
 
+    /** Form step 2 — the exact public entry shown before anything is written. */
+    const [confirming, setConfirming] = useState(false);
     const [investorName, setInvestorName] = useState("");
     const [investorEmail, setInvestorEmail] = useState("");
     const [ventureName, setVentureName] = useState("");
@@ -433,15 +472,19 @@ export function InvestorLanding({
             setError("Business name is required.");
             return;
         }
-        if (!Number.isFinite(amount) || amount <= 0) {
-            setError("Enter a positive pledge amount.");
+        if (!Number.isFinite(amount) || Math.round(amount) <= 0) {
+            setError("Pledge must round to at least 1 KES.");
             return;
         }
         if (!Number.isFinite(target) || target <= 0) {
             setError("Enter a positive KPI target.");
             return;
         }
+        setConfirming(true);
+    }
 
+    async function handlePublish() {
+        setError(null);
         setBusy(true);
         try {
             // Wait for the guest session before creating — otherwise the pledge
@@ -527,7 +570,13 @@ export function InvestorLanding({
                 showsVerticalScrollIndicator={false}
             >
                 <Animated.View entering={FadeIn.duration(motion.base)} style={styles.frame}>
-                    <HeroStage compact={compact} />
+                    {mode === "pitch" ? (
+                        <HeroStage compact={compact} />
+                    ) : (
+                        <View style={{ alignItems: "center", paddingVertical: 8 }}>
+                            <LivingSun progress={0.55} size={44} />
+                        </View>
+                    )}
                     <Animated.View
                         entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(40)}
                         style={styles.brandBlock}
@@ -542,36 +591,34 @@ export function InvestorLanding({
                         </View>
                     ) : null}
 
+                    {/* Signed-in members and invitees see their private
+                        workspace above the pitch — a guest sees a compact
+                        entry below the actions instead. */}
+                    {mode === "pitch" && isAuthenticated ? (
+                        <WorkspaceEntry variant="compact" label="Your workspaces" />
+                    ) : null}
+
                     {mode === "pitch" ? (
                         <>
                             <Animated.Text
                                 entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(90)}
                                 style={[styles.headline, compact && styles.headlineCompact]}
                             >
-                                An agent that keeps every venture honest.
+                                Know how the work went this week.
                             </Animated.Text>
                             <Animated.Text
                                 entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(140)}
                                 style={styles.subhead}
                             >
-                                Soft pledges in. Weekly proof out. Jua mentors the work, you approve
-                                the consequential steps, and the ledger stays public — so busy capital
-                                can stay in the room without chasing anyone.
+                                The founder's weekly update and your decision on it — in one place,
+                                recorded in public.
                             </Animated.Text>
-
-                            <Animated.View
-                                entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(160)}
-                                style={styles.artifactBlock}
-                            >
-                                <FieldPrintStrip />
-                            </Animated.View>
 
                             <Animated.View
                                 entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(190)}
                                 style={styles.artifactBlock}
                             >
-                                <SectionLabel>The ledger, live</SectionLabel>
-                                <LedgerArtifact onOpen={() => onEnter({ publicLedger: true })} />
+                                <WeeklyDigestArtifact />
                             </Animated.View>
 
                             <Animated.View
@@ -579,18 +626,23 @@ export function InvestorLanding({
                                 style={styles.ctaBlock}
                             >
                                 {product.preset === "demo" ? (
-                                    <Button
-                                        label={
-                                            busy
-                                                ? "Opening your desk…"
-                                                : "Try the demo — deals on your desk"
-                                        }
-                                        onPress={() => void handleExample()}
-                                        disabled={busy}
-                                        icon={<IconArrowRight size={15} color={color.paper} />}
-                                        style={styles.ctaBlockFull}
-                                        accessibilityHint="Starts a guest session, loads example deals onto your desk, and opens Today"
-                                    />
+                                    <>
+                                        <Button
+                                            label={
+                                                busy
+                                                    ? "Opening your desk…"
+                                                    : "See what needs your decision"
+                                            }
+                                            onPress={() => void handleExample()}
+                                            disabled={busy}
+                                            icon={<IconArrowRight size={15} color={color.paper} />}
+                                            style={styles.ctaBlockFull}
+                                            accessibilityHint="Opens a sample desk with example deals — no real ventures, no money"
+                                        />
+                                        <Text style={styles.ctaHint}>
+                                            A sample desk — no real ventures, no money.
+                                        </Text>
+                                    </>
                                 ) : (
                                     <Button
                                         label="Start a commitment"
@@ -620,14 +672,73 @@ export function InvestorLanding({
                                         or read the public record →
                                     </Text>
                                 </Pressable>
+                                {isAuthenticated ? null : (
+                                    <WorkspaceEntry variant="compact" label="Your workspaces" />
+                                )}
                                 <ProofStrip />
                             </Animated.View>
                             {error ? <Text style={styles.error}>{error}</Text> : null}
+
+                            <Animated.View
+                                entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(280)}
+                                style={styles.artifactBlock}
+                            >
+                                <FieldPrintStrip />
+                            </Animated.View>
+
+                            <Animated.View
+                                entering={reduceMotion ? undefined : FadeInDown.duration(motion.base).delay(320)}
+                                style={styles.artifactBlock}
+                            >
+                                <SectionLabel>The ledger, live</SectionLabel>
+                                <LedgerArtifact onOpen={() => onEnter({ publicLedger: true })} />
+                            </Animated.View>
                         </>
                     ) : null}
 
                     {mode === "form" ? (
                         <View style={styles.form}>
+                            {confirming ? (
+                                <>
+                                    <Text style={styles.formTitle}>Check the public entry</Text>
+                                    <Text style={styles.formSub}>
+                                        This is exactly what the ledger will record — review it before it
+                                        publishes.
+                                    </Text>
+                                    <Card variant="artifact" style={styles.artifact}>
+                                        <Text style={styles.previewLine}>
+                                            {formatPublicPledge(
+                                                investorName.trim() || "You",
+                                                "KES",
+                                                Number(amountKes),
+                                                ventureName.trim()
+                                            )}
+                                        </Text>
+                                        <Text style={styles.previewMeta}>
+                                            {investorName.trim()} → {ventureName.trim()} · KES{" "}
+                                            {Math.round(Number(amountKes)).toLocaleString("en-KE")} · 10% of
+                                            cashflow until 2× the pledge
+                                        </Text>
+                                        <Text style={styles.previewMeta}>
+                                            Anyone can read this entry. No money moves.
+                                        </Text>
+                                    </Card>
+
+                                    {error ? <Text style={styles.error}>{error}</Text> : null}
+
+                                    <Button
+                                        label={busy ? "Publishing…" : "Publish soft pledge"}
+                                        onPress={() => void handlePublish()}
+                                        disabled={busy}
+                                        icon={<IconArrowRight size={15} color={color.paper} />}
+                                        style={styles.ctaBlockFull}
+                                    />
+                                    <Pressable onPress={() => setConfirming(false)} disabled={busy}>
+                                        <Text style={styles.secondary}>← Back</Text>
+                                    </Pressable>
+                                </>
+                            ) : (
+                                <>
                             <Text style={styles.formTitle}>Start a commitment</Text>
                             <Text style={styles.formSub}>
                                 Name yourself, name the venture, set a soft pledge. Jua handles the weekly
@@ -691,7 +802,7 @@ export function InvestorLanding({
                             {error ? <Text style={styles.error}>{error}</Text> : null}
 
                             <Button
-                                label={busy ? "Opening…" : "Open commitment"}
+                                label="Review the public entry"
                                 onPress={() => void handleStart()}
                                 disabled={busy}
                                 icon={<IconArrowRight size={15} color={color.paper} />}
@@ -700,6 +811,8 @@ export function InvestorLanding({
                             <Pressable onPress={() => setMode("pitch")} disabled={busy}>
                                 <Text style={styles.secondary}>← Back</Text>
                             </Pressable>
+                                </>
+                            )}
                         </View>
                     ) : null}
 

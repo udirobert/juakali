@@ -233,6 +233,9 @@ export const postVentureUpdate = mutation({
 
         const body = args.body.trim();
         if (body.length === 0) throw new Error("Write a few words first.");
+        if (args.kpiValue !== undefined && (!Number.isFinite(args.kpiValue) || args.kpiValue < 0)) {
+            throw new Error("Enter zero or a positive number.");
+        }
 
         const owner = await ctx.db
             .query("ventureOwners")
@@ -274,6 +277,7 @@ export const postVentureUpdate = mutation({
                 metric: null,
                 value: args.kpiValue ?? null,
                 evidence: ["self"],
+                initiator: "founder",
                 createdAt: now,
                 publicVisible: true,
             });
@@ -324,6 +328,7 @@ export const postVentureUpdate = mutation({
             metric: null,
             value: args.kpiValue ?? null,
             evidence: ["self", "agent"],
+            initiator: "founder",
             createdAt: now,
             publicVisible: true,
         });
@@ -345,7 +350,7 @@ export const logSelfCheckIn = mutation({
         await assertCanAct(ctx);
         const userId = await getAuthUserId(ctx);
         if (!userId) throw new Error("Sign in first.");
-        if (!Number.isFinite(args.value) || args.value <= 0) throw new Error("Enter a positive number.");
+        if (!Number.isFinite(args.value) || args.value < 0) throw new Error("Enter zero or a positive number.");
 
         const owner = await ctx.db
             .query("ventureOwners")
@@ -376,7 +381,9 @@ export const logSelfCheckIn = mutation({
             value: args.value,
             note: (args.note ?? "Founder self-report").slice(0, 160),
             source: "self",
-            verification: args.verification ?? "self_reported",
+            // A founder's claim of a photo/receipt is a mention, not a
+            // verified rung — the ledger tag below carries the mention.
+            verification: "self_reported",
             appliedItemId,
             createdAt: now,
         });
@@ -392,10 +399,11 @@ export const logSelfCheckIn = mutation({
             metric: venture.kpiLabel,
             value: args.value,
             evidence: args.verification === "photo_evidence"
-                ? ["self", "verified-photo"]
+                ? ["self", "photo-mentioned"]
                 : args.verification === "third_party"
-                  ? ["self", "verified-third-party"]
+                  ? ["self", "receipt-mentioned"]
                   : ["self"],
+            initiator: "founder",
             createdAt: now,
             publicVisible: true,
         });

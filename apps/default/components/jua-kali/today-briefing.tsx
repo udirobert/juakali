@@ -22,6 +22,7 @@ import { AuthRequiredGate } from "@/components/jua-kali/soft-identity";
 import { TodaySkeleton } from "@/components/jua-kali/loaders/today-skeleton";
 import { TodayDayZero } from "@/components/jua-kali/today-day-zero";
 import { SectionLabel } from "@/components/jua-kali/ui";
+import { WorkspaceEntry } from "@/components/jua-kali/workspace-entry";
 import { useUiMotion } from "@/components/jua-kali/hooks/use-ui-motion";
 import { color, font, layout, space, type } from "@/components/jua-kali/theme";
 import { relativeTime } from "@/components/jua-kali/cockpit/format";
@@ -112,6 +113,8 @@ export function TodayBriefing({
                         </Pressable>
                     </View>
                 )}
+
+                <WorkspaceEntry variant="compact" label="Your workspaces" />
 
                 {dayZero ? (
                     <TodayDayZero

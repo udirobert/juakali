@@ -214,19 +214,19 @@ function evidenceTags(run: Doc<"agentRuns">): string[] {
             : run.evidenceSource === "investor_entered"
               ? "investor-entered"
               : null;
-    // Verification rung becomes a visible trust tag on every ledger row.
-    const verificationTag =
-        run.pipeline?.verification === "photo_evidence"
-            ? "verified-photo"
-            : run.pipeline?.verification === "third_party"
-              ? "verified-third-party"
+    // A claimed document is shown as a mention, never as verification.
+    const mentionedTag =
+        run.pipeline?.claimedDoc === "photo" || run.pipeline?.verification === "photo_evidence"
+            ? "photo-mentioned"
+            : run.pipeline?.claimedDoc === "receipt" || run.pipeline?.verification === "third_party"
+              ? "receipt-mentioned"
               : null;
     const tags = run.trigger === "proactive" ? ["proactive", primary] : [primary];
     return Array.from(
         new Set([
             ...tags,
             ...(provenance ? [provenance] : []),
-            ...(verificationTag ? [verificationTag] : []),
+            ...(mentionedTag ? [mentionedTag] : []),
             "agent",
         ])
     );
@@ -404,6 +404,23 @@ export function isLowRiskAutoAction(args: {
     return args.autonomyLevel === "auto_low_risk" && args.trigger === "proactive";
 }
 
+/**
+ * Self-declarations never earn a corroborated rung — a claimed photo/receipt is
+ * carried as `claimedDoc` (display mention only) while `verification` stays
+ * `self_reported`. Single mapping used by every manual ingestion boundary.
+ */
+function claimFields(verification?: "self_reported" | "photo_evidence" | "third_party") {
+    return {
+        verification: "self_reported" as const,
+        claimedDoc:
+            verification === "photo_evidence"
+                ? "photo"
+                : verification === "third_party"
+                  ? "receipt"
+                  : undefined,
+    };
+}
+
 /** Store the immutable evidence record before allowing the KPI step to run. */
 async function insertFounderEvidence(
     ctx: MutationCtx,
@@ -419,6 +436,7 @@ async function insertFounderEvidence(
         submittedByUserId?: Id<"users"> | null;
     }
 ): Promise<Id<"founderEvidence">> {
+    const claimed = claimFields(args.verification);
     return await ctx.db.insert("founderEvidence", {
         runId: args.runId,
         ventureId: args.ventureId,
@@ -427,7 +445,8 @@ async function insertFounderEvidence(
         value: args.value,
         note: args.note,
         source: args.source,
-        verification: args.verification ?? "self_reported",
+        verification: claimed.verification,
+        claimedDoc: claimed.claimedDoc,
         submittedByUserId: args.submittedByUserId ?? null,
         createdAt: Date.now(),
     });
@@ -454,7 +473,7 @@ export async function resumeWaitingRunWithEvidence(
         submittedByUserId?: Id<"users"> | null;
     }
 ): Promise<Id<"agentRuns"> | null> {
-    if (args.value == null || !Number.isFinite(args.value) || args.value <= 0) return null;
+    if (args.value == null || !Number.isFinite(args.value) || args.value < 0) return null;
 
     const runs = await ctx.db
         .query("agentRuns")
@@ -504,7 +523,11 @@ export async function resumeWaitingRunWithEvidence(
         valueOverride: args.value,
         noteBody: note,
         evidenceSource: "founder_update",
-        pipeline: { ...waiting.pipeline, evidenceId, verification: args.verification ?? "self_reported" },
+        pipeline: {
+            ...waiting.pipeline,
+            evidenceId,
+            ...claimFields(args.verification),
+        },
         updatedAt: now,
     });
     // Evidence moves the run into the "decisions" bucket for the second approval.
@@ -575,7 +598,7 @@ export async function createAgentRun(
         toAddress,
         source: args.source,
         evidenceSource: args.evidenceSource ?? null,
-        pipeline: args.verification ? { verification: args.verification } : undefined,
+        pipeline: args.verification ? claimFields(args.verification) : undefined,
         steps: initialSteps(),
         actionPlan: undefined,
         correlationId,
@@ -913,7 +936,9 @@ export const stepRecordKpi = internalMutation({
                 source: run.source,
                 evidenceSource: run.evidenceSource ?? null,
                 evidenceId: run.pipeline?.evidenceId ?? null,
-                verification: run.pipeline?.verification ?? "self_reported",
+                // Manual-ingestion evidence is self-declared — even runs whose
+                // pipeline predates claimedDoc never mint a corroborated rung.
+                verification: "self_reported",
                 appliedItemId,
                 createdAt: now,
             });
@@ -1762,8 +1787,8 @@ export const submitFounderEvidence = mutation({
         if (run.status !== "waiting_for_response") {
             throw new Error("This run is not waiting for founder evidence");
         }
-        if (!Number.isFinite(args.value) || args.value <= 0) {
-            throw new Error("Evidence value must be a positive number");
+        if (!Number.isFinite(args.value) || args.value < 0) {
+            throw new Error("Evidence value must be zero or a positive number");
         }
 
         const investor = await ctx.db.get(run.investorId);
@@ -1797,7 +1822,9 @@ export const submitFounderEvidence = mutation({
             evidenceSource: "investor_entered" as const,
             updatedAt: now,
         };
-        const verification = args.verification ?? "self_reported";
+        // Investor-entered evidence is a self-declaration: rung stays
+        // self_reported; a claimed document rides along as a mention only.
+        const claimed = claimFields(args.verification);
 
         // Two-step consent: evidence is recorded on the run but NOTHING is
         // logged or published until the investor approves the exact KPI and
@@ -1806,7 +1833,7 @@ export const submitFounderEvidence = mutation({
             ...evidencePatch,
             status: "awaiting_publication",
             autoStarted: false,
-            pipeline: { ...run.pipeline, evidenceId, verification },
+            pipeline: { ...run.pipeline, evidenceId, ...claimed },
         });
         // Evidence moves the run into the decisions bucket for the second approval.
         await syncInvestorBriefing(ctx, run.investorId);

@@ -5,22 +5,27 @@ From the level-up plan (Nov 2026). Items marked **[manual]** need an account own
 
 ## Phase 2 progress (founder surface) — code-side, shipped 2026-11-18
 
-- [x] **Evidence verification ladder** — `kpiCheckIns.verification`,
+- [x] **Evidence honesty, not a ladder** — `kpiCheckIns.verification`,
       `founderEvidence.verification`, and `agentRuns.pipeline.verification`
-      carry the rung: `self_reported` → `photo_evidence` → `third_party`.
-      Founder mutations (`postVentureUpdate`, `logSelfCheckIn`) and
-      `submitFounderEvidence` accept it; the run pipeline preserves it.
-- [x] **Trust gradient on the ledger** — `evidenceTags` promotes the rung to
-      visible tags (`verified-photo`, `verified-third-party`); the ledger UI
-      renders them as a distinct chip treatment with human labels.
+      always persist `self_reported`; claimed documents ride a separate
+      `claimedDoc` field (`photo` / `receipt`). Founder mutations accept the
+      caller's claim but the backend never stores a verified rung.
+- [x] **Trust gradient on the ledger** — `evidenceTags` surfaces the claim
+      honestly (`photo-mentioned`, `receipt-mentioned`,
+      `statement-text-matched` for payment artifacts that line up); no tag
+      claims independent verification. The ledger UI renders them as a
+      distinct chip treatment with human labels.
 - [x] **Founder check-in UI** — the venture cockpit check-in shows an
       evidence-ladder picker when a KPI number is entered (my own count /
       I have a photo / statement or receipt), wired to both mutations.
 - [x] **Investor portfolio roll-up** — `api.invest.portfolio` (authenticated,
-      fail-closed): total deployed, per-deal cap ratio, KPI staleness, pending
+      fail-closed): soft pledge total, per-deal status, KPI staleness, pending
       decisions/publication. `PortfolioStrip` renders on Home when the
-      investor holds >1 deal: tappable per-deal chips (quiet / proposal
-      waiting / % of cap) with stale deals flagged.
+      investor holds >1 deal: tappable per-deal chips (up to date / proposal
+      waiting) with stale deals flagged; cap progress shows an estimate only
+      for KES pledges with sufficient post-pledge reported KES revenue —
+      a reported zero is not missing data, and recorded repayments print
+      separately as recorded, not confirmed.
 - [x] **Impact stat on the public ledger** — jobs-created from
       `api.invest.impactTotals` shows on the unfiltered ledger hero.
 - [x] **Voice-first KPI capture** — `POST /voice/kpi-checkin` (bearer-gated
@@ -34,7 +39,9 @@ From the level-up plan (Nov 2026). Items marked **[manual]** need an account own
       offline sends save locally with "Saved on this phone — will send when
       the network returns"; network failures re-queue, validation failures
       surface for review with retry; queue card shows per-item state.
-- [ ] M-PESA statement parse → `third_party` rung (needs a parser + provider).
+- [ ] M-PESA statement parser — today a pasted statement can only
+      `statement-text-match` a **KES revenue** check-in; a real parser +
+      provider could lift it further (still evidence, not verification).
 - [ ] Android EAS build (needs Expo account + credentials).
 - [ ] Native (expo-av) recording for voice KPI on Android — the web
       MediaRecorder path works today; native falls back to keyboard.
@@ -44,8 +51,9 @@ From the level-up plan (Nov 2026). Items marked **[manual]** need an account own
 ## Done in code (this phase)
 
 - [x] **CI** — `.github/workflows/ci.yml`: typecheck + lint + test + lockfile
-      verify on every PR, with Convex codegen. Requires one repo secret:
-      `CONVEX_PREVIEW_DEPLOYMENT` (a dev deployment id, e.g. `dev:xxx-yyy`).
+      verify on every PR. Convex codegen runs in anonymous agent mode
+      (`npx convex init` + `codegen --typecheck=disable`) — no deployment or
+      repo secret needed.
 - [x] **Dead-letter queue for agent runs** — new `dead_letter` run status;
       `sweepDeadLetters` cron (every 15 min) parks runs that failed 3+ retries;
       `retryFailedRun` accepts dead-lettered runs and resets the counter;
@@ -59,8 +67,9 @@ From the level-up plan (Nov 2026). Items marked **[manual]** need an account own
 
 ## Manual steps (owner required)
 
-- [ ] **[manual] CI secret** — add `CONVEX_PREVIEW_DEPLOYMENT` to GitHub repo
-      secrets (use a *dev* deployment, not prod).
+- [x] ~~**[manual] CI secret**~~ — no longer needed: CI codegen runs
+      anonymously (`CONVEX_AGENT_MODE=anonymous`), so no
+      `CONVEX_PREVIEW_DEPLOYMENT` secret is required.
 - [ ] **[manual] Staging deployment** — create it:
       `cd packages/backend && npx convex deployment create --name staging`,
       then wire a Netlify branch deploy per `.env.example`.
@@ -85,6 +94,6 @@ From the level-up plan (Nov 2026). Items marked **[manual]** need an account own
 
 ## Verification
 
-- Backend: `cd packages/backend && npx tsc --noEmit && npx vitest run` (53 tests).
+- Backend: `cd packages/backend && npx tsc --noEmit && npx vitest run`.
 - Deployed check: `npx convex deploy` (or `codegen`) succeeds against the target
   deployment; cron list shows `dead-letter failed agent runs`.

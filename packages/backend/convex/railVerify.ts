@@ -1,16 +1,16 @@
 /**
- * Rail-backed evidence verification — the bridge between PaymentRail adapters
- * and the evidence ladder.
+ * Rail-backed statement parsing — the bridge between PaymentRail adapters
+ * and self-reported KPI check-ins.
  *
- * The founder submits a statement artifact (M-PESA confirmation SMS, bank
- * statement line); the matching rail adapter parses it into structured
- * third-party evidence. On success the KPI check-in is logged with the
- * `third_party` rung and the rail's label in the evidence tags — the public
- * ledger then shows "3rd-party verified" backed by a real reference.
+ * The founder pastes a statement artifact (M-PESA confirmation SMS, bank
+ * statement line); the matching rail adapter parses it deterministically.
+ * This is text matching against the founder's own submission — it is NOT an
+ * independent third-party review, so the check-in stays at the
+ * `self_reported` rung and the ledger tag says the statement text matched.
  *
  * Fail-soft: an unparseable artifact returns { ok: false } with a human
  * message; nothing is logged. No LLM in this path — deterministic parsing
- * only, so the trust rung is auditable.
+ * only.
  */
 import { mutation } from "./_generated/server";
 import { v } from "convex/values";
@@ -79,6 +79,14 @@ export const verifyWithRail = mutation({
                 message: `${rail.label} does not operate in ${currency}.`,
             };
         }
+        // A matched payment artifact is money — it can only ever corroborate a
+        // KES revenue KPI, never a count of meetings or jobs.
+        if (currency !== "KES" || venture.kpiUnit !== "revenue_kes") {
+            return {
+                ok: false as const,
+                message: `${rail.label} text proves a payment amount, so it can only back a KES revenue check-in — this venture tracks ${venture.kpiLabel.toLowerCase()}. Log that number as a self-report instead.`,
+            };
+        }
 
         const evidence = await rail.verifyThirdParty({
             artifact: args.artifact,
@@ -88,7 +96,7 @@ export const verifyWithRail = mutation({
         if (!evidence) {
             return {
                 ok: false as const,
-                message: `Could not verify that ${rail.label} text against ${args.value.toLocaleString()} ${currency}. Check the reference and amount.`,
+                message: `Could not match that ${rail.label} text against ${args.value.toLocaleString()} ${currency}. Check the reference and amount.`,
             };
         }
 
@@ -96,7 +104,7 @@ export const verifyWithRail = mutation({
         await ctx.db.insert("kpiCheckIns", {
             ventureId: venture._id,
             commitmentId: null,
-            periodLabel: `Verified · ${new Date(now).toISOString().slice(0, 10)}`,
+            periodLabel: `Statement matched · ${new Date(now).toISOString().slice(0, 10)}`,
             metric:
                 venture.kpiUnit === "revenue_kes"
                     ? "revenue_kes"
@@ -104,9 +112,11 @@ export const verifyWithRail = mutation({
                       ? "jobs_completed"
                       : "meetings_booked",
             value: args.value,
-            note: (args.note ?? `Verified via ${rail.label} ref ${evidence.reference}`).slice(0, 160),
+            note: (args.note ?? `${rail.label} statement text matched ref ${evidence.reference}`).slice(0, 160),
             source: "self",
-            verification: "third_party",
+            // Parsing the founder's supplied text is not independent review —
+            // the rung stays self-reported; the match is a ledger tag.
+            verification: "self_reported",
             createdAt: now,
         });
 
@@ -116,12 +126,12 @@ export const verifyWithRail = mutation({
             commitmentId: null,
             ventureName: venture.name,
             ventureSlug: venture.publicSlug,
-            summary: `${venture.name}: ${venture.kpiLabel.toLowerCase()} = ${args.value} — verified via ${rail.label} (ref ${evidence.reference})`,
+            summary: `${venture.name}: ${venture.kpiLabel.toLowerCase()} = ${args.value} — ${rail.label} statement text matched (ref ${evidence.reference})`,
             amountKes: null,
             currency,
             metric: venture.kpiLabel,
             value: args.value,
-            evidence: ["self", "verified-third-party", rail.id],
+            evidence: ["self", "statement-text-matched", rail.id],
             createdAt: now,
             publicVisible: true,
         });
@@ -131,7 +141,7 @@ export const verifyWithRail = mutation({
 
         return {
             ok: true as const,
-            message: `Verified — ${rail.label} ref ${evidence.reference} matches ${args.value.toLocaleString()} ${currency}.`,
+            message: `Matched — ${rail.label} statement text at ref ${evidence.reference} agrees with ${args.value.toLocaleString()} ${currency}. This is a text match, not an independent review.`,
             reference: evidence.reference,
             railLabel: rail.label,
         };

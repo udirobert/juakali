@@ -6,6 +6,7 @@ import { useQuery } from "convex/react";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { ledgerNetwork, publicLedgerSummary } from "@/convex/publicCopy";
 import { LivingSun } from "@/components/jua-kali/living-sun";
 import { DetailSkeleton } from "@/components/jua-kali/loaders/detail-skeleton";
 import { OnchainSeal } from "@/components/jua-kali/onchain-seal";
@@ -53,7 +54,10 @@ export default function ProofEventScreen() {
     return (
         <ScrollView
             style={{ flex: 1, backgroundColor: color.stone }}
-            contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 16 }]}
+            contentContainerStyle={[
+                styles.scroll,
+                { paddingTop: Platform.OS === "web" ? Math.max(insets.top + 16, 72) : insets.top + 16 },
+            ]}
         >
             <Head>
                 <title>{`${event.ventureName ?? "Venture"} — JuaKali public proof`}</title>
@@ -69,7 +73,7 @@ export default function ProofEventScreen() {
                     <Text style={styles.title}>{event.ventureName ?? "Venture"}</Text>
                 </View>
             </View>
-            <Text style={styles.body}>{event.summary}</Text>
+            <Text style={styles.body}>{publicLedgerSummary(event)}</Text>
             <Text style={styles.meta}>
                 {event.publicVisible ? "Public" : "Private"} · Initiator:{" "}
                 {event.initiator ?? "unknown"} · {event.disputeState ?? "none"}
@@ -84,6 +88,7 @@ export default function ProofEventScreen() {
                     ["visibility", event.publicVisible ? "public" : "private"],
                     ["disputeState", event.disputeState ?? "none"],
                     ["correlationId", event.correlationId ?? "—"],
+                    ["recorded summary", event.summary],
                     ...(event.txid ? ([["txid", event.txid]] as [string, string][]) : []),
                     ...(event.onchainRef
                         ? ([["settlement", event.onchainRef]] as [string, string][])
@@ -94,28 +99,34 @@ export default function ProofEventScreen() {
             {event.txid ? (
                 <View style={styles.evidenceSlab}>
                     <View style={styles.evidenceHead}>
-                        <Text style={styles.evidenceEyebrow}>Settled on Bitcoin Cash</Text>
+                        <Text style={styles.evidenceEyebrow}>Recorded transaction</Text>
                         <Text style={styles.evidenceNet}>
-                            {event.onchainRef?.includes("/chipnet/") ? "chipnet" : "mainnet"}
+                            {ledgerNetwork(event) ?? "Network not recorded"}
                         </Text>
                     </View>
-                    <OnchainSeal
-                        txid={event.txid}
-                        network={event.onchainRef?.includes("/chipnet/") ? "chipnet" : "mainnet"}
-                        onchainRef={event.onchainRef}
-                    />
+                    {ledgerNetwork(event) ? (
+                        <OnchainSeal
+                            txid={event.txid}
+                            network={ledgerNetwork(event)!}
+                            onchainRef={event.onchainRef}
+                        />
+                    ) : null}
                     <Text selectable style={styles.txid}>
                         {event.txid}
                     </Text>
-                    <Pressable
-                        onPress={() =>
-                            void Linking.openURL(event.onchainRef ?? explorerTxUrl(event.txid!))
-                        }
-                        hitSlop={6}
-                        accessibilityRole="link"
-                    >
-                        <Text style={styles.link}>Verify independently on the explorer →</Text>
-                    </Pressable>
+                    {ledgerNetwork(event) ? (
+                        <Pressable
+                            onPress={() =>
+                                void Linking.openURL(
+                                    event.onchainRef ?? explorerTxUrl(event.txid!, ledgerNetwork(event)!)
+                                )
+                            }
+                            hitSlop={6}
+                            accessibilityRole="link"
+                        >
+                            <Text style={styles.link}>Verify independently on the explorer →</Text>
+                        </Pressable>
+                    ) : null}
                     <Text style={styles.evidenceNote}>
                         This txid is the fingerprint — anyone can confirm the transfer on-chain
                         without trusting this ledger.
@@ -132,7 +143,7 @@ export default function ProofEventScreen() {
                             {chainLabel(link)}
                             {link.causedBy ? " · caused by previous" : " · related activity"}
                         </Text>
-                        <Text style={styles.body}>{link.summary}</Text>
+                        <Text style={styles.body}>{publicLedgerSummary(link)}</Text>
                         <Text style={styles.meta}>
                             {link.initiator ?? "—"} ·{" "}
                             {link.publicVisible ? "public" : "private"} ·{" "}

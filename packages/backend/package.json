@@ -6,7 +6,8 @@
         "dev": "convex dev --env-file ../../.env",
         "deploy": "convex deploy --env-file ../../.env",
         "test": "vitest run",
-        "lint": "eslint ."
+        "lint": "eslint .",
+        "typecheck": "tsc --noEmit"
     },
     "dependencies": {
         "@auth/core": "^0.37.0",

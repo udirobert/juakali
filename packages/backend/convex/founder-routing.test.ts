@@ -298,4 +298,38 @@ describe("evidence provenance", () => {
         expect(checkIns).toHaveLength(1);
         expect(checkIns[0]!.evidenceSource).toBe("investor_entered");
     });
+
+    test("a founder receipt claim stays self-reported on the run and the KPI", async () => {
+        const t = initTest();
+        const owner = await createUser(t, "owner@test.com");
+        const alice = await createUser(t, "alice@test.com");
+        const ventureId = await createVenture(t, owner.userId, "receipt");
+        const commitmentId = await addCommitment(t, ventureId, alice.investorId);
+
+        // No waiting run — postVentureUpdate creates a fresh run. The founder
+        // says a receipt exists; that is a claim, not a verification rung.
+        const result = await owner.asUser.mutation(api.venture.postVentureUpdate, {
+            body: "Receipt from the supplier in hand.",
+            tag: "win",
+            kpiValue: 12,
+            commitmentId,
+            verification: "third_party",
+        });
+        await drain(t);
+
+        expect(result.runId).not.toBeNull();
+        const run = await t.run(async (ctx) => ctx.db.get(result.runId!));
+        expect(run?.status).toBe("completed");
+        expect(run?.pipeline?.verification).toBe("self_reported");
+        expect(run?.pipeline?.claimedDoc).toBe("receipt");
+
+        const checkIns = await t.run(async (ctx) =>
+            ctx.db
+                .query("kpiCheckIns")
+                .withIndex("by_ventureId", (q) => q.eq("ventureId", ventureId))
+                .collect()
+        );
+        expect(checkIns).toHaveLength(1);
+        expect(checkIns[0]!.verification).toBe("self_reported");
+    });
 });

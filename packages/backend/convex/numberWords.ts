@@ -11,6 +11,7 @@ export type LocaleTable = Record<string, number>;
 
 export const NUMBER_WORDS: Record<string, LocaleTable> = {
     en: {
+        zero: 0,
         one: 1, two: 2, three: 3, four: 4, five: 5,
         six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
         eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15,
@@ -19,6 +20,7 @@ export const NUMBER_WORDS: Record<string, LocaleTable> = {
         eighty: 80, ninety: 90, hundred: 100,
     },
     sw: {
+        sifuri: 0,
         moja: 1, mbili: 2, tatu: 3, nne: 4, tano: 5,
         sita: 6, saba: 7, nane: 8, tisa: 9, kumi: 10,
         kuminamoja: 11, kuminambili: 12, ishirini: 20,

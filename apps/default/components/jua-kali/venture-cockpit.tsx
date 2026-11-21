@@ -30,11 +30,11 @@ type UpdateTag = "situation" | "problem" | "opportunity" | "win";
 type CheckInPhase = "prompt" | "capture" | "followup" | "preview" | "form";
 type Verification = "self_reported" | "photo_evidence" | "third_party";
 
-/** Evidence ladder — how strongly the number is corroborated. */
+/** What the founder can honestly claim — mentions, not verification. */
 const VERIFICATIONS: Array<{ id: Verification; label: string; hint: string }> = [
     { id: "self_reported", label: "My own count", hint: "self-reported" },
-    { id: "photo_evidence", label: "I have a photo", hint: "photo evidence" },
-    { id: "third_party", label: "Statement / receipt", hint: "3rd-party verified" },
+    { id: "photo_evidence", label: "I have a photo", hint: "photo mentioned" },
+    { id: "third_party", label: "Statement / receipt", hint: "receipt mentioned" },
 ];
 
 const TAGS: Array<{ id: UpdateTag; label: string }> = [
@@ -127,7 +127,11 @@ export function VentureCockpit({ onOpenLedger }: { onOpenLedger?: () => void }) 
             setStatus("Write a few words first.");
             return;
         }
-        const kpiValue = kpiText.trim() ? Number(kpiText) : undefined;
+        const kpiValue = kpiText.trim() === "" ? undefined : Number(kpiText);
+        if (kpiValue !== undefined && (!Number.isFinite(kpiValue) || kpiValue < 0)) {
+            setStatus("Enter zero or a positive number.");
+            return;
+        }
         setSending(true);
         setStatus(null);
         try {
@@ -141,7 +145,7 @@ export function VentureCockpit({ onOpenLedger }: { onOpenLedger?: () => void }) 
                     kind: "venture_update",
                     body: text,
                     tag,
-                    kpiValue: Number.isFinite(kpiValue) && kpiValue && kpiValue > 0 ? kpiValue : undefined,
+                    kpiValue,
                     verification,
                     commitmentId: selectedCommitmentId ?? undefined,
                 });
@@ -155,7 +159,7 @@ export function VentureCockpit({ onOpenLedger }: { onOpenLedger?: () => void }) 
             const result = await postUpdate({
                 body: text,
                 tag,
-                kpiValue: Number.isFinite(kpiValue) && kpiValue && kpiValue > 0 ? kpiValue : undefined,
+                kpiValue,
                 verification,
                 commitmentId: selectedCommitmentId ?? undefined,
             });
@@ -172,9 +176,13 @@ export function VentureCockpit({ onOpenLedger }: { onOpenLedger?: () => void }) 
     }
 
     async function handleCheckIn() {
+        if (kpiText.trim() === "") {
+            setStatus("Enter your number for this week — zero counts.");
+            return;
+        }
         const value = Number(kpiText);
-        if (!Number.isFinite(value) || value <= 0) {
-            setStatus("Enter your number for this week.");
+        if (!Number.isFinite(value) || value < 0) {
+            setStatus("Enter zero or a positive number.");
             return;
         }
         setSending(true);
@@ -430,7 +438,7 @@ export function VentureCockpit({ onOpenLedger }: { onOpenLedger?: () => void }) 
                     {phase === "followup" ? (
                         <>
                             <Text style={styles.body}>
-                                One follow-up: what should mentors watch for next week?
+                                What would help next week? (optional)
                             </Text>
                             <TextInput
                                 value={followUp}

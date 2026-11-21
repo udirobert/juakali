@@ -11,7 +11,8 @@
     "web": "expo start --web",
     "dev": "expo start",
     "export:web": "expo export -p web && node ./scripts/inject-web-meta.mjs",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@bch-wc2/interfaces": "^0.0.16",
