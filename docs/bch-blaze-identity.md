@@ -19,10 +19,12 @@ third party can verify both:
 
 1. **BCH → Nostr (on-chain commitment).** The connected wallet signs and
    broadcasts a transaction with an `OP_RETURN` output containing
-   `juakali:identity:<npub>` — `buildIdentitySpend` in `lib/bch/tx.ts`.
-   Signing power over the BCH key is proven by the transaction existing;
-   the commitment is timestamped on-chain. (Also satisfies the stretch goal
-   "BCH transactions used as identity commitments.")
+   `juakali:identity:<npub>` — `buildIdentitySpend` in `lib/bch/tx.ts`. The
+   bound BCH identity is the **funding wallet's own address** (a verifier
+   checks the tx inputs), so binding a venture means connecting *its*
+   wallet. Signing power over the BCH key is proven by the transaction
+   existing; the commitment is timestamped on-chain. (Also satisfies the
+   stretch goal "BCH transactions used as identity commitments.")
 2. **Nostr → BCH (signed attestation).** The venture's Nostr key signs a
    kind-1 event (tags: `bch` address, `bch-network`, `bch-binding-tx`,
    `t: juakali-identity`) naming the BCH address and the binding txid,

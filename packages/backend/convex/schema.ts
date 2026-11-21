@@ -348,6 +348,10 @@ export default defineSchema({
             v.union(
                 v.object({
                     bchSignature: v.string(),
+                    /** The wallet address that paid the binding tx — what the
+                     * Nostr event claims. Usually == bchAddress when the
+                     * venture's own wallet binds. */
+                    address: v.optional(v.string()),
                     nostrEventId: v.string(),
                     boundAt: v.number(),
                 }),

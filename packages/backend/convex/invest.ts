@@ -422,7 +422,12 @@ export const getDeal = query({
             bchAddress: v.union(v.string(), v.null()),
             nostrPubkey: v.union(v.string(), v.null()),
             identityProof: v.union(
-                v.object({ bchSignature: v.string(), nostrEventId: v.string(), boundAt: v.number() }),
+                v.object({
+                    bchSignature: v.string(),
+                    address: v.optional(v.string()),
+                    nostrEventId: v.string(),
+                    boundAt: v.number(),
+                }),
                 v.null()
             ),
             settlementAsset: v.union(v.string(), v.null()),
@@ -510,6 +515,7 @@ export const bindVentureIdentity = mutation({
         nostrPubkey: v.string(),
         bindingTxid: v.string(),
         nostrEventId: v.string(),
+        boundAddress: v.string(),
     },
     returns: v.object({ ventureId: v.id("ventures"), message: v.string() }),
     handler: async (ctx, args) => {
@@ -535,6 +541,7 @@ export const bindVentureIdentity = mutation({
                 // BCH-side proof (stronger than a bare message signature:
                 // timestamped on-chain and third-party readable).
                 bchSignature: args.bindingTxid,
+                address: args.boundAddress,
                 nostrEventId: args.nostrEventId,
                 boundAt: Date.now(),
             },

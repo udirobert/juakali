@@ -146,13 +146,17 @@ function FundOnBchCardReady({ commitmentId }: { commitmentId: Id<"commitments"> 
     }
 
     async function handleBindIdentity() {
-        if (!deal || !ventureAddress) return;
+        if (!deal) return;
         setIdBusy(true);
         setError(null);
         try {
-            // Two-way proof: the wallet signs an OP_RETURN tx committing the
-            // npub on-chain; the venture's own Nostr key signs an event naming
-            // the address + txid. Third parties verify both independently.
+            // Two-way proof: the CONNECTED wallet signs an OP_RETURN tx
+            // committing the npub on-chain — so the bound address must be the
+            // wallet's own (an independent verifier checks that the funding
+            // address matches the claimed identity). The venture's Nostr key
+            // then signs an event naming that address + txid.
+            const boundAddress = wallet.scan?.receiveAddress;
+            if (!boundAddress) throw new Error("Wallet scan has no receive address yet");
             const key = ventureNostrKey(deal.ventureId);
             const txid = await wallet.bindIdentity({
                 payload: bindingPayload(key.npub),
@@ -160,7 +164,7 @@ function FundOnBchCardReady({ commitmentId }: { commitmentId: Id<"commitments"> 
             });
             const { eventId } = await publishBindingEvent({
                 secretKey: key.secretKey,
-                bchAddress: ventureAddress,
+                bchAddress: boundAddress,
                 bindingTxid: txid,
                 network,
             });
@@ -169,6 +173,7 @@ function FundOnBchCardReady({ commitmentId }: { commitmentId: Id<"commitments"> 
                 nostrPubkey: key.pubkey,
                 bindingTxid: txid,
                 nostrEventId: eventId,
+                boundAddress,
             });
         } catch (e) {
             setError(e instanceof Error ? e.message : "Identity binding failed");
@@ -385,7 +390,7 @@ function FundOnBchCardReady({ commitmentId }: { commitmentId: Id<"commitments"> 
                                         npub: {deal.nostrPubkey?.slice(0, 20)}…
                                     </Text>
                                     <Text selectable style={styles.metaMono}>
-                                        bch: {shortAddress(ventureAddress!)}
+                                        bch: {shortAddress(deal.identityProof.address ?? ventureAddress!)}
                                     </Text>
                                     <View style={styles.rowLinks}>
                                         <Pressable
