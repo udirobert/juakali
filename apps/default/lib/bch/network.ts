@@ -31,8 +31,66 @@ export function networkOfPrefix(prefix: string): BchNetwork | null {
     return null;
 }
 
-export function electrum() {
-    return getNetworkProvider(BCH_NETWORK === "mainnet" ? Network.MAINNET : Network.TESTNET);
+/**
+ * mainnet-js pins ONE default Fulcrum per network — a single point of failure
+ * on demo day. Probe a small candidate list with fast wss handshakes and hand
+ * the first live server to the provider; fall back to the library default if
+ * every probe fails (the default may still recover on retry).
+ */
+const MAINNET_CANDIDATES = [
+    "wss://blackie.c3-soft.com:50004",
+    "wss://electrum.imaginary.cash:50004",
+    "wss://bch.imaginary.cash:50004",
+    "wss://electroncash.de:50004",
+    "wss://fulcrum.jettscythe.xyz:50004",
+];
+
+let serverPromise: Promise<string | undefined> | null = null;
+
+function probeServer(url: string, timeoutMs = 4000): Promise<string | undefined> {
+    return new Promise((resolve) => {
+        let ws: WebSocket | null = null;
+        const timer = setTimeout(() => {
+            ws?.close();
+            resolve(undefined);
+        }, timeoutMs);
+        try {
+            ws = new WebSocket(url);
+            ws.onopen = () => {
+                ws?.send(JSON.stringify({ id: 1, method: "server.version", params: ["probe", "1.4"] }));
+            };
+            ws.onmessage = () => {
+                clearTimeout(timer);
+                ws?.close();
+                resolve(url);
+            };
+            ws.onerror = () => {
+                clearTimeout(timer);
+                resolve(undefined);
+            };
+        } catch {
+            clearTimeout(timer);
+            resolve(undefined);
+        }
+    });
+}
+
+function pickServer(): Promise<string | undefined> {
+    if (BCH_NETWORK !== "mainnet" || typeof WebSocket === "undefined") {
+        return Promise.resolve(undefined);
+    }
+    serverPromise ??= Promise.all(MAINNET_CANDIDATES.map((s) => probeServer(s))).then(
+        (results) => results.find((r): r is string => Boolean(r))
+    );
+    return serverPromise;
+}
+
+export async function electrum() {
+    const server = await pickServer();
+    return getNetworkProvider(
+        BCH_NETWORK === "mainnet" ? Network.MAINNET : Network.TESTNET,
+        server ? [server] : undefined
+    );
 }
 
 /**

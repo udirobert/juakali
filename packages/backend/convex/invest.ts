@@ -2013,6 +2013,15 @@ export const recordPledgeFunding = mutation({
         if (!commitment) throw new Error("Commitment not found");
         if (!/^[0-9a-f]{64}$/i.test(args.txid)) throw new Error("txid must be a 64-hex digest");
         if (args.amount <= 0) throw new Error("amount must be positive");
+        // Idempotent: a retried index of the same broadcast is a no-op, and a
+        // different txid on an already-funded commitment is a conflict, not a
+        // silent overwrite of the on-chain record.
+        if (commitment.pledgeTxid) {
+            if (commitment.pledgeTxid === args.txid) {
+                return { commitmentId: args.commitmentId, message: "Funding already recorded." };
+            }
+            throw new Error("Commitment already has a funding tx on record");
+        }
 
         const venture = await ctx.db.get(commitment.ventureId);
         const investor = await ctx.db.get(investorId);

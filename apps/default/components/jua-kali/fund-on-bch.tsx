@@ -12,7 +12,7 @@ import { SettlementRail, settlementStage } from "@/components/jua-kali/settlemen
 import { Button, Card, Input } from "@/components/jua-kali/ui";
 import { color, font, radius, type as typeStyle } from "@/components/jua-kali/theme";
 import { explorerAddressUrl, explorerTxUrl, BCH_PLEDGE_TOKEN_CATEGORY, BCH_PLEDGE_TOKEN_AMOUNT } from "@/lib/bch/network";
-import { shortAddress } from "@/lib/bch/address";
+import { isValidCashAddress, shortAddress } from "@/lib/bch/address";
 import { ensureBchCrypto } from "@/lib/bch/libauth-crypto-shim";
 import { bindingPayload, publishBindingEvent, ventureNostrKey } from "@/lib/nostr/identity";
 
@@ -63,6 +63,9 @@ function FundOnBchCardReady({ commitmentId }: { commitmentId: Id<"commitments"> 
     const [bindBusy, setBindBusy] = useState(false);
     const [idBusy, setIdBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // A broadcast tx whose Convex index failed. Retry must re-index, never
+    // re-sign — a second sign could double-spend into the venture address.
+    const [broadcastTxid, setBroadcastTxid] = useState<string | null>(null);
 
     if (!deal) return null;
     // Native runtimes lack WebAssembly — libauth crypto (and therefore
@@ -102,19 +105,22 @@ function FundOnBchCardReady({ commitmentId }: { commitmentId: Id<"commitments"> 
     async function handleFund() {
         if (!deal || !ventureAddress) return;
         const sats = BigInt(amountText.trim() || "0");
-        if (sats <= 0n) {
+        if (sats <= 0n && !broadcastTxid) {
             setError("Enter an amount in satoshis.");
             return;
         }
         setBusy(true);
         setError(null);
         try {
-            const txid = await wallet.fundPledge({
-                toAddress: ventureAddress,
-                satoshis: sats,
-                userPrompt: `Fund ${deal.ventureName} pledge — ${sats} sats`,
-                token: pledgeToken ?? undefined,
-            });
+            const txid =
+                broadcastTxid ??
+                (await wallet.fundPledge({
+                    toAddress: ventureAddress,
+                    satoshis: sats,
+                    userPrompt: `Fund ${deal.ventureName} pledge — ${sats} sats`,
+                    token: pledgeToken ?? undefined,
+                }));
+            setBroadcastTxid(txid);
             await recordFunding({
                 commitmentId,
                 txid,
@@ -124,8 +130,15 @@ function FundOnBchCardReady({ commitmentId }: { commitmentId: Id<"commitments"> 
                 amount: Number(sats),
                 onchainRef: explorerTxUrl(txid, network),
             });
+            setBroadcastTxid(null);
         } catch (e) {
-            setError(e instanceof Error ? e.message : "Funding failed");
+            setError(
+                broadcastTxid
+                    ? `Tx broadcast (${broadcastTxid.slice(0, 12)}…) but indexing failed — retry records only`
+                    : e instanceof Error
+                      ? e.message
+                      : "Funding failed"
+            );
         } finally {
             setBusy(false);
         }
@@ -134,6 +147,10 @@ function FundOnBchCardReady({ commitmentId }: { commitmentId: Id<"commitments"> 
     async function handleBind() {
         const addr = addressText.trim();
         if (!deal || !addr) return;
+        if (!isValidCashAddress(addr, network)) {
+            setError(`Not a valid ${network === "mainnet" ? "bitcoincash:" : "bchtest:"} address.`);
+            return;
+        }
         setBindBusy(true);
         setError(null);
         try {

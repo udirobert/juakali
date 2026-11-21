@@ -65,7 +65,7 @@ export function useBchWallet() {
         try {
             // Session restore skips connect() — crypto may still be cold here.
             await ensureBchCrypto();
-            const provider = electrum();
+            const provider = await electrum();
             const utxos: FundedUtxo[] = [];
             let receiveIndex = 0;
             let receiveAddress: string | null = null;
@@ -196,7 +196,7 @@ export function useBchWallet() {
             if (response.error) throw new Error(response.error);
             if (!response.signedTransaction) throw new Error("Wallet returned no signed transaction");
 
-            return await electrum().sendRawTransaction(response.signedTransaction);
+            return await (await electrum()).sendRawTransaction(response.signedTransaction);
         },
         [wc.manager, scan]
     );
