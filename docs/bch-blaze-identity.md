@@ -67,3 +67,17 @@ follows the venture's npub across applications (stretch goal).
 - [x] Relay publish + independent fetch/verify helpers
 - [ ] KPI→Nostr attestation publishing (stretch, wired field exists)
 - [ ] Key rotation/recovery (stretch — explicitly rejected on rebind today)
+
+## Live proof (chipnet, 2026-11-21)
+
+Binding run end-to-end through WizardConnect → Cashonize sign → broadcast:
+
+| Proof | Value | Verify |
+|---|---|---|
+| Venture npub | `npub17yk5…` (`f12d4640…301d`) | relays |
+| Binding txid | `61dfba79019d82814b9a808a8cb8c63fce631541b8f2a59238888411c1dd0486` | `blockexplorer.cash/chipnet/tx/61dfba79…` — OP_RETURN `juakali:identity:npub17yk5…` |
+| Nostr event | `ff23e872e9fcbce517bc237051226dff305b85f1c5d949c6b330d7a41a3c36d0` | `njump.me/ff23e872…` — sig verified under `f12d4640…`, tags carry address + txid |
+| Bound address | `bchtest:qpmtdtxye6tedurrc6z8wjh9a00ya70fxglf0za93c` | tx input address (venture wallet `venture-brian`) |
+
+Independently verified 2026-11-21: event fetched from `relay.damus.io`,
+`verifyEvent` passed; OP_RETURN read on the public explorer.

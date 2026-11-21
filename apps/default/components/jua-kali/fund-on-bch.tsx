@@ -383,63 +383,92 @@ function FundOnBchCardReady({ commitmentId }: { commitmentId: Id<"commitments"> 
                                     <Text style={styles.link}>Disconnect</Text>
                                 </Pressable>
                             </View>
-                            {deal.identityProof ? (
-                                <View style={styles.identityBox}>
-                                    <Text style={styles.identityTitle}>Identity bound · self-sovereign</Text>
-                                    <Text selectable style={styles.metaMono}>
-                                        npub: {deal.nostrPubkey?.slice(0, 20)}…
-                                    </Text>
-                                    <Text selectable style={styles.metaMono}>
-                                        bch: {shortAddress(deal.identityProof.address ?? ventureAddress!)}
-                                    </Text>
-                                    <View style={styles.rowLinks}>
-                                        <Pressable
-                                            onPress={() =>
-                                                void Linking.openURL(
-                                                    explorerTxUrl(deal.identityProof!.bchSignature, fundedNetwork)
-                                                )
-                                            }
-                                            hitSlop={6}
-                                        >
-                                            <Text style={styles.link}>OP_RETURN proof tx</Text>
-                                        </Pressable>
-                                        <Pressable
-                                            onPress={() =>
-                                                void Linking.openURL(
-                                                    `https://njump.me/${deal.identityProof!.nostrEventId}`
-                                                )
-                                            }
-                                            hitSlop={6}
-                                        >
-                                            <Text style={styles.link}>Nostr attestation</Text>
-                                        </Pressable>
-                                    </View>
-                                    <Text style={styles.meta}>
-                                        Two-way proof: the OP_RETURN tx commits the npub on-chain;
-                                        the signed Nostr event names the address + txid. Verify both
-                                        independently — no JuaKali trust required.
-                                    </Text>
-                                </View>
-                            ) : (
-                                <View style={styles.identityBox}>
-                                    <Text style={styles.identityTitle}>Decentralized identity</Text>
-                                    <Text style={styles.meta}>
-                                        Bind this venture's BCH address to a Nostr key it controls.
-                                        An OP_RETURN tx commits the npub on-chain; a signed Nostr
-                                        event carries the reverse attestation.
-                                    </Text>
-                                    <Button
-                                        label={idBusy ? "Signing + publishing…" : "Bind Nostr identity"}
-                                        onPress={() => void handleBindIdentity()}
-                                        disabled={idBusy || wallet.scanning || !connected}
-                                        busy={idBusy}
-                                        variant="ghost"
-                                    />
-                                </View>
-                            )}
                         </>
                     )}
                 </View>
+            ) : null}
+
+            {ventureAddress ? (
+                deal.identityProof ? (
+                    <View style={styles.identityBox}>
+                        <Text style={styles.identityTitle}>Identity bound · self-sovereign</Text>
+                        <Text selectable style={styles.metaMono}>
+                            npub: {deal.nostrPubkey?.slice(0, 20)}…
+                        </Text>
+                        <Text selectable style={styles.metaMono}>
+                            bch: {shortAddress(deal.identityProof.address ?? ventureAddress)}
+                        </Text>
+                        <View style={styles.rowLinks}>
+                            <Pressable
+                                onPress={() =>
+                                    void Linking.openURL(
+                                        explorerTxUrl(deal.identityProof!.bchSignature, fundedNetwork)
+                                    )
+                                }
+                                hitSlop={6}
+                            >
+                                <Text style={styles.link}>OP_RETURN proof tx</Text>
+                            </Pressable>
+                            <Pressable
+                                onPress={() =>
+                                    void Linking.openURL(
+                                        `https://njump.me/${deal.identityProof!.nostrEventId}`
+                                    )
+                                }
+                                hitSlop={6}
+                            >
+                                <Text style={styles.link}>Nostr attestation</Text>
+                            </Pressable>
+                        </View>
+                        <Text style={styles.meta}>
+                            Two-way proof: the OP_RETURN tx commits the npub on-chain; the signed
+                            Nostr event names the address + txid. Verify both independently — no
+                            JuaKali trust required.
+                        </Text>
+                    </View>
+                ) : (
+                    <View style={styles.identityBox}>
+                        <Text style={styles.identityTitle}>Decentralized identity</Text>
+                        <Text style={styles.meta}>
+                            Bind this venture's wallet to a Nostr key it controls. The connected
+                            wallet signs an OP_RETURN tx committing the npub on-chain; the venture's
+                            Nostr key signs a relay-published event naming the address + txid.
+                            Connect the venture's wallet to bind its identity.
+                        </Text>
+                        {connected ? (
+                            <Button
+                                label={idBusy ? "Signing + publishing…" : "Bind Nostr identity"}
+                                onPress={() => void handleBindIdentity()}
+                                disabled={idBusy || wallet.scanning}
+                                busy={idBusy}
+                                variant="ghost"
+                            />
+                        ) : (
+                            <Button
+                                label={
+                                    wallet.state === "connecting" || wallet.state === "reconnecting"
+                                        ? "Waiting for wallet…"
+                                        : "Connect wallet to bind identity"
+                                }
+                                onPress={() => {
+                                    if (wallet.connect()) setShowQr(true);
+                                }}
+                                disabled={wallet.state === "connecting" || wallet.state === "reconnecting"}
+                                variant="ghost"
+                            />
+                        )}
+                        {showQr && wallet.qrUri && !connected ? (
+                            <View style={styles.qrPanel}>
+                                <View style={styles.qrFrame}>
+                                    <BchQr value={wallet.qrUri} size={188} />
+                                </View>
+                                <Text selectable style={styles.uri}>
+                                    {wallet.uri}
+                                </Text>
+                            </View>
+                        ) : null}
+                    </View>
+                )
             ) : null}
 
             {wallet.connectError ? <Text selectable style={styles.error}>{wallet.connectError}</Text> : null}

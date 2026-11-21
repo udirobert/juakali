@@ -212,17 +212,23 @@ export function buildIdentitySpend(args: {
         ...encodeDataPush(payload),
     ]);
 
+    // The OP_RETURN output's real vsize is its script length + value/length
+    // fields — the flat per-output estimate undercharges and chipnet rejects
+    // below 1 sat/byte (min relay fee, code 66).
+    const opReturnVsize = BigInt(8 + 1 + opReturnBytecode.length);
+    const feeFor = (nIn: number) =>
+        estimateFee(nIn, 1) + opReturnVsize; // 1 P2PKH change output + OP_RETURN
+
     const selected: FundedUtxo[] = [];
     let inputTotal = 0n;
     for (const utxo of utxos
         .filter((u) => u.satoshis > 0n && !u.token)
         .sort((a, b) => (b.satoshis > a.satoshis ? 1 : -1))) {
-        const fee = estimateFee(selected.length + 1, 2);
-        if (inputTotal >= fee) break;
+        if (inputTotal >= feeFor(selected.length + 1)) break;
         selected.push(utxo);
         inputTotal += utxo.satoshis;
     }
-    const fee = estimateFee(selected.length, 2);
+    const fee = feeFor(selected.length);
     if (inputTotal < fee) {
         throw new Error(`Insufficient balance for identity binding fee (${fee} sats)`);
     }
