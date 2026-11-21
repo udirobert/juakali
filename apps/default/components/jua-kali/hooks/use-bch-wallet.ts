@@ -4,7 +4,7 @@ import { binToHex, encodeTransaction, hexToBin } from "@bitauth/libauth";
 
 import { lockingBytecodeForAddress, pubkeyToP2pkhAddress } from "@/lib/bch/address";
 import { BCH_NETWORK, electrum } from "@/lib/bch/network";
-import { buildPledgeSpend, type FundedUtxo, type TokenSpend } from "@/lib/bch/tx";
+import { buildIdentitySpend, buildPledgeSpend, type BuiltSpend, type FundedUtxo, type TokenSpend } from "@/lib/bch/tx";
 import { ensureBchCrypto } from "@/lib/bch/libauth-crypto-shim";
 
 /**
@@ -146,31 +146,18 @@ export function useBchWallet() {
         }
     }, [wc.state, rescan]);
 
-    const fundPledge = useCallback(
-        async (args: {
-            toAddress: string;
-            satoshis: bigint;
-            userPrompt: string;
-            /** CashToken (e.g. PUSD) to attach to the venture output. */
-            token?: TokenSpend;
-        }) => {
+    /**
+     * Sign a built spend through the wallet and broadcast the result. The
+     * relay JSON can't carry BigInt/Uint8Array — hdwalletv1's canonical wire
+     * format is tx hex + source outputs with hex binary and `<bigint: Nn>`
+     * values (same as @wizardconnect/core's private hdwalletv1-serialize.js).
+     */
+    const signAndBroadcast = useCallback(
+        async (built: BuiltSpend, userPrompt: string) => {
             const manager = wc.manager;
             if (!manager || !scan) throw new Error("Wallet not connected");
-            if (!scan.changeAddress) throw new Error("No change path available in this session");
             await ensureBchCrypto();
 
-            const built = buildPledgeSpend({
-                utxos: scan.utxos,
-                toBytecode: lockingBytecodeForAddress(args.toAddress),
-                satoshis: args.satoshis,
-                changeBytecode: lockingBytecodeForAddress(scan.changeAddress),
-                token: args.token,
-            });
-
-            // The relay JSON can't carry BigInt/Uint8Array — hdwalletv1's
-            // canonical wire format is tx hex + source outputs with hex binary
-            // and `<bigint: Nn>` values (same as @wizardconnect/core's private
-            // hdwalletv1-serialize.js).
             const bigintTag = (v: bigint) => `<bigint: ${v}n>`;
             // Typed as libauth inputs/outputs upstream, but the wire format is
             // the tagged-JSON encoding below — the cast bridges the two.
@@ -202,7 +189,7 @@ export function useBchWallet() {
                               }
                             : {}),
                     })) as unknown as Parameters<typeof manager.signTransaction>[0]["transaction"]["sourceOutputs"],
-                    userPrompt: args.userPrompt,
+                    userPrompt,
                 },
                 inputPaths: built.inputPaths as [number, string, number][],
             });
@@ -212,6 +199,40 @@ export function useBchWallet() {
             return await electrum().sendRawTransaction(response.signedTransaction);
         },
         [wc.manager, scan]
+    );
+
+    const fundPledge = useCallback(
+        async (args: {
+            toAddress: string;
+            satoshis: bigint;
+            userPrompt: string;
+            /** CashToken (e.g. PUSD) to attach to the venture output. */
+            token?: TokenSpend;
+        }) => {
+            if (!scan?.changeAddress) throw new Error("No change path available in this session");
+            const built = buildPledgeSpend({
+                utxos: scan.utxos,
+                toBytecode: lockingBytecodeForAddress(args.toAddress),
+                satoshis: args.satoshis,
+                changeBytecode: lockingBytecodeForAddress(scan.changeAddress),
+                token: args.token,
+            });
+            return signAndBroadcast(built, args.userPrompt);
+        },
+        [scan, signAndBroadcast]
+    );
+
+    const bindIdentity = useCallback(
+        async (args: { payload: Uint8Array; userPrompt: string }) => {
+            if (!scan?.changeAddress) throw new Error("No change path available in this session");
+            const built = buildIdentitySpend({
+                utxos: scan.utxos,
+                payload: args.payload,
+                changeBytecode: lockingBytecodeForAddress(scan.changeAddress),
+            });
+            return signAndBroadcast(built, args.userPrompt);
+        },
+        [scan, signAndBroadcast]
     );
 
     return {
@@ -227,6 +248,7 @@ export function useBchWallet() {
         scanError,
         rescan,
         fundPledge,
+        bindIdentity,
         network: BCH_NETWORK,
     };
 }

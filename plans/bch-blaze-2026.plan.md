@@ -1,14 +1,39 @@
 # BCH Blaze 2026 — Invest in Public, Settled in Public
 
-## Status: building — first slice landed
+## Status: chipnet E2E proven — floor items + ambition ladder in flight
 
-Land so far (this session): schema fields deployed; `lib/bch/` (electrum UTXO
-scan, unsigned-tx build, WizardConnect session) implemented; `FundOnBchCard`
-in the deal cockpit (web-only — see Metro shim note); `recordPledgeFunding` /
-`recordRepayment` / `setVentureSettlement` mutations; ledger + proof screens
-render txid + blockexplorer.cash links. Backend tests 53/53, tsc clean, web
-export bundles. **Not yet done**: real chipnet E2E sign+broadcast against a
-wallet (needs Cashonize/Selene + faucet), PUSD token outputs, mainnet demo.
+Land so far: schema fields deployed; `lib/bch/` (electrum UTXO scan,
+unsigned-tx build, WizardConnect session) implemented; `FundOnBchCard` in the
+deal cockpit (web-only); `recordPledgeFunding` / `recordRepayment` /
+`setVentureSettlement` mutations live on prod; ledger + proof screens render
+txid + blockexplorer.cash links. **Chipnet E2E proven Nov 21**: Cashonize
+WizardConnect → faucet tBCH → sign → broadcast → txid `968684c9…437f55`
+verified on explorer (four real bugs fixed live: crypto-init race on session
+restore, WizardConnect mount-order crash, null-scan render, BigInt relay
+serialization → hdwalletv1 canonical wire format). Backend tests 53/53, tsc
+clean, web export bundles, Netlify + Convex prod deployed.
+
+## Ambition ladder (ordered by ROI — floor first, always)
+
+1. **Floor** — mainnet tx (minimal funds, recoverable), Widget Factory
+   slides pasted, DoraHacks submitted, Telegram check-in. Non-negotiable.
+2. **PUSD CashToken output** — code shipped (`buildPledgeSpend` token path,
+   category verified `2469acc5…2544`); needs PUSD dust in the demo wallet +
+   one tx. Sponsor-aligned demo (prize pool is PUSD).
+3. **Demo video** — screen-capture connect → sign → ledger lands; doubles as
+   Media track + Community Choice ammo.
+4. **Decentralized Identity ($500 PUSD, Paytaca)** — `bchAddress`↔`nostrPubkey`
+   binding proof + KPI check-ins as signed Nostr attestations. Fits the
+   product story: portable venture reputation.
+5. **Community Choice ($750 PUSD)** — publish EMBER2026 receive address;
+   no code.
+6. **XO covenant** — Migrate to XO (1 BCH ×5): repayment-split covenant is the
+   product's contract. Biggest prize, highest risk (pre-release toolchain);
+   only if everything above lands and ~500 words of personally-written
+   feedback can be produced. Chipnet proof suffices.
+
+Skip: Stablecoin Bridge (EVM day+), CashScript/BitauthIDE (subsumed by XO),
+SolidCash, FoldingCash.
 
 Submission window Nov 14–22 (deadline **Nov 22, 14:00 UTC**). Judging Nov 23–27.
 Mainnet track requires: live demo link · ≥1 feature that sends a real BCH mainnet
@@ -86,12 +111,11 @@ UX — flag honestly in the submission narrative.
 - [x] WizardConnect: `@wizardconnect/react` — `useWizardConnect` wrapper hook
       (`use-bch-wallet.ts`) + QR (`bch-qr.web.tsx` AlphanumericQRCode; native
       shows URI fallback — libauth WASM means funding is web-only this slice)
-- [ ] Chipnet E2E: connect Cashonize/Selene → faucet funds → sign → broadcast
-      → verify txid on explorer (wallet + faucet PoW step)
-- [ ] Pledge funding flow: connect → construct send (venture `bchAddress`,
+- [x] Chipnet E2E: Cashonize via WizardConnect → faucet tBCH → sign →
+      broadcast → txid `968684c9…437f55` verified on blockexplorer.cash/chipnet
+- [x] Pledge funding flow: connect → construct send (venture `bchAddress`,
       PUSD if token-aware else BCH) → wallet signs → broadcast →
       `recordPledgeFunding` mutation (txid) → ledger event `onchainRef`
-      _(code path complete pending E2E proof)_
 - [x] Ledger UI: `OnchainSeal` txid capsule (brass mainnet / cool chipnet) in
       proof-screen evidence slab, ledger detail, and chain-dot pip on rows;
       `SettlementRail` journey stepper on the fund card; scorecard notes
@@ -109,10 +133,12 @@ UX — flag honestly in the submission narrative.
       `pledgeTxid` exists — soft vs settled is now visible at list level,
       derived from real fields (global badge stays `soft` — the capital path
       default is still soft pledges)
-- [ ] Venture identity: `bchAddress` + `nostrPubkey` fields, binding proof
-      (BCH message-sign npub ↔ Nostr event signs addr), verify via
-      challenge-response
+- [x] Venture identity: `bchAddress` + `nostrPubkey` fields, binding proof —
+      OP_RETURN on-chain npub commitment (wallet-signed tx) ↔ signed Nostr
+      event carrying address + txid (docs/bch-blaze-identity.md). Independently
+      verifiable on explorer + any relay; no centralized provider.
 - [ ] KPI→Nostr attestations on `third_party`-verified check-ins
+      (`kpiCheckIns.nostrEventId` field exists; publish step pending)
 - [ ] XO pledge template (Migrate bounty): tranche covenant on Chipnet, debug
       with blaze.xo.cash, submit invitation + 500-word personal feedback
 - [ ] Widget Factory presentation + DoraHacks submission + Telegram check-in

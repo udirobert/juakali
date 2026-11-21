@@ -10,9 +10,10 @@ import { OnchainSeal } from "@/components/jua-kali/onchain-seal";
 import { SettlementRail, settlementStage } from "@/components/jua-kali/settlement-rail";
 import { Button, Card, Input } from "@/components/jua-kali/ui";
 import { color, font, radius, type as typeStyle } from "@/components/jua-kali/theme";
-import { explorerAddressUrl, explorerTxUrl } from "@/lib/bch/network";
+import { explorerAddressUrl, explorerTxUrl, BCH_PLEDGE_TOKEN_CATEGORY, BCH_PLEDGE_TOKEN_AMOUNT } from "@/lib/bch/network";
 import { shortAddress } from "@/lib/bch/address";
 import { ensureBchCrypto } from "@/lib/bch/libauth-crypto-shim";
+import { bindingPayload, publishBindingEvent, ventureNostrKey } from "@/lib/nostr/identity";
 
 const mono = Platform.select({ ios: "Menlo", default: "monospace" });
 
@@ -47,6 +48,7 @@ function FundOnBchCardReady({ commitmentId }: { commitmentId: Id<"commitments"> 
     const recordFunding = useMutation(api.invest.recordPledgeFunding);
     const setSettlement = useMutation(api.invest.setVentureSettlement);
     const recordRepayment = useMutation(api.invest.recordRepayment);
+    const bindIdentity = useMutation(api.invest.bindVentureIdentity);
     const wallet = useBchWallet();
 
     const [amountText, setAmountText] = useState("");
@@ -58,6 +60,7 @@ function FundOnBchCardReady({ commitmentId }: { commitmentId: Id<"commitments"> 
     const [repayBusy, setRepayBusy] = useState(false);
     const [busy, setBusy] = useState(false);
     const [bindBusy, setBindBusy] = useState(false);
+    const [idBusy, setIdBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     if (!deal) return null;
@@ -78,6 +81,23 @@ function FundOnBchCardReady({ commitmentId }: { commitmentId: Id<"commitments"> 
     });
     const fundedNetwork = deal.settlementNetwork === "mainnet" ? "mainnet" : "chipnet";
 
+    // Attach the configured pledge token (e.g. PUSD) only when the wallet
+    // holds enough of it — otherwise the spend stays a plain BCH pledge.
+    const pledgeToken = (() => {
+        if (!BCH_PLEDGE_TOKEN_CATEGORY || BCH_PLEDGE_TOKEN_AMOUNT <= 0n) return null;
+        const cat = BCH_PLEDGE_TOKEN_CATEGORY.toLowerCase();
+        const held = (wallet.scan?.utxos ?? []).reduce((sum, u) => {
+            if (!u.token) return sum;
+            const hex = Array.from(u.token.category)
+                .map((b) => b.toString(16).padStart(2, "0"))
+                .join("");
+            return hex === cat ? sum + u.token.amount : sum;
+        }, 0n);
+        return held >= BCH_PLEDGE_TOKEN_AMOUNT
+            ? { category: BCH_PLEDGE_TOKEN_CATEGORY, amount: BCH_PLEDGE_TOKEN_AMOUNT }
+            : null;
+    })();
+
     async function handleFund() {
         if (!deal || !ventureAddress) return;
         const sats = BigInt(amountText.trim() || "0");
@@ -92,11 +112,12 @@ function FundOnBchCardReady({ commitmentId }: { commitmentId: Id<"commitments"> 
                 toAddress: ventureAddress,
                 satoshis: sats,
                 userPrompt: `Fund ${deal.ventureName} pledge — ${sats} sats`,
+                token: pledgeToken ?? undefined,
             });
             await recordFunding({
                 commitmentId,
                 txid,
-                asset: "bch",
+                asset: pledgeToken ? "pusd" : "bch",
                 network,
                 settlementAddress: ventureAddress,
                 amount: Number(sats),
@@ -121,6 +142,38 @@ function FundOnBchCardReady({ commitmentId }: { commitmentId: Id<"commitments"> 
             setError(e instanceof Error ? e.message : "Could not bind address");
         } finally {
             setBindBusy(false);
+        }
+    }
+
+    async function handleBindIdentity() {
+        if (!deal || !ventureAddress) return;
+        setIdBusy(true);
+        setError(null);
+        try {
+            // Two-way proof: the wallet signs an OP_RETURN tx committing the
+            // npub on-chain; the venture's own Nostr key signs an event naming
+            // the address + txid. Third parties verify both independently.
+            const key = ventureNostrKey(deal.ventureId);
+            const txid = await wallet.bindIdentity({
+                payload: bindingPayload(key.npub),
+                userPrompt: `Bind ${deal.ventureName} identity — commit npub on-chain`,
+            });
+            const { eventId } = await publishBindingEvent({
+                secretKey: key.secretKey,
+                bchAddress: ventureAddress,
+                bindingTxid: txid,
+                network,
+            });
+            await bindIdentity({
+                ventureId: deal.ventureId,
+                nostrPubkey: key.pubkey,
+                bindingTxid: txid,
+                nostrEventId: eventId,
+            });
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Identity binding failed");
+        } finally {
+            setIdBusy(false);
         }
     }
 
@@ -312,6 +365,11 @@ function FundOnBchCardReady({ commitmentId }: { commitmentId: Id<"commitments"> 
                                 busy={busy}
                                 variant="approve"
                             />
+                            {pledgeToken ? (
+                                <Text style={styles.meta}>
+                                    A PUSD CashToken rides with this pledge.
+                                </Text>
+                            ) : null}
                             <View style={styles.rowLinks}>
                                 <Pressable onPress={() => void wallet.rescan()} hitSlop={6}>
                                     <Text style={styles.link}>Refresh balance</Text>
@@ -320,6 +378,60 @@ function FundOnBchCardReady({ commitmentId }: { commitmentId: Id<"commitments"> 
                                     <Text style={styles.link}>Disconnect</Text>
                                 </Pressable>
                             </View>
+                            {deal.identityProof ? (
+                                <View style={styles.identityBox}>
+                                    <Text style={styles.identityTitle}>Identity bound · self-sovereign</Text>
+                                    <Text selectable style={styles.metaMono}>
+                                        npub: {deal.nostrPubkey?.slice(0, 20)}…
+                                    </Text>
+                                    <Text selectable style={styles.metaMono}>
+                                        bch: {shortAddress(ventureAddress!)}
+                                    </Text>
+                                    <View style={styles.rowLinks}>
+                                        <Pressable
+                                            onPress={() =>
+                                                void Linking.openURL(
+                                                    explorerTxUrl(deal.identityProof!.bchSignature, fundedNetwork)
+                                                )
+                                            }
+                                            hitSlop={6}
+                                        >
+                                            <Text style={styles.link}>OP_RETURN proof tx</Text>
+                                        </Pressable>
+                                        <Pressable
+                                            onPress={() =>
+                                                void Linking.openURL(
+                                                    `https://njump.me/${deal.identityProof!.nostrEventId}`
+                                                )
+                                            }
+                                            hitSlop={6}
+                                        >
+                                            <Text style={styles.link}>Nostr attestation</Text>
+                                        </Pressable>
+                                    </View>
+                                    <Text style={styles.meta}>
+                                        Two-way proof: the OP_RETURN tx commits the npub on-chain;
+                                        the signed Nostr event names the address + txid. Verify both
+                                        independently — no JuaKali trust required.
+                                    </Text>
+                                </View>
+                            ) : (
+                                <View style={styles.identityBox}>
+                                    <Text style={styles.identityTitle}>Decentralized identity</Text>
+                                    <Text style={styles.meta}>
+                                        Bind this venture's BCH address to a Nostr key it controls.
+                                        An OP_RETURN tx commits the npub on-chain; a signed Nostr
+                                        event carries the reverse attestation.
+                                    </Text>
+                                    <Button
+                                        label={idBusy ? "Signing + publishing…" : "Bind Nostr identity"}
+                                        onPress={() => void handleBindIdentity()}
+                                        disabled={idBusy || wallet.scanning || !connected}
+                                        busy={idBusy}
+                                        variant="ghost"
+                                    />
+                                </View>
+                            )}
                         </>
                     )}
                 </View>
@@ -401,6 +513,15 @@ const styles = StyleSheet.create({
     walletRow: { flexDirection: "row", alignItems: "center", gap: 7 },
     walletDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: color.success },
     rowLinks: { flexDirection: "row", gap: 18, justifyContent: "center" },
+    identityBox: {
+        gap: 8,
+        padding: 12,
+        borderRadius: radius.sm,
+        borderWidth: 1,
+        borderColor: color.lineStrong,
+        backgroundColor: color.paper,
+    },
+    identityTitle: { ...typeStyle.meta, fontWeight: "700", color: color.ink },
     error: { ...typeStyle.meta, color: color.danger },
     gap: { gap: 10 },
 });

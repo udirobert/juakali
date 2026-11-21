@@ -1,5 +1,5 @@
 import type { Transaction } from "@bitauth/libauth";
-import { hexToBin } from "@bitauth/libauth";
+import { encodeDataPush, hexToBin } from "@bitauth/libauth";
 
 /**
  * Unsigned pledge spend — built by the dapp, signed by the wallet.
@@ -184,6 +184,70 @@ export function buildPledgeSpend(args: {
             // Token-bearing inputs must carry their token data — the wallet
             // needs the full source output to compute the sighash preimage.
             ...(u.token ? { token: { category: u.token.category, amount: u.token.amount } } : {}),
+        })),
+        inputPaths: selected.map((u, i) => [i, u.pathName, u.addressIndex]),
+        changeSatoshis: change,
+        feeSatoshis: fee,
+    };
+}
+
+/**
+ * Identity-binding spend (Decentralized Identity bounty): an OP_RETURN output
+ * commits the venture's Nostr pubkey on-chain from the wallet itself — proof
+ * of BCH-key control that any third party can read on an explorer. The signed
+ * Nostr event carries the reverse attestation (address + this txid).
+ *
+ * Plain BCH only — token UTXOs are skipped entirely so a binding spend can
+ * never burn a token.
+ */
+export function buildIdentitySpend(args: {
+    utxos: FundedUtxo[];
+    /** Raw OP_RETURN payload bytes (e.g. utf8 "juakali:identity:npub1…"). */
+    payload: Uint8Array;
+    changeBytecode: Uint8Array;
+}): BuiltSpend {
+    const { utxos, payload, changeBytecode } = args;
+    const opReturnBytecode = new Uint8Array([
+        0x6a, // OP_RETURN
+        ...encodeDataPush(payload),
+    ]);
+
+    const selected: FundedUtxo[] = [];
+    let inputTotal = 0n;
+    for (const utxo of utxos
+        .filter((u) => u.satoshis > 0n && !u.token)
+        .sort((a, b) => (b.satoshis > a.satoshis ? 1 : -1))) {
+        const fee = estimateFee(selected.length + 1, 2);
+        if (inputTotal >= fee) break;
+        selected.push(utxo);
+        inputTotal += utxo.satoshis;
+    }
+    const fee = estimateFee(selected.length, 2);
+    if (inputTotal < fee) {
+        throw new Error(`Insufficient balance for identity binding fee (${fee} sats)`);
+    }
+    const change = inputTotal - fee;
+    if (change < DUST_LIMIT) {
+        throw new Error(`Change below dust (${change} sats) — need a slightly larger UTXO`);
+    }
+
+    const outputs: Transaction["outputs"] = [
+        { lockingBytecode: opReturnBytecode, valueSatoshis: 0n },
+        { lockingBytecode: changeBytecode, valueSatoshis: change },
+    ];
+    const inputs = selected.map((u) => ({
+        outpointTransactionHash: hexToBin(u.txid),
+        outpointIndex: u.vout,
+        sequenceNumber: 0xfffffffe,
+        unlockingBytecode: new Uint8Array(0),
+    }));
+
+    return {
+        transaction: { version: 2, inputs, outputs, locktime: 0 },
+        sourceOutputs: selected.map((u, i) => ({
+            ...inputs[i]!,
+            lockingBytecode: u.lockingBytecode,
+            valueSatoshis: u.satoshis,
         })),
         inputPaths: selected.map((u, i) => [i, u.pathName, u.addressIndex]),
         changeSatoshis: change,

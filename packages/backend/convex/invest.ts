@@ -420,6 +420,11 @@ export const getDeal = query({
             publicSlug: v.string(),
             ventureName: v.string(),
             bchAddress: v.union(v.string(), v.null()),
+            nostrPubkey: v.union(v.string(), v.null()),
+            identityProof: v.union(
+                v.object({ bchSignature: v.string(), nostrEventId: v.string(), boundAt: v.number() }),
+                v.null()
+            ),
             settlementAsset: v.union(v.string(), v.null()),
             settlementNetwork: v.union(v.string(), v.null()),
             pledgeTxid: v.union(v.string(), v.null()),
@@ -445,6 +450,8 @@ export const getDeal = query({
                 publicSlug: venture.publicSlug,
                 ventureName: venture.name,
                 bchAddress: venture.bchAddress ?? null,
+                nostrPubkey: venture.nostrPubkey ?? null,
+                identityProof: venture.identityProof ?? null,
                 settlementAsset: commitment.settlementAsset ?? null,
                 settlementNetwork: commitment.settlementNetwork ?? null,
                 pledgeTxid: commitment.pledgeTxid ?? null,
@@ -476,6 +483,8 @@ export const getDeal = query({
                 publicSlug: venture.publicSlug,
                 ventureName: venture.name,
                 bchAddress: venture.bchAddress ?? null,
+                nostrPubkey: venture.nostrPubkey ?? null,
+                identityProof: venture.identityProof ?? null,
                 settlementAsset: commitment.settlementAsset ?? null,
                 settlementNetwork: commitment.settlementNetwork ?? null,
                 pledgeTxid: commitment.pledgeTxid ?? null,
@@ -486,6 +495,55 @@ export const getDeal = query({
             };
         }
         return null;
+    },
+});
+
+/**
+ * Record a venture's BCH↔Nostr identity binding. Both proofs are produced
+ * client-side (the wallet signs the OP_RETURN commitment tx; the venture's
+ * Nostr key signs the reverse-attestation event on public relays) — this row
+ * only caches what is independently verifiable on-chain and on relays.
+ */
+export const bindVentureIdentity = mutation({
+    args: {
+        ventureId: v.id("ventures"),
+        nostrPubkey: v.string(),
+        bindingTxid: v.string(),
+        nostrEventId: v.string(),
+    },
+    returns: v.object({ ventureId: v.id("ventures"), message: v.string() }),
+    handler: async (ctx, args) => {
+        await rateLimiter.limit(ctx, "investMutate", { key: "identity" });
+        const venture = await ctx.db.get(args.ventureId);
+        if (!venture) throw new Error("Venture not found");
+        const userId = await getAuthUserId(ctx);
+        if (!userId) throw new Error("Authentication required");
+        const ownerRows = await ctx.db
+            .query("ventureOwners")
+            .withIndex("by_ventureId", (q) => q.eq("ventureId", args.ventureId))
+            .take(1);
+        if (ownerRows.length > 0) {
+            await assertVentureOwner(ctx, args.ventureId);
+        }
+        if (venture.identityProof && venture.nostrPubkey !== args.nostrPubkey) {
+            throw new Error("Venture identity already bound — key rotation not supported yet");
+        }
+        await ctx.db.patch(args.ventureId, {
+            nostrPubkey: args.nostrPubkey,
+            identityProof: {
+                // The binding txid carries the OP_RETURN commitment — it is the
+                // BCH-side proof (stronger than a bare message signature:
+                // timestamped on-chain and third-party readable).
+                bchSignature: args.bindingTxid,
+                nostrEventId: args.nostrEventId,
+                boundAt: Date.now(),
+            },
+            updatedAt: Date.now(),
+        });
+        return {
+            ventureId: args.ventureId,
+            message: `Identity bound: ${venture.name} ↔ ${args.nostrPubkey.slice(0, 16)}…`,
+        };
     },
 });
 

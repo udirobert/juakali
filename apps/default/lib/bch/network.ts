@@ -35,6 +35,22 @@ export function electrum() {
     return getNetworkProvider(BCH_NETWORK === "mainnet" ? Network.MAINNET : Network.TESTNET);
 }
 
+/**
+ * Optional CashToken attached to pledge spends (e.g. PUSD on mainnet).
+ * Category is the 32-byte token-id hex; amount is raw fungible units.
+ * Disabled unless both are set — plain BCH pledges remain the default.
+ */
+export const BCH_PLEDGE_TOKEN_CATEGORY: string | null =
+    (process.env.EXPO_PUBLIC_BCH_PLEDGE_TOKEN ?? "").trim() || null;
+
+export const BCH_PLEDGE_TOKEN_AMOUNT: bigint = (() => {
+    try {
+        return BigInt(process.env.EXPO_PUBLIC_BCH_PLEDGE_TOKEN_AMOUNT ?? "0");
+    } catch {
+        return 0n;
+    }
+})();
+
 export function explorerTxUrl(txid: string, network: BchNetwork = BCH_NETWORK): string {
     return network === "mainnet"
         ? `https://blockexplorer.cash/tx/${txid}`

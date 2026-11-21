@@ -1,0 +1,81 @@
+redirectsOrigin = "config"
+plugins = []
+headers = []
+
+[functions]
+
+[functions."*"]
+
+[build]
+publish = "/Users/udingethe/Dev/juakali/apps/default/dist"
+publishOrigin = "config"
+commandOrigin = "config"
+base = "/Users/udingethe/Dev/juakali"
+command = "npm run verify:lock && npm install --ignore-scripts && npm run export:web -w @bloom/mobile"
+
+[build.environment]
+NODE_VERSION = "22"
+HUSKY = "0"
+EXPO_PUBLIC_CONVEX_URL = "https://zealous-scorpion-285.convex.cloud"
+EXPO_PUBLIC_CONVEX_SITE_URL = "https://zealous-scorpion-285.convex.site"
+EXPO_PUBLIC_PRODUCT_PRESET = "demo"
+
+[build.processing]
+
+[build.processing.css]
+
+[build.processing.html]
+
+[build.processing.images]
+
+[build.processing.js]
+
+[build.services]
+
+[[redirects]]
+from = "/deal/*"
+to = "https://zealous-scorpion-285.convex.site/share/ledger?slug=:splat"
+status = 200.0
+force = false
+
+[redirects.query]
+
+[redirects.conditions]
+
+[redirects.headers]
+
+[[redirects]]
+from = "/api/ledger"
+to = "https://zealous-scorpion-285.convex.site/api/ledger"
+status = 200.0
+force = true
+
+[redirects.query]
+
+[redirects.conditions]
+
+[redirects.headers]
+
+[[redirects]]
+from = "/embed.js"
+to = "https://zealous-scorpion-285.convex.site/embed.js"
+status = 200.0
+force = true
+
+[redirects.query]
+
+[redirects.conditions]
+
+[redirects.headers]
+
+[[redirects]]
+from = "/*"
+to = "/index.html"
+status = 200.0
+force = false
+
+[redirects.query]
+
+[redirects.conditions]
+
+[redirects.headers]
