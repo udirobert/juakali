@@ -51,8 +51,9 @@ From the level-up plan (Nov 2026). Items marked **[manual]** need an account own
 ## Done in code (this phase)
 
 - [x] **CI** — `.github/workflows/ci.yml`: typecheck + lint + test + lockfile
-      verify on every PR, with Convex codegen. Requires one repo secret:
-      `CONVEX_PREVIEW_DEPLOYMENT` (a dev deployment id, e.g. `dev:xxx-yyy`).
+      verify on every PR. Convex codegen runs in anonymous agent mode
+      (`npx convex init` + `codegen --typecheck=disable`) — no deployment or
+      repo secret needed.
 - [x] **Dead-letter queue for agent runs** — new `dead_letter` run status;
       `sweepDeadLetters` cron (every 15 min) parks runs that failed 3+ retries;
       `retryFailedRun` accepts dead-lettered runs and resets the counter;
@@ -66,8 +67,9 @@ From the level-up plan (Nov 2026). Items marked **[manual]** need an account own
 
 ## Manual steps (owner required)
 
-- [ ] **[manual] CI secret** — add `CONVEX_PREVIEW_DEPLOYMENT` to GitHub repo
-      secrets (use a *dev* deployment, not prod).
+- [x] ~~**[manual] CI secret**~~ — no longer needed: CI codegen runs
+      anonymously (`CONVEX_AGENT_MODE=anonymous`), so no
+      `CONVEX_PREVIEW_DEPLOYMENT` secret is required.
 - [ ] **[manual] Staging deployment** — create it:
       `cd packages/backend && npx convex deployment create --name staging`,
       then wire a Netlify branch deploy per `.env.example`.

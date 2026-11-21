@@ -2,20 +2,22 @@ import convexPlugin from "@convex-dev/eslint-plugin";
 import tseslint from "typescript-eslint";
 
 export default [
-    { ignores: ["convex/_generated/**"] },
+    { ignores: ["convex/_generated/**", ".convex/**"] },
     ...tseslint.configs.recommended,
     ...convexPlugin.configs.recommended,
 
     // Prevent process.env usage -- use typed env from convex-env instead.
     // Without this the typed schema in convex/env.ts is advisory; with it,
     // every direct process.env access is a hard error and you're forced to
-    // declare the var in fullSchema first. The only file allowed to read
-    // process.env directly is convex/env.ts itself (in `isPreProvisioning`,
+    // declare the var in fullSchema first. Two files are allowed to read
+    // process.env directly: convex/env.ts itself (in `isPreProvisioning`,
     // to detect the pre-provisioning gap window before Bloom syncs the
-    // managed env vars).
+    // managed env vars), and convex/auth.config.ts, which Convex evaluates
+    // against the deployment's env vars and which must NOT import ./env
+    // (see docs/ops.md — AuthConfigMissingEnvironmentVariable incident).
     {
         files: ["convex/**/*.ts"],
-        ignores: ["convex/env.ts"],
+        ignores: ["convex/env.ts", "convex/auth.config.ts"],
         rules: {
             "no-restricted-syntax": [
                 "error",

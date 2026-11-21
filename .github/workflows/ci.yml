@@ -19,13 +19,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # Convex codegen must be present for backend typecheck; the generated
-      # _generated/ dir is gitignored, so generate it in CI.
+      # Regenerate the checked-in types against a runner-local backend.
       - name: Generate Convex types
         working-directory: packages/backend
-        run: npx convex codegen --typecheck=disable
         env:
-          CONVEX_DEPLOYMENT: ${{ secrets.CONVEX_PREVIEW_DEPLOYMENT }}
+          CONVEX_AGENT_MODE: anonymous
+        run: |
+          npx convex init
+          npx convex codegen --typecheck=disable
       - name: Typecheck
         run: npm run typecheck
       - name: Lint
