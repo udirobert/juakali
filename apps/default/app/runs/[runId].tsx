@@ -58,8 +58,8 @@ export default function RunScreen() {
     async function handleSubmitEvidence() {
         if (!runId) return;
         const value = Number(evidenceValue);
-        if (!Number.isFinite(value) || value <= 0) {
-            setSubmitError("Enter a positive number.");
+        if (!evidenceValue.trim() || !Number.isFinite(value) || value < 0) {
+            setSubmitError("Enter zero or a positive number.");
             return;
         }
         setSubmitting(true);
@@ -149,7 +149,7 @@ export default function RunScreen() {
                         <Button
                             label={submitting ? "Submitting…" : "Record received number"}
                             onPress={() => void handleSubmitEvidence()}
-                            disabled={submitting}
+                            disabled={submitting || !evidenceValue.trim()}
                         />
                         {submitError ? <Text style={styles.error}>{submitError}</Text> : null}
                     </View>

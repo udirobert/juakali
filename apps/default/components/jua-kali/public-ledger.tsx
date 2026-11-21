@@ -19,6 +19,7 @@ import Animated, {
 import { useQuery } from "convex/react";
 
 import { api } from "@/convex/_generated/api";
+import { evidenceTagLabel, isFounderSource, ledgerNetwork, publicLedgerSummary } from "@/convex/publicCopy";
 import { SITE_URL } from "@/lib/site";
 import { OnchainSeal } from "@/components/jua-kali/onchain-seal";
 import { FieldPrintStrip } from "@/components/jua-kali/field-print";
@@ -216,7 +217,18 @@ export function PublicLedger({
     }
 
     return (
-        <View style={[styles.screen, { paddingTop: hideTitleChrome ? 8 : insets.top }]}>
+        <View
+            style={[
+                styles.screen,
+                {
+                    paddingTop: hideTitleChrome
+                        ? 8
+                        : Platform.OS === "web"
+                          ? Math.max(insets.top, 72)
+                          : insets.top,
+                },
+            ]}
+        >
             <ScrollView
                 contentContainerStyle={[
                     styles.content,
@@ -390,6 +402,10 @@ function LedgerRow({
     const chevronStyle = useAnimatedStyle(() => ({
         transform: [{ rotate: `${spin.value * 180}deg` }],
     }));
+    // Human-readable presentation; the raw record stays in the detail view.
+    const presented = publicLedgerSummary(event);
+    const founderSource = isFounderSource(event);
+    const net = ledgerNetwork(event);
 
     return (
         // No per-row layout transitions: detail fades in and neighbors reflow
@@ -398,7 +414,7 @@ function LedgerRow({
             <Pressable
                 onPress={onToggle}
                 accessibilityRole="button"
-                accessibilityLabel={`${typeLabel(event.type)} — ${event.summary.slice(0, 60)}`}
+                accessibilityLabel={`${typeLabel(event.type)} — ${presented.slice(0, 60)}`}
                 accessibilityState={{ expanded }}
                 accessibilityHint={expanded ? "Collapse details" : "Expand full record"}
             >
@@ -424,7 +440,7 @@ function LedgerRow({
                     </View>
                 </View>
                 <Text style={styles.summary} numberOfLines={expanded ? undefined : compact ? 2 : 3}>
-                    {event.summary}
+                    {presented}
                 </Text>
             </Pressable>
             <View style={styles.rowFoot}>
@@ -449,23 +465,10 @@ function LedgerRow({
                         ).map((tag: string) => (
                             <View
                                 key={tag}
-                                style={[
-                                    styles.evidenceChip,
-                                    compact && styles.evidenceChipNarrow,
-                                    tag.startsWith("verified-") && styles.evidenceChipVerified,
-                                ]}
+                                style={[styles.evidenceChip, compact && styles.evidenceChipNarrow]}
                             >
-                                <Text
-                                    style={[
-                                        styles.evidenceChipText,
-                                        tag.startsWith("verified-") && styles.evidenceChipTextVerified,
-                                    ]}
-                                >
-                                    {tag === "verified-photo"
-                                        ? "photo verified"
-                                        : tag === "verified-third-party"
-                                          ? "3rd-party verified"
-                                          : tag}
+                                <Text style={styles.evidenceChipText}>
+                                    {tag.startsWith("+") ? tag : evidenceTagLabel(tag, { founderSource })}
                                 </Text>
                             </View>
                         ))}
@@ -479,6 +482,12 @@ function LedgerRow({
                     exiting={FadeOut.duration(motion.fast)}
                     style={styles.rowDetail}
                 >
+                    {presented !== event.summary ? (
+                        <View style={styles.detailLine}>
+                            <Text style={styles.detailLabel}>Recorded summary</Text>
+                            <Text style={styles.detailValue}>{event.summary}</Text>
+                        </View>
+                    ) : null}
                     {event.amountKes != null ? (
                         <View style={styles.detailLine}>
                             <Text style={styles.detailLabel}>Recorded</Text>
@@ -500,7 +509,7 @@ function LedgerRow({
                                 {event.evidence.map((tag: string) => (
                                     <View key={tag} style={[styles.evidenceChip, styles.evidenceChipBig]}>
                                         <Text style={[styles.evidenceChipText, styles.evidenceChipTextBig]}>
-                                            {tag}
+                                            {evidenceTagLabel(tag, { founderSource })}
                                         </Text>
                                     </View>
                                 ))}
@@ -509,13 +518,19 @@ function LedgerRow({
                     ) : null}
                     {event.txid ? (
                         <View style={styles.detailLine}>
-                            <Text style={styles.detailLabel}>On-chain tx</Text>
-                            <OnchainSeal
-                                txid={event.txid}
-                                network={event.onchainRef?.includes("/chipnet/") ? "chipnet" : "mainnet"}
-                                onchainRef={event.onchainRef}
-                                size="sm"
-                            />
+                            <Text style={styles.detailLabel}>Recorded transaction</Text>
+                            {net ? (
+                                <OnchainSeal
+                                    txid={event.txid}
+                                    network={net}
+                                    onchainRef={event.onchainRef}
+                                    size="sm"
+                                />
+                            ) : (
+                                <Text selectable style={styles.detailValue}>
+                                    {event.txid} · Network not recorded
+                                </Text>
+                            )}
                         </View>
                     ) : null}
                 </Animated.View>

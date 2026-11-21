@@ -29,6 +29,7 @@ import {
     syncVentureBrowse,
     ventureSummaryValidator,
 } from "./investorBriefing";
+import { formatPublicPledge, reportedRevenueKes } from "./publicCopy";
 import {
     actionPlanViewValidator,
     synthesizeBriefingText,
@@ -318,7 +319,7 @@ export const startCommitment = mutation({
     handler: async (ctx, args) => {
         await assertCanAct(ctx);
         await rateLimiter.limit(ctx, "investMutate", { key: "startCommitment" });
-        if (args.amountKes <= 0) throw new Error("amountKes must be positive");
+        if (!Number.isFinite(args.amountKes) || Math.round(args.amountKes) <= 0) throw new Error("Pledge must round to at least 1.");
         if (args.kpiTarget <= 0) throw new Error("kpiTarget must be positive");
 
         const userId = await getAuthUserId(ctx);
@@ -386,7 +387,7 @@ export const startCommitment = mutation({
             type: "pledge",
             ventureId,
             commitmentId,
-            summary: `${investor?.displayName ?? "Investor"} pledged ${currency} ${Math.round(args.amountKes).toLocaleString()} into ${name} (${(shareBps / 100).toFixed(1)}% until ${capMultiple}×)`,
+            summary: formatPublicPledge(investor?.displayName ?? "Investor", currency, args.amountKes, name, shareBps, capMultiple),
             amountKes: Math.round(args.amountKes),
             createdAt: now,
         });
@@ -813,7 +814,6 @@ export const portfolio = query({
                     ventureSlug: v.string(),
                     amountKes: v.number(),
                     status: commitmentStatusValidator,
-                    capRatio: v.number(),
                     hoursSinceCheckIn: v.union(v.number(), v.null()),
                     hasOpenProposal: v.boolean(),
                 })
@@ -844,7 +844,6 @@ export const portfolio = query({
             ventureSlug: string;
             amountKes: number;
             status: Doc<"commitments">["status"];
-            capRatio: number;
             hoursSinceCheckIn: number | null;
             hasOpenProposal: boolean;
         }> = [];
@@ -873,17 +872,12 @@ export const portfolio = query({
             pendingDecisions += runs.filter((run) => run.status === "proposed").length;
             pendingPublication += runs.filter((run) => run.status === "awaiting_publication").length;
 
-            const capKes = row.amountKes * row.capMultiple;
-            const { kpiTotal } = await sumVentureKpis(ctx, row.ventureId);
-            const repaidKes = (kpiTotal * row.shareBps) / 10_000;
-
             deals.push({
                 commitmentId: row._id,
                 ventureName: venture.name,
                 ventureSlug: venture.publicSlug,
                 amountKes: row.amountKes,
                 status: row.status,
-                capRatio: capKes > 0 ? Math.min(1, repaidKes / capKes) : 0,
                 hoursSinceCheckIn,
                 hasOpenProposal,
             });
@@ -918,22 +912,26 @@ function commitmentFromProjection(
     proj: NonNullable<Doc<"investorBriefings">["cockpit"]>[number]
 ) {
     /**
-     * Cap progress: how much of the revenue-share multiple has been earned
-     * back. Repaid is the venture's cumulative revenue KPI × this
-     * commitment's share; the cap is amountKes × capMultiple. This is an
-     * intent-model estimate (capital is soft), but making the exit term
-     * visible is the point — the cap should never be invisible.
+     * Revenue-share estimate: the pledge cap is the rounded pledge ×
+     * capMultiple. The estimated share is derived only from self-reported
+     * `revenue_kes` check-ins recorded after the pledge — jobs and meetings
+     * are never counted as money. KES commitments only; anything else (or a
+     * bounded/unclean read) reports null rather than a fabricated number.
      */
-    const capKes = row.amountKes * row.capMultiple;
-    const repaidKes = ((proj.venture.kpiTotal ?? 0) * row.shareBps) / 10_000;
+    const capKes = Math.round(row.amountKes) * row.capMultiple;
+    const reported =
+        (row.currency ?? "KES") === "KES" ? (proj.reportedRevenueKes ?? null) : null;
+    const estimatedShareKes =
+        reported == null ? null : Math.min(capKes, (reported * row.shareBps) / 10_000);
     const capProgress = {
         capKes,
-        repaidKes,
-        ratio: capKes > 0 ? Math.min(1, repaidKes / capKes) : 0,
+        reportedRevenueKes: reported,
+        estimatedShareKes,
     };
     return {
         id: row._id,
         amountKes: row.amountKes,
+        currency: row.currency ?? "KES",
         shareBps: row.shareBps,
         capMultiple: row.capMultiple,
         status: row.status,
@@ -1057,6 +1055,7 @@ async function buildCockpitFromScan(
                     createdAt: email.createdAt,
                 })),
                 openProposal,
+                reportedRevenueKes: reportedRevenueKes(checkIns, row.createdAt),
             })
         );
     }
@@ -1083,6 +1082,7 @@ export const investorCockpit = query({
             v.object({
                 id: v.id("commitments"),
                 amountKes: v.number(),
+                currency: currencyCodeValidator,
                 shareBps: v.number(),
                 capMultiple: v.number(),
                 status: commitmentStatusValidator,
@@ -1140,11 +1140,15 @@ export const investorCockpit = query({
                     }),
                     v.null()
                 ),
-                /** Revenue-share cap progress (repaid vs cap, intent-model). */
+                /**
+                 * Revenue-share estimate vs cap (intent model, not settlement).
+                 * reportedRevenueKes / estimatedShareKes are null when there is
+                 * no usable revenue data — never derived from other metrics.
+                 */
                 capProgress: v.object({
                     capKes: v.number(),
-                    repaidKes: v.number(),
-                    ratio: v.number(),
+                    reportedRevenueKes: v.union(v.number(), v.null()),
+                    estimatedShareKes: v.union(v.number(), v.null()),
                 }),
             })
         ),
@@ -1852,7 +1856,7 @@ export const pledgeCommitment = mutation({
     handler: async (ctx, args) => {
         await assertCanAct(ctx);
         await rateLimiter.limit(ctx, "investMutate", { key: "pledge" });
-        if (args.amountKes <= 0) throw new Error("amountKes must be positive");
+        if (!Number.isFinite(args.amountKes) || Math.round(args.amountKes) <= 0) throw new Error("Pledge must round to at least 1.");
 
         const venture = await ctx.db.get(args.ventureId);
         if (!venture) throw new Error("Venture not found");
@@ -1909,7 +1913,7 @@ export const pledgeCommitment = mutation({
             type: "pledge",
             ventureId: args.ventureId,
             commitmentId,
-            summary: `${investor.displayName} pledged ${currency} ${Math.round(args.amountKes).toLocaleString()} into ${venture.name} (${(shareBps / 100).toFixed(1)}% until ${capMultiple}×)`,
+            summary: formatPublicPledge(investor.displayName, currency, args.amountKes, venture.name, shareBps, capMultiple),
             amountKes: Math.round(args.amountKes),
             createdAt: now,
         });
@@ -2552,7 +2556,7 @@ async function seedPledgesOntoInvestor(
             type: "pledge",
             ventureId: pledge.ventureId,
             commitmentId,
-            summary: `${args.investorName} pledged ${pledge.currency ?? "KES"} ${pledge.amountKes.toLocaleString()} into ${venture?.name ?? "venture"} (${(pledge.shareBps / 100).toFixed(1)}% until 2×)`,
+            summary: formatPublicPledge(args.investorName, pledge.currency ?? "KES", pledge.amountKes, venture?.name ?? "venture", pledge.shareBps, 2),
             amountKes: pledge.amountKes,
             createdAt: baseTs + createdCommitments,
         });
@@ -2999,7 +3003,7 @@ export const pledgeViaMcp = mutation({
     }),
     handler: async (ctx, args) => {
         await rateLimiter.limit(ctx, "investMutate", { key: "pledgeViaMcp" });
-        if (args.amountKes <= 0) throw new Error("amountKes must be positive");
+        if (!Number.isFinite(args.amountKes) || Math.round(args.amountKes) <= 0) throw new Error("Pledge must round to at least 1.");
 
         const ventureId = await resolveVentureId(ctx, args);
         if (!ventureId) throw new Error("Venture not found");
@@ -3044,7 +3048,7 @@ export const pledgeViaMcp = mutation({
             type: "pledge",
             ventureId,
             commitmentId,
-            summary: `${investor.displayName} pledged ${currency} ${Math.round(args.amountKes).toLocaleString()} into ${venture.name} (${(shareBps / 100).toFixed(1)}% until ${capMultiple}×)`,
+            summary: formatPublicPledge(investor.displayName, currency, args.amountKes, venture.name, shareBps, capMultiple),
             amountKes: Math.round(args.amountKes),
             createdAt: now,
         });

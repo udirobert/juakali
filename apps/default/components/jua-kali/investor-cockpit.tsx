@@ -25,6 +25,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import type { FunctionReturnType } from "convex/server";
 
 import { api } from "@/convex/_generated/api";
+import { formatPublicPledge } from "@/convex/publicCopy";
 import { useRouter } from "expo-router";
 import { useProductMode } from "@/lib/product-mode";
 import { daysUntil, formatDueLabel, formatKes, relativeTime } from "@/components/jua-kali/cockpit/format";
@@ -203,6 +204,16 @@ export function InvestorCockpit({
     const [isSeeding, setIsSeeding] = useState(false);
     const [isPledging, setIsPledging] = useState(false);
     const [showPledge, setShowPledge] = useState(false);
+    /**
+     * Pledge card step 2 — a frozen snapshot of what was reviewed, so the
+     * confirm view and the mutation always see identical values.
+     */
+    const [pledgeSnap, setPledgeSnap] = useState<{
+        ventureId: Id<"ventures">;
+        ventureName: string;
+        amountKes: number;
+        investorName: string;
+    } | null>(null);
 
     // FLIP deal transition (web): strip chip rect → detail stack morph.
     const chipEls = useRef(new Map<string, HTMLElement>());
@@ -347,20 +358,41 @@ export function InvestorCockpit({
         };
     }, [pendingSeed, isAuthenticated, seedInvestDemo]);
 
-    async function handlePledge() {
+    function handleReviewPledge() {
         if (!selectedVenture) return;
         const amountKes = Number(amountText);
-        if (!Number.isFinite(amountKes) || amountKes <= 0) {
-            setStatusMessage("Enter a positive KES amount.");
+        if (!Number.isFinite(amountKes) || Math.round(amountKes) <= 0) {
+            setStatusMessage("Pledge must round to at least 1 KES.");
+            return;
+        }
+        setStatusMessage(null);
+        setPledgeSnap({
+            ventureId: selectedVenture.id,
+            ventureName: selectedVenture.name,
+            amountKes,
+            investorName: data?.investor?.displayName?.trim() || "Guest",
+        });
+    }
+
+    async function handlePledge() {
+        if (!pledgeSnap) return;
+        if (!isAuthenticated) {
+            setStatusMessage("Sign in to publish this pledge on your desk.");
             return;
         }
         // Optimistic close — the form collapses immediately and Convex
         // confirms behind it; on error the form reopens with the reason.
+        const snap = pledgeSnap;
         setIsPledging(true);
         setShowPledge(false);
-        setStatusMessage("Pledge recorded — syncing…");
+        setPledgeSnap(null);
+        setStatusMessage("Publishing…");
         try {
-            const result = await pledgeCommitment({ ventureId: selectedVenture.id, amountKes });
+            const result = await pledgeCommitment({
+                ventureId: snap.ventureId,
+                amountKes: snap.amountKes,
+                investorName: snap.investorName,
+            });
             setSelectedCommitmentId(result.commitmentId);
             setStatusMessage(result.message);
         } catch (error) {
@@ -376,6 +408,7 @@ export function InvestorCockpit({
     function handlePledgeVenture(ventureId: Id<"ventures">) {
         setSelectedVentureId(ventureId);
         setShowPledge(true);
+        setPledgeSnap(null);
         // Bring the pledge form into view on the next paint.
         requestAnimationFrame(() => {
             scrollRef.current?.scrollTo({ y: 0, animated: true });
@@ -493,7 +526,10 @@ export function InvestorCockpit({
                         <Button
                             label={showPledge ? "Close" : "New pledge"}
                             variant="ghost"
-                            onPress={() => setShowPledge((v) => !v)}
+                            onPress={() => {
+                                setPledgeSnap(null);
+                                setShowPledge((v) => !v);
+                            }}
                         />
                     </View>
                     {hideBrand ? (
@@ -581,13 +617,42 @@ export function InvestorCockpit({
                     >
                     <Animated.View entering={ui.down(180)}>
                         <Card>
+                            {pledgeSnap ? (
+                                <>
+                                    <Text style={styles.status}>
+                                        {formatPublicPledge(
+                                            pledgeSnap.investorName,
+                                            "KES",
+                                            pledgeSnap.amountKes,
+                                            pledgeSnap.ventureName
+                                        )}
+                                    </Text>
+                                    <Text style={styles.fieldHint}>
+                                        10% of cashflow until 2× the pledge · Anyone can read this entry.
+                                        No money moves.
+                                    </Text>
+                                    <Button
+                                        label={isPledging ? "…" : "Publish soft pledge"}
+                                        onPress={handlePledge}
+                                        disabled={isPledging || !isAuthenticated}
+                                        busy={isPledging}
+                                    />
+                                    <Pressable onPress={() => setPledgeSnap(null)} disabled={isPledging}>
+                                        <Text style={styles.inlineLink}>← Edit amount</Text>
+                                    </Pressable>
+                                </>
+                            ) : (
+                                <>
                             <View style={styles.chipRow}>
                                 {data.availableVentures.map((venture) => (
                                     <Chip
                                         key={venture.id}
                                         label={venture.name}
                                         active={selectedVenture?.id === venture.id}
-                                        onPress={() => setSelectedVentureId(venture.id)}
+                                        onPress={() => {
+                                            setPledgeSnap(null);
+                                            setSelectedVentureId(venture.id);
+                                        }}
                                     />
                                 ))}
                             </View>
@@ -603,11 +668,13 @@ export function InvestorCockpit({
                                 placeholder="Amount in KES"
                             />
                             <Button
-                                label={isPledging ? "…" : "Record soft pledge"}
-                                onPress={handlePledge}
+                                label="Review the public entry"
+                                onPress={handleReviewPledge}
                                 disabled={isPledging || !selectedVenture}
                                 busy={isPledging}
                             />
+                                </>
+                            )}
                             {onOpenGlossary ? (
                                 <Pressable onPress={() => onOpenGlossary("soft-pledge")}>
                                     <Text style={styles.inlineLink}>What is a soft pledge?</Text>
@@ -817,8 +884,8 @@ function PortfolioStrip({
                                         ? `quiet ${deal.hoursSinceCheckIn}h`
                                         : "quiet"
                                     : deal.hasOpenProposal
-                                      ? "proposal waiting"
-                                      : `${Math.round(deal.capRatio * 100)}% of cap`}
+                                      ? "Proposal waiting"
+                                      : "Up to date"}
                             </Text>
                         </Pressable>
                     );
@@ -1035,8 +1102,19 @@ function CapProgress({
     commitment: Commitment;
 }) {
     const { capProgress } = commitment;
-    const pct = Math.round(capProgress.ratio * 100);
-    const fmt = (n: number) => `KES ${Math.round(n).toLocaleString()}`;
+    const estimate = capProgress.estimatedShareKes;
+    const pct =
+        estimate != null && capProgress.capKes > 0
+            ? Math.round(Math.min(1, estimate / capProgress.capKes) * 100)
+            : null;
+    const currency = commitment.currency ?? "KES";
+    const fmt = (n: number) => `${currency} ${Math.round(n).toLocaleString()}`;
+    const assetLabel =
+        commitment.settlementAsset === "pusd"
+            ? "PUSD base units"
+            : commitment.settlementAsset === "bch"
+              ? "sats"
+              : "base units";
     return (
         <View style={styles.capBlock}>
             <View style={styles.capRow}>
@@ -1044,20 +1122,29 @@ function CapProgress({
                     {(commitment.shareBps / 100).toFixed(1)}% until {commitment.capMultiple}× cap
                 </Text>
                 <Text style={styles.capValue}>
-                    {fmt(capProgress.repaidKes)} / {fmt(capProgress.capKes)}
+                    {estimate != null ? fmt(estimate) : "Estimate unavailable"} / {fmt(capProgress.capKes)}
                 </Text>
             </View>
-            <View style={styles.progressTrack}>
-                <View
-                    style={[
-                        styles.progressFill,
-                        styles.capFill,
-                        { width: `${Math.max(2, pct)}%` },
-                    ]}
-                />
-            </View>
+            {pct != null ? (
+                <View style={styles.progressTrack}>
+                    <View
+                        style={[
+                            styles.progressFill,
+                            styles.capFill,
+                            { width: `${Math.max(0, pct)}%` },
+                        ]}
+                    />
+                </View>
+            ) : null}
             <Text style={styles.capNote}>
-                {pct}% of cap earned back · intent model, not settlement
+                Estimated share of reported revenue · intent model, not settlement
+            </Text>
+            <Text style={styles.capNote}>
+                {commitment.repaidTotal != null && commitment.repaidTotal > 0
+                    ? `Recorded repayments: ${commitment.repaidTotal.toLocaleString()} ${assetLabel}` +
+                      `${commitment.settlementNetwork === "chipnet" ? " · test network" : ""}` +
+                      " · recorded, not confirmed"
+                    : "No repayments recorded"}
             </Text>
         </View>
     );

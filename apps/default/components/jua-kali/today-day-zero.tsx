@@ -35,12 +35,13 @@ export function TodayDayZero({
                 <Text style={styles.greeting}>
                     {greetingName ? `Good day, ${greetingName}` : "Good day"}
                 </Text>
+                <Text style={styles.eyebrow}>Investor desk</Text>
                 <Text style={styles.briefing}>{briefingText}</Text>
             </Animated.View>
 
             <Animated.View entering={enter(1)} style={styles.column}>
                 <Card accessibilityRole="summary">
-                    <Text style={styles.eyebrow}>How it works</Text>
+                    <Text style={styles.eyebrow}>How public deals work</Text>
                     <View style={styles.steps}>
                         {STEPS.map((step, i) => (
                             <View key={step.title} style={styles.step}>

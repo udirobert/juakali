@@ -25,6 +25,44 @@ Busy investor
   - Trust boundaries (`authorization`: investor ↔ commitment ↔ run).
   - Approval gate before consequential writes are published.
   - KPI roll-ups for cockpit, briefing, and venture browse indexes.
+  - Private-workspace suggestions (`suggestedStep` in `privateWorkspace.ts`) —
+    fixed strings per request kind, optionally templated with the pair's own
+    pricing-focus phrase. Never Gemini, never an external call.
+
+## Truth terms on the public surface
+
+Founder KPIs persist as `self_reported` — the app does not mint independent
+verification. A claimed document rides `claimedDoc` (`photo` / `receipt`) and
+renders as "photo/receipt mentioned" tags; `statement-text matched` means a
+payment artifact's text lined up with a KES revenue check-in — it still is not
+third-party verification. On the ledger, a txid is a pointer for anyone to
+inspect; the UI prints "Network not recorded" rather than guessing chipnet vs
+mainnet, and chipnet rows are labelled test-network only.
+
+## Private workspace boundary
+
+`/workspace/private` is a deliberately separate island — never a second
+vertical of the public product:
+
+- **Tables:** `privateWorkspaces` + `privateWorkspaceWeeks` only. No foreign
+  keys into ventures/commitments/ledger/agent tables; no side-effect writes
+  (tested: zero rows in `ledgerEvents`, `commitments`, `agentRuns`).
+- **Membership & disclosure:** identity is `getAuthUserId` + the users row;
+  verified non-anonymous email required; the whole feature is closed while
+  `SOFT_AUTH_INBOX=1`. Pending invites expose only `{id, name, backerLabel}` to
+  the invitee's own verified address — a consent preview, not workspace data.
+  Accept is an explicit tap that atomically binds `leadId` and schedules the
+  four weeks. One membership per account. Mutations answer with generic
+  errors that don't reveal invite existence.
+- **Scheduler / reactive views:** `accept` schedules four one-shot
+  `internal.privateWorkspace.closeWeek` mutations at Friday 15:00 UTC (18:00
+  Nairobi); `closeWeek` is idempotent. `desk` is the membership-scoped detail
+  view (reports hidden from the backer until close unless they carry an ask);
+  `overview` is the minimal metadata read (state + name + week) that powers
+  the `WorkspaceEntry` cards on Home, landing, and Account — no report
+  content, asks, or emails.
+- **Cadence is fixed:** four Fridays, then a review screen — no automatic
+  continuation, no chasing, no email.
 
 ## Components (hosting in parentheses)
 

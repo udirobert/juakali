@@ -233,7 +233,7 @@ describe("proactive approval does not manufacture KPI evidence", () => {
         expect(actionEvent?.summary).toBe(approvedText);
     });
 
-    test("submitFounderEvidence rejects non-positive values", async () => {
+    test("submitFounderEvidence accepts zero, rejects negative values", async () => {
         const t = initTest();
         const { investorId, asUser } = await createInvestor(t, "alice@test.com");
         const { ventureId, commitmentId } = await createVentureWithCommitment(t, investorId);
@@ -242,12 +242,17 @@ describe("proactive approval does not manufacture KPI evidence", () => {
         await asUser.mutation(api.agentRuns.approveProposal, { runId: proposalId });
         await drain(t);
 
-        await expect(
-            asUser.mutation(api.agentRuns.submitFounderEvidence, { runId: proposalId, value: 0 })
-        ).rejects.toThrow(/positive/i);
+        // Negative stays rejected.
         await expect(
             asUser.mutation(api.agentRuns.submitFounderEvidence, { runId: proposalId, value: -3 })
         ).rejects.toThrow(/positive/i);
+
+        // Zero is a real report — an honest "nothing moved" week.
+        const result = await asUser.mutation(api.agentRuns.submitFounderEvidence, {
+            runId: proposalId,
+            value: 0,
+        });
+        expect(result.ok).toBe(true);
     });
 });
 
@@ -688,6 +693,36 @@ describe("founder ownership enforcement", () => {
         await expect(asUser.mutation(api.venture.logSelfCheckIn, { value: 5 })).rejects.toThrow(
             /venture/i
         );
+    });
+
+    test("logSelfCheckIn accepts zero but rejects a negative number", async () => {
+        const t = initTest();
+        const { asUser } = await createInvestor(t, "alice@test.com");
+        await t.run(async (ctx) => {
+            await ctx.db.insert("ventures", {
+                name: "Zero Week Venture",
+                craftText: "Tailoring",
+                craftKey: "tailoring",
+                locationText: "Mombasa",
+                locationKey: "mombasa",
+                summary: "Zero week.",
+                kpiLabel: "Jobs completed",
+                kpiUnit: "jobs",
+                kpiTarget: 10,
+                publicSlug: "zero-week-venture",
+                status: "active",
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+            });
+        });
+        await asUser.mutation(api.venture.claimVenture, {});
+
+        const logged = await asUser.mutation(api.venture.logSelfCheckIn, { value: 0 });
+        expect(logged.message).toMatch(/0/);
+
+        await expect(
+            asUser.mutation(api.venture.logSelfCheckIn, { value: -2 })
+        ).rejects.toThrow(/positive/i);
     });
 
     test("claimVenture links the venture to the signed-in user", async () => {

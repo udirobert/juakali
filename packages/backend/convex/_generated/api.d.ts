@@ -29,6 +29,7 @@ import type * as juaKaliHelpers from "../juaKaliHelpers.js";
 import type * as maintenance from "../maintenance.js";
 import type * as migrations from "../migrations.js";
 import type * as numberWords from "../numberWords.js";
+import type * as privateWorkspace from "../privateWorkspace.js";
 import type * as railVerify from "../railVerify.js";
 import type * as rails_index from "../rails/index.js";
 import type * as rails_manualStatement from "../rails/manualStatement.js";
@@ -73,6 +74,7 @@ declare const fullApi: ApiFromModules<{
   maintenance: typeof maintenance;
   migrations: typeof migrations;
   numberWords: typeof numberWords;
+  privateWorkspace: typeof privateWorkspace;
   railVerify: typeof railVerify;
   "rails/index": typeof rails_index;
   "rails/manualStatement": typeof rails_manualStatement;

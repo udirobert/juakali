@@ -36,7 +36,7 @@ export function parseKpiValue(transcript: string, localeOrder: string[] = DEFAUL
     const digits = transcript.replace(/,/g, " ").match(/\d[\d\s]*\d|\d/);
     if (digits) {
         const value = Number(digits[0].replace(/\s/g, ""));
-        if (Number.isFinite(value) && value > 0) return value;
+        if (Number.isFinite(value) && value >= 0) return value;
     }
     // Locale number words (small counts: meetings, jobs). Venture locale first.
     for (const locale of localeOrder) {

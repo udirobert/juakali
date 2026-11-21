@@ -297,12 +297,14 @@ function FundOnBchCardReady({ commitmentId }: { commitmentId: Id<"commitments"> 
                     </Link>
                     {deal.repaidTotal && deal.repaidTotal > 0 ? (
                         <Text style={styles.meta}>
-                            Repaid: {deal.repaidTotal.toLocaleString()} sats across{" "}
+                            Recorded repayments: {deal.repaidTotal.toLocaleString()}{" "}
+                            {deal.settlementAsset === "pusd" ? "PUSD base units" : "sats"} across{" "}
                             {deal.repayTxids.length} transaction{deal.repayTxids.length === 1 ? "" : "s"}
+                            {fundedNetwork === "chipnet" ? " · test network" : ""} · recorded, not confirmed
                         </Text>
                     ) : (
                         <Text style={styles.meta}>
-                            Awaiting repayment — the venture returns a share of revenue to this
+                            No repayments recorded — the venture returns a share of revenue to this
                             address as the ledger grows.
                         </Text>
                     )}
@@ -323,7 +325,11 @@ function FundOnBchCardReady({ commitmentId }: { commitmentId: Id<"commitments"> 
                                 value={repayAmount}
                                 onChangeText={setRepayAmount}
                                 keyboardType="number-pad"
-                                placeholder="Repaid amount in satoshis"
+                                placeholder={
+                                    deal.settlementAsset === "pusd"
+                                        ? "Repaid amount in PUSD base units"
+                                        : "Repaid amount in satoshis"
+                                }
                             />
                             <Button
                                 label={repayBusy ? "Recording…" : "Anchor repayment"}

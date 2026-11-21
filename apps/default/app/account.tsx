@@ -6,6 +6,7 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { SoftIdentityBar, AuthRequiredGate, useRequireAuthToAct } from "@/components/jua-kali/soft-identity";
 import { Button, SectionLabel } from "@/components/jua-kali/ui";
+import { WorkspaceEntry } from "@/components/jua-kali/workspace-entry";
 import { color, font, type } from "@/components/jua-kali/theme";
 
 const LEVELS = [
@@ -52,11 +53,9 @@ export default function AccountScreen() {
             <Text style={styles.title}>Account</Text>
             <SoftIdentityBar />
 
-            <SectionLabel>Workspaces</SectionLabel>
-            <Text style={styles.workspaceHint}>
-                One account, two sides of the loop. Switch between where you invest
-                and the venture you run.
-            </Text>
+            <WorkspaceEntry variant="home" label="Your workspaces" />
+
+            <SectionLabel>Investor and founder tools</SectionLabel>
             <View style={styles.workspaceRow}>
                 <View style={styles.workspaceCopy}>
                     <Text style={styles.workspaceLabel}>Investor</Text>
@@ -80,8 +79,11 @@ export default function AccountScreen() {
                     onPress={() => router.push("/workspace/founder")}
                 />
             </View>
-
             <SectionLabel>Agent autonomy</SectionLabel>
+            <Text style={styles.workspaceHint}>
+                Joining a private workspace does not change these agent
+                permissions — they are independent.
+            </Text>
             <AuthRequiredGate required={requireAuthToAct}>
                 {LEVELS.map((level) => {
                     const active = current === level.id;
