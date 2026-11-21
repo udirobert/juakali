@@ -4,7 +4,7 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 
 /**
- * RevenueCat (Shipaton 2026 monetization) — native only.
+ * RevenueCat (native monetization — scaffolded, dormant) — native only.
  *
  * The `react-native-purchases` NPM package ships **no Expo config plugin** (only
  * native autolinking dirs), so we configure it at runtime. All RC code is lazy

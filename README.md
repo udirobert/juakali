@@ -6,6 +6,8 @@ Built for the [Gemini X Prize](https://www.geminixprize.com/). See [docs/xprize-
 
 Entering [BCH Blaze 2026](https://dorahacks.io/hackathon/bchblaze2026): soft pledges become real **PUSD/BCH micro-commitments** on Bitcoin Cash — WizardConnect wallet funding, on-chain settlement proofs on the public ledger, and a venture identity bound BCH↔Nostr. Plan and bounty map: [plans/bch-blaze-2026.plan.md](plans/bch-blaze-2026.plan.md).
 
+Scoped for the [Tari Ootle November "MVP!" contest](https://community.tari.com/t/520) (due Dec 1 UTC): a `RevenueShareCommitment` template — confidential XTM pledge vaults whose repayments auto-split `shareBps` to the investor until `capMultiple`. Plan: [plans/tari-ootle-mvp.plan.md](plans/tari-ootle-mvp.plan.md).
+
 Voice/SMS/USSD matching remains Lab scaffolding from the earlier Rapid Agent Hackathon prototype.
 
 > Capital: soft pledges by default — **not securities, escrow, or investment contracts**. On-chain pledge funding (PUSD/BCH) is an opt-in per-commitment settlement mode landing for BCH Blaze; a commitment shows `live` fidelity only once its funding tx is confirmed on-chain. Agent inbox inbound (`juakali@agentmail.to`) is live. The Gemini agent is publicly deployed to Google Cloud Run (see submission summary for URL + model).
@@ -104,20 +106,10 @@ Point your MCP client at that package with `JUAKALI_BACKEND_URL` set to your Con
 Gemini 2.5 Flash · Cloud Run · MCP · Convex · Expo · AgentMail (`juakali@agentmail.to`) · Twilio / Africa’s Talking (funnel) · Bitcoin Cash settlement layer (WizardConnect · CashTokens/PUSD · Nostr identity)
 
 Pre-commit (Husky): gitleaks on staged changes + ESLint via lint-staged (`apps/default`, `packages/backend`). Requires [`gitleaks`](https://github.com/gitleaks/gitleaks#installing) on your PATH.
-## Shipaton 2026 readiness
 
-JuaKali targets [RevenueCat's Shipaton 2026](https://shipaton.com/) (global mobile
-hackathon, Aug–Sep 2026) — strong fit for the **Peace Prize**, **#BuildInPublic**, and
-**Design** awards. Two gaps must close before entry: a real **store binary** (native iOS +
-Android via EAS) and **monetization** (RevenueCat subscription for Investor/Pro).
+## Contest history
 
-- Full assessment, gaps, and step-by-step path: [`plans/shipaton-2026-readiness.md`](plans/shipaton-2026-readiness.md).
-- **Native build setup:** EAS config in `apps/default/eas.json`; bundle/package ids in `apps/default/app.json`.
-- **Monetization:** RevenueCat tier + entitlement `subscriptions` table, `getMyEntitlements`,
-  `/webhooks/revenuecat` (Bearer-secret signed), `paywall.tsx` — all scaffolded. Runtime
-  `Purchases.configure({ apiKey })` (no config plugin needed; web untouched).
-
-Short version of the recommended order:
-1. EAS build → TestFlight / Play (store presence is the hard requirement).
-2. RevenueCat **Investor** tier (monthly) → HAMM + real revenue traction.
-3. If a submitter is a student, run the **Next Gen** track (video + source) in parallel.
+- **Gemini X Prize** (Aug 2026) — primary submission. See [docs/xprize-submission.md](docs/xprize-submission.md).
+- **BCH Blaze 2026** — settlement layer; submissions close **Nov 22, 14:00 UTC**. See [plans/bch-blaze-2026.plan.md](plans/bch-blaze-2026.plan.md).
+- **Tari Ootle "MVP!"** — `RevenueShareCommitment` template in a separate MIT repo; closes **Dec 1, 00:00 UTC**. Runs *after* the Blaze submission — the two contests do not conflict (different repos, different chains). See [plans/tari-ootle-mvp.plan.md](plans/tari-ootle-mvp.plan.md).
+- **RevenueCat Shipaton 2026** — **closed Aug–Sep 2026 with no entry submitted.** The native/EAS + RevenueCat scaffolding it motivated (EAS config, `subscriptions` table, `getMyEntitlements`, `/webhooks/revenuecat`, `paywall.tsx`) is still in the repo but **dormant** — nothing is wired to a live store binary or a real RevenueCat project. Kept as the starting point if we ever ship to stores; [`plans/shipaton-2026-readiness.md`](plans/shipaton-2026-readiness.md) is now a reference doc, not an active plan.

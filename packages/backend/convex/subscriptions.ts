@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
 /**
- * RevenueCat entitlements (Shipaton 2026 monetization).
+ * RevenueCat entitlements (native monetization — scaffolded, dormant).
  *
  * `revenueCatAppUserId` is the Convex `investors` id, set as the RevenueCat
  * `app_user_id` when the client configures the SDK. The RevenueCat webhook

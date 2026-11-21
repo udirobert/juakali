@@ -1,5 +1,11 @@
 # Shipaton 2026 — readiness plan
 
+> **STATUS: ARCHIVED — not entered.** Shipaton 2026 ran Aug–Sep 2026 and closed
+> without a JuaKali submission. Nothing below is an active plan. The scaffolding
+> it motivated (EAS config, `subscriptions` table, `getMyEntitlements`,
+> `/webhooks/revenuecat`, `paywall.tsx`) stays in the repo, dormant, as a
+> head start on any future store launch.
+
 > **What Shipaton is:** RevenueCat's global hackathon for mobile devs, Aug–Sep 2026.
 > $700k+ cash prizes + Times Square billboard. Core premise: **actually ship a real
 > native app to a real store** (Apple App Store / Google Play), show real traction,

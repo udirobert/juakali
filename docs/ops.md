@@ -104,7 +104,7 @@ Every deploy since Aug 17 had been blocked by the auth-config trap above.
 - [ ] Production Resend for soft-identity magic links (turn off `SOFT_AUTH_INBOX` peek).
 - [ ] Gmail for human investor; capital stays soft while email stays live.
 - [ ] Optional ICS for digest cadence (not yet full calendar OAuth).
-- [ ] RevenueCat: subscription tier + `subscriptions` table + `getMyEntitlements` + `/webhooks/revenuecat` Bearer-secret signed. Scaffolded; not wired to a real store binary yet (see `plans/shipaton-2026-readiness.md`).
+- [ ] RevenueCat: subscription tier + `subscriptions` table + `getMyEntitlements` + `/webhooks/revenuecat` Bearer-secret signed. Scaffolded and **dormant** — Shipaton 2026 closed without an entry; kept for a future store launch (see `plans/shipaton-2026-readiness.md`).
 - [ ] Paid Gemini API key (free-tier 5 RPM cap is the single largest non-design constraint right now).
 
 ## Decommission checklist (post-deadline, run only after submission window closes)

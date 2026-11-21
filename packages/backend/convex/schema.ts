@@ -815,7 +815,7 @@ export default defineSchema({
         .index("by_correlationId", ["correlationId"])
         .index("by_runId", ["runId"]),
 
-    /** RevenueCat entitlements per investor (Shipaton 2026 monetization). */
+    /** RevenueCat entitlements per investor (native monetization — scaffolded, dormant). */
     subscriptions: defineTable({
         investorId: v.id("investors"),
         revenueCatAppUserId: v.string(),

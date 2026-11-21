@@ -31,8 +31,9 @@ export const ventureSummaryValidator = v.object({
     publicSlug: v.string(),
     status: v.union(v.literal("active"), v.literal("paused"), v.literal("graduated")),
     pledgedKes: v.number(),
-    /** ISO currency for this venture's money (default KES). */
-    currency: currencyCodeValidator,
+    /** ISO currency for this venture's money (default KES). Optional so stored
+     *  briefing projections written before globalization shipped still validate. */
+    currency: v.optional(currencyCodeValidator),
     /** On-chain receiving identity (BCH Blaze 2026). Optional so stored
      *  briefing projections written before settlement shipped still validate. */
     bchAddress: v.optional(v.union(v.string(), v.null())),
