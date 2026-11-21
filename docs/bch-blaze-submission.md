@@ -47,8 +47,9 @@ contracts; `live` fidelity shows only once funding confirms on-chain.
 ## Track & bounties
 
 - Mainnet track — primary
+- Decentralized Identity — shipped: two-way BCH↔Nostr binding, independently
+  verifiable (evidence below; architecture in docs/bch-blaze-identity.md)
 - Community Choice — organic (EMBER2026 receive address: add CashToken addr)
-- Decentralized Identity — only if BCH↔Nostr binding ships before deadline
 - Build with XO / Migrate to XO — only if the covenant template ships; feedback
   must be ~500 words personally written (AI rejected)
 
@@ -57,6 +58,12 @@ contracts; `live` fidelity shows only once funding confirms on-chain.
 - Chipnet funding tx (100,000 sats, JuaKali → venture):
   `968684c9cda561a24333336894de49e0e56d9c97e6e40170aead437b00437f55`
   https://blockexplorer.cash/chipnet/tx/968684c9cda561a24333336894de49e0e56d9c97e6e40170aead437b00437f55
+- Identity binding tx (OP_RETURN `juakali:identity:npub17yk5…`, venture wallet):
+  `61dfba79019d82814b9a808a8cb8c63fce631541b8f2a59238888411c1dd0486`
+  https://blockexplorer.cash/chipnet/tx/61dfba79019d82814b9a808a8cb8c63fce631541b8f2a59238888411c1dd0486
+- Nostr binding event (sig verified under `f12d4640…`):
+  `ff23e872e9fcbce517bc237051226dff305b85f1c5d949c6b330d7a41a3c36d0`
+  https://njump.me/ff23e872e9fcbce517bc237051226dff305b85f1c5d949c6b330d7a41a3c36d0
 - Mainnet funding tx: <fill after mainnet demo>
 - Faucet funding tx (chipnet): `91c7d036f3c7b6ceeecf0e9939e1c4141fca1f16f19ab5914e864007459320e8`
 
